@@ -109,7 +109,7 @@ alchemrs/
 
 but the architecture should conceptually preserve the following separation.
 
-6.2 Crate responsibilities
+## Crate responsibilities
 alchemrs-core
 
 Defines canonical domain types and shared errors.
@@ -200,11 +200,11 @@ compatibility-facing convenience functions
 
 This crate should contain as little scientific logic as possible.
 
-7. Core domain model
+# Core domain model
 
 The most important design decision is the canonical representation of alchemical data.
 
-7.1 Requirements for the data model
+## Requirements for the data model
 
 The internal data model must:
 
@@ -218,7 +218,7 @@ avoid dependence on Python objects or DataFrames
 
 be usable across parsers and estimators
 
-7.2 Fundamental concepts
+## Fundamental concepts
 State point
 
 Represents the thermodynamic or alchemical state associated with samples or columns.
@@ -309,7 +309,7 @@ pub struct OverlapMatrix {
     pub n_states: usize,
     pub states: Vec<StatePoint>,
 }
-8. Invariants and validation
+# Invariants and validation
 
 Every core type should have explicit invariants.
 
@@ -349,51 +349,50 @@ impl DhdlSeries {
         Ok(Self { state, time_ps, values })
     }
 }
-9. Public API philosophy
-9.1 Avoid mirroring Python dynamically
+# Public API philosophy
+## Avoid mirroring Python dynamically
 
 The Rust API should not expose string-based mode switches everywhere.
 
 Prefer this:
-
+~~~rust
 pub enum DecorrelationMethod {
     StatisticalInefficiency,
     EveryNth(usize),
 }
-
+~~~
 instead of:
-
+~~~rust
 fn decorrelate(data: &Data, method: &str) -> ...
-9.2 Prefer typed configuration structs
+~~~
 
+## Prefer typed configuration structs
 If an estimator has multiple options, use config structs or builders.
-
 Example:
-
+~~~rust
 pub struct MbarOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
     pub initialize_from_bar: bool,
 }
-9.3 Keep traits minimal
+~~~
 
+## Keep traits minimal
 Traits should exist only where there is a real abstraction benefit.
-
 Possible trait:
-
+~~~rust
 pub trait Estimator<Input> {
     type Output;
     fn fit(&self, input: &Input) -> Result<Self::Output, Error>;
 }
-
+~~~
 Do not introduce excessive generic machinery early.
 
-10. Error model
+# Error model
 
 The Rust core must use typed errors.
-
 Example:
-
+~~~rust
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("invalid shape: expected {expected}, found {found}")]
@@ -414,71 +413,54 @@ pub enum Error {
     #[error("unsupported input: {0}")]
     Unsupported(String),
 }
-
+~~~
 Principles:
-
-no panics for user-facing invalid input
-
-avoid opaque catch-all errors unless wrapping external crates
-
-include enough context to debug scientific failures
+- no panics for user-facing invalid input
+- avoid opaque catch-all errors unless wrapping external crates
+- include enough context to debug scientific failures
 
 Python bindings will later map these into Python exceptions.
 
-11. Numerical backend choices
-11.1 Array representation
+# Numerical backend choices
+## Array representation
 
 Recommended approach:
-
-use ndarray internally for multi-dimensional numerical work
-
-expose stable wrapper structs in the public API
-
-avoid exposing raw ndarray types everywhere unless necessary
+- use ndarray internally for multi-dimensional numerical work
+- expose stable wrapper structs in the public API
+- avoid exposing raw ndarray types everywhere unless necessary
 
 This keeps implementation flexible while preserving ergonomics.
 
-11.2 Floating-point precision
+## Floating-point precision
 
 Use f64 by default throughout the core.
-
 Reasoning:
+- scientific analysis requires stable precision
+- alignment with existing scientific Python expectations
+- avoids complexity of making everything generic over float types
 
-scientific analysis requires stable precision
-
-alignment with existing scientific Python expectations
-
-avoids complexity of making everything generic over float types
-
-11.3 Linear algebra
+## Linear algebra
 
 If MBAR requires matrix operations or solvers, evaluate:
-
-ndarray
-
-ndarray-linalg
-
-custom iterative implementations where practical
+- ndarray
+- ndarray-linalg
+- custom iterative implementations where practical
 
 The abstraction should not assume a heavyweight backend until required.
 
-12. Estimator design
-12.1 TI
+# Estimator design
+## TI
 Inputs
-
-a collection of DhdlSeries values ordered by lambda state
-
-integration configuration
+- a collection of DhdlSeries values ordered by lambda state
+- integration configuration
 
 Outputs
-
-overall free energy estimate
-
-uncertainty if supported
-
-per-window summaries if useful
+- overall free energy estimate
+- uncertainty if supported
+- per-window summaries if useful
 
 Initial API sketch
+~~~rust
 pub struct TiOptions {
     pub method: IntegrationMethod,
 }
@@ -497,50 +479,36 @@ impl TiEstimator {
         todo!()
     }
 }
-12.2 BAR
+~~~
+## BAR
 Inputs
-
-forward and reverse work values, or adjacent-state reduced potential differences depending on representation chosen
+- forward and reverse work values, or adjacent-state reduced potential differences depending on representation chosen
 
 Outputs
-
-pairwise free energy estimate
-
-uncertainty
-
-convergence metadata if available
+- pairwise free energy estimate
+- uncertainty
+- convergence metadata if available
 
 Need to decide whether BAR should operate on:
-
-raw work series
-
-adjacent u_nk slices
-
-both, via conversion helpers
+- raw work series
+- adjacent u_nk slices
+- both, via conversion helpers
 
 Recommendation:
+- begin with one clean input type
+- add conversion helpers later
 
-begin with one clean input type
-
-add conversion helpers later
-
-12.3 MBAR
-
-MBAR is the most complex estimator and should come later.
-
+## MBAR
+- MBAR is the most complex estimator and should come later.
 Requirements
-
-support multi-state reduced potential data
-
-stable convergence behavior
-
-explicit options for iteration and tolerance
-
-pairwise free energy outputs
-
-overlap diagnostics where possible
+- support multi-state reduced potential data
+- stable convergence behavior
+- explicit options for iteration and tolerance
+- pairwise free energy outputs
+- overlap diagnostics where possible
 
 Initial API sketch
+~~~rust
 pub struct MbarOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
@@ -556,61 +524,58 @@ impl MbarEstimator {
         todo!()
     }
 }
-13. Preprocessing design
+~~~
+# Preprocessing design
 
 Preprocessing must be explicit because it changes the data used by estimators.
 
-13.1 Equilibration trimming
+## Equilibration trimming
 
 Functions should return a new structure or a view-like wrapper.
 
 Example:
-
+~~~rust
 pub fn trim_equilibration(series: &DhdlSeries, start_index: usize) -> Result<DhdlSeries, Error>;
-13.2 Decorrelation
+~~~
+## Decorrelation
 
 Possible methods:
-
-statistical inefficiency-based subsampling
-
-user-specified stride
-
-no decorrelation
+- statistical inefficiency-based subsampling
+- user-specified stride
+- no decorrelation
 
 Example:
-
+~~~rust
 pub fn decorrelate_dhdl(
     series: &DhdlSeries,
     method: DecorrelationMethod,
 ) -> Result<DhdlSeries, Error>;
-
+~~~
 For UNkMatrix, decorrelation may require preserving row/state relationships carefully.
 
-13.3 Auditability
+## Auditability
 
 Every preprocessing step should be easy to inspect. The library should not silently trim or decorrelate without clear user intent.
 
-14. Parsing design
+# Parsing design
 
 Parsers should convert engine outputs into canonical core types. They should not return engine-specific ad hoc structures unless there is a strong reason.
 
-14.1 Parser goals
+## Parser goals
 
-robust extraction of alchemical observables
+- robust extraction of alchemical observables
+- clear error messages
+- precise mapping from engine-specific fields to canonical types
+- minimal leakage of engine-specific quirks into the core API
 
-clear error messages
-
-precise mapping from engine-specific fields to canonical types
-
-minimal leakage of engine-specific quirks into the core API
-
-14.2 Parser module layout
+## Parser module layout
 alchemrs-parse/
   amber/
   gromacs/
   namd/
   common/
-14.3 Parser API sketch
+## Parser API sketch
+~~~rust
 pub mod amber {
     pub fn extract_dhdl(path: impl AsRef<std::path::Path>, temperature_k: f64)
         -> Result<DhdlSeries, Error>;
@@ -618,17 +583,15 @@ pub mod amber {
     pub fn extract_u_nk(path: impl AsRef<std::path::Path>, temperature_k: f64)
         -> Result<UNkMatrix, Error>;
 }
-14.4 Parser strategy
+~~~
+## Parser strategy
 
 Implement parser families one at a time. Do not attempt all engines in the first milestone.
-
 Recommendation:
+- start with the engine most relevant to your own work and available fixtures
+- prioritize fixture coverage over theoretical completeness
 
-start with the engine most relevant to your own work and available fixtures
-
-prioritize fixture coverage over theoretical completeness
-
-15. Analysis and diagnostics
+# Analysis and diagnostics
 
 These components are important, but they should follow the estimators rather than block them.
 
@@ -991,32 +954,3 @@ Should missing values be supported in parsed data, or rejected at construction?
 
 Which engine parser should be implemented first based on fixture availability and user relevance?
 
-24. Immediate next steps
-
-Create the workspace and alchemrs-core crate.
-
-Implement:
-
-Error
-
-StatePoint
-
-DhdlSeries
-
-UNkMatrix
-
-FreeEnergyEstimate
-
-Add validation constructors and unit tests.
-
-Write one example that constructs canonical data and runs a placeholder TI estimator.
-
-Only then begin real TI implementation.
-
-25. Short project mantra
-
-Use this as the decision filter:
-
-If Python disappeared tomorrow, would this still be a good Rust library?
-
-If the answer is no, the design is drifting.
