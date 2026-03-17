@@ -206,6 +206,15 @@ impl From<BarMethodArg> for BarMethod {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    let normalize_equilibrate_flags =
+        |auto_equilibrate: bool, fast: bool, conservative: bool| -> (bool, bool) {
+            if auto_equilibrate {
+                (true, false)
+            } else {
+                (fast, conservative)
+            }
+        };
+
     let load_windows = |inputs: Vec<PathBuf>,
                         temperature: f64,
                         decorrelate: bool,
@@ -236,6 +245,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
             }
             if decorrelate {
+                let (fast, conservative) =
+                    normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
                 let options = DecorrelationOptions {
                     remove_burnin: auto_equilibrate,
                     fast,
@@ -280,6 +291,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                 }
                 if decorrelate {
+                    let (fast, conservative) =
+                        normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
                     let options = DecorrelationOptions {
                         remove_burnin: auto_equilibrate,
                         fast,
@@ -319,6 +332,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             conservative,
             nskip,
         } => {
+            let (fast, conservative) =
+                normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
             let windows = load_windows(
                 inputs,
                 temperature,
@@ -362,6 +377,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             nskip,
             no_uncertainty,
         } => {
+            let (fast, conservative) =
+                normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
             let windows = load_windows(
                 inputs,
                 temperature,
@@ -405,6 +422,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             nskip,
             no_uncertainty,
         } => {
+            let (fast, conservative) =
+                normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
             let windows = load_windows(
                 inputs,
                 temperature,
@@ -450,6 +469,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             tolerance,
             no_uncertainty,
         } => {
+            let (fast, conservative) =
+                normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
             let windows = load_windows(
                 inputs,
                 temperature,
