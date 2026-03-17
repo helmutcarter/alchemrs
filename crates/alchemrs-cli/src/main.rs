@@ -28,6 +28,9 @@ enum Command {
         /// Integration method
         #[arg(long, value_enum, default_value_t = TiMethod::Trapezoidal)]
         method: TiMethod,
+        /// Enable parallel processing
+        #[arg(long)]
+        parallel: bool,
         /// Apply decorrelation to each window
         #[arg(long)]
         decorrelate: bool,
@@ -57,6 +60,9 @@ enum Command {
         /// BAR method
         #[arg(long, value_enum, default_value_t = BarMethodArg::FalsePosition)]
         method: BarMethodArg,
+        /// Enable parallel processing
+        #[arg(long)]
+        parallel: bool,
         /// Apply decorrelation to each window
         #[arg(long)]
         decorrelate: bool,
@@ -104,6 +110,9 @@ enum Command {
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
+        /// Enable parallel processing
+        #[arg(long)]
+        parallel: bool,
     },
     Dexp {
         /// AMBER output files (one per lambda window)
@@ -133,6 +142,9 @@ enum Command {
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
+        /// Enable parallel processing
+        #[arg(long)]
+        parallel: bool,
     },
     Mbar {
         /// AMBER output files (one per lambda window)
@@ -168,6 +180,9 @@ enum Command {
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
+        /// Enable parallel processing
+        #[arg(long)]
+        parallel: bool,
     },
 }
 
@@ -266,6 +281,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             inputs,
             temperature,
             method,
+            parallel,
             decorrelate,
             remove_burnin,
             auto_equilibrate,
@@ -307,7 +323,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let estimator = TiEstimator::new(TiOptions {
                 method: method.into(),
-                parallel: false,
+                parallel,
             });
             let result = estimator.fit(&series)?;
             let from_lambda = result.from_state().lambdas()[0];
@@ -325,6 +341,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             inputs,
             temperature,
             method,
+            parallel,
             decorrelate,
             remove_burnin,
             auto_equilibrate,
@@ -347,6 +364,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let estimator = BarEstimator::new(BarOptions {
                 method: method.into(),
+                parallel,
                 ..BarOptions::default()
             });
             let result = estimator.fit(&windows)?;
@@ -376,6 +394,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             conservative,
             nskip,
             no_uncertainty,
+            parallel,
         } => {
             let (fast, conservative) =
                 normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
@@ -392,6 +411,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let estimator = ExpEstimator::new(ExpOptions {
                 compute_uncertainty: !no_uncertainty,
+                parallel,
                 ..ExpOptions::default()
             });
             let result = estimator.fit(&windows)?;
@@ -421,6 +441,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             conservative,
             nskip,
             no_uncertainty,
+            parallel,
         } => {
             let (fast, conservative) =
                 normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
@@ -437,6 +458,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let estimator = ExpEstimator::new(ExpOptions {
                 compute_uncertainty: !no_uncertainty,
+                parallel,
                 ..ExpOptions::default()
             });
             let result = estimator.fit(&windows)?;
@@ -468,6 +490,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_iterations,
             tolerance,
             no_uncertainty,
+            parallel,
         } => {
             let (fast, conservative) =
                 normalize_equilibrate_flags(auto_equilibrate, fast, conservative);
@@ -486,6 +509,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_iterations,
                 tolerance,
                 compute_uncertainty: !no_uncertainty,
+                parallel,
                 ..MbarOptions::default()
             });
             let result = estimator.fit(&windows)?;

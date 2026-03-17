@@ -205,12 +205,34 @@ pub mod amber {
             }
         }
 
-        let time_ps: Vec<f64> = (0..n_samples)
-            .map(|idx| t0 + ((idx + 1) as f64) * dt * bar_intervall)
+        let mut valid_indices = Vec::new();
+        for sample_idx in 0..n_samples {
+            let mut ok = true;
+            for state_idx in 0..n_states {
+                if !mbar_energies[state_idx][sample_idx].is_finite() {
+                    ok = false;
+                    break;
+                }
+            }
+            if ok {
+                valid_indices.push(sample_idx);
+            }
+        }
+
+        if valid_indices.is_empty() {
+            return Err(CoreError::Parse(
+                "all MBAR samples contained non-finite values".to_string(),
+            ));
+        }
+
+        let n_samples = valid_indices.len();
+        let time_ps: Vec<f64> = valid_indices
+            .iter()
+            .map(|idx| t0 + ((*idx + 1) as f64) * dt * bar_intervall)
             .collect();
 
-        let mut data = Vec::with_capacity(n_samples * n_states);
-        for sample_idx in 0..n_samples {
+        let mut data = Vec::with_capacity(valid_indices.len() * n_states);
+        for &sample_idx in &valid_indices {
             for state_idx in 0..n_states {
                 data.push(mbar_energies[state_idx][sample_idx]);
             }
