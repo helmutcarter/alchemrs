@@ -1,89 +1,58 @@
 Design Document: Rust-First Reimplementation of alchemlyb
-1. Overview
-
+# Overview
 This project aims to create a Rust-native library for alchemical free energy analysis that can be used directly by Rust crates, while later supporting Python through thin bindings.
 
 The goal is not to optimize isolated Python hot paths. The goal is to make Rust the canonical implementation and API surface.
 
 The library should eventually support:
 
-ingestion of alchemical analysis data from MD engines
-
-typed internal representations of u_nk, dH/dλ, state metadata, and analysis results
-
-estimators such as TI, BAR, and MBAR
-
-preprocessing operations such as equilibration trimming and decorrelation
-
-convergence and overlap analysis
-
-a Python compatibility layer built on top of the Rust core
+- ingestion of alchemical analysis data from MD engines
+- typed internal representations of u_nk, dH/dλ, state metadata, and analysis results
+- estimators such as TI, BAR, and MBAR
+- preprocessing operations such as equilibration trimming and decorrelation
+- convergence and overlap analysis
+- a Python compatibility layer built on top of the Rust core
 
 This document defines the architecture, scope, data model, public API direction, milestones, and implementation constraints.
 
-2. Goals
+# Goals
 Primary goals
+- Make Rust the source of truth
+- Core algorithms, parsers, and data structures live in Rust.
+    - Python is a client binding, not the implementation center.
+- Provide a clean Rust API
+    - The library should feel like an idiomatic Rust crate.
+    - Internal design should not be shaped around pandas or Python objects.
+- Preserve scientific correctness
+    - Results should reproduce trusted reference outputs within reasonable numerical tolerance.
+- Support incremental adoption
+    - The project should deliver useful standalone milestones before full feature parity.
+- Enable Python compatibility later
+    - The Rust core should be easy to wrap using PyO3 or similar bindings.
 
-Make Rust the source of truth
-
-Core algorithms, parsers, and data structures live in Rust.
-
-Python is a client binding, not the implementation center.
-
-Provide a clean Rust API
-
-The library should feel like an idiomatic Rust crate.
-
-Internal design should not be shaped around pandas or Python objects.
-
-Preserve scientific correctness
-
-Results should reproduce trusted reference outputs within reasonable numerical tolerance.
-
-Support incremental adoption
-
-The project should deliver useful standalone milestones before full feature parity.
-
-Enable Python compatibility later
-
-The Rust core should be easy to wrap using PyO3 or similar bindings.
-
-3. Non-goals
+# Non-goals
 
 These are explicitly out of scope for the initial design:
+- one-to-one reproduction of the full current Python API
+- first-class plotting in the Rust core
+- perfect feature parity in the first release
+- support for every MD engine immediately
+- preserving pandas as the central abstraction
+- implementing every convenience helper before core estimators are stable
+- designing primarily for notebook ergonomics
 
-one-to-one reproduction of the full current Python API
-
-first-class plotting in the Rust core
-
-perfect feature parity in the first release
-
-support for every MD engine immediately
-
-preserving pandas as the central abstraction
-
-implementing every convenience helper before core estimators are stable
-
-designing primarily for notebook ergonomics
-
-4. Product vision
+# Product vision
 
 The final system should support a workflow like:
-
-Parse engine output into typed Rust structures
-
-Validate and normalize the data
-
-Trim and decorrelate time series if needed
-
-Run TI, BAR, or MBAR
-
-Compute uncertainty, overlap, and convergence diagnostics
-
-Expose the same core functionality to Python users through bindings
+1) Parse engine output into typed Rust structures
+2) Validate and normalize the data
+3) Trim and decorrelate time series if needed
+4) Run TI, BAR, or MBAR
+5) Compute uncertainty, overlap, and convergence diagnostics
+6) Expose the same core functionality to Python users through bindings
 
 Example future Rust usage:
-
+~~~rust
 use alchemrs::parse::amber;
 use alchemrs::prep;
 use alchemrs::estimators::MBAR;
@@ -95,33 +64,28 @@ fn main() -> Result<(), alchemrs::Error> {
     println!("ΔG = {} ± {}", result.delta_f, result.uncertainty);
     Ok(())
 }
-5. Design principles
-5.1 Rust-first, not Python-first
-
+~~~
+# Design principles
+## Rust-first, not Python-first
 The internal architecture must remain valid even if Python bindings never exist.
 
-5.2 Strong typing over implicit conventions
-
+## Strong typing over implicit conventions
 State metadata, dimensions, and measurement types should be encoded in types and validated structures, not inferred from DataFrame column names.
 
-5.3 Small stable core
-
+## Small stable core
 Keep the initial public API narrow. Expand only after real usage reveals what should be stabilized.
 
-5.4 Clear separation of concerns
-
+## Clear separation of concerns
 Parsing, data representation, preprocessing, estimation, and bindings must remain separate layers.
 
-5.5 Scientific transparency
-
+## Scientific transparency
 Transformations to data should be explicit and inspectable. Silent coercions should be avoided.
 
-5.6 Reproducibility
-
+## Reproducibility
 Outputs must be deterministic when possible and accompanied by sufficient metadata.
 
-6. Proposed architecture
-6.1 Initial repository layout
+# Proposed architecture
+## Initial repository layout
 alchemrs/
   Cargo.toml
   crates/
