@@ -261,18 +261,34 @@ pub mod amber {
     }
 
     fn capture_field(line: &str, field: &str) -> Result<Option<f64>> {
-        let pattern = format!(r"\b{field}\s*=\s*({FP_RE})");
-        let regex = regex::Regex::new(&pattern)
-            .map_err(|err| CoreError::Parse(format!("regex error: {err}")))?;
-        if let Some(caps) = regex.captures(line) {
-            let value = caps
-                .get(1)
-                .ok_or_else(|| CoreError::Parse(format!("missing value for {field}")))?;
-            let parsed = value
-                .as_str()
-                .parse::<f64>()
-                .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
-            return Ok(Some(parsed));
+        let mut iter = line.split_whitespace().peekable();
+        while let Some(token) = iter.next() {
+            if token == field {
+                if let Some(next) = iter.next() {
+                    let value = if next == "=" {
+                        iter.next()
+                            .ok_or_else(|| CoreError::Parse(format!("missing {field} value")))? 
+                    } else {
+                        next
+                    };
+                    let value = value.trim_matches(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E');
+                    let parsed = value
+                        .parse::<f64>()
+                        .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
+                    return Ok(Some(parsed));
+                }
+            } else if token.starts_with(field) {
+                if let Some(eq_idx) = token.find('=') {
+                    let value = &token[(eq_idx + 1)..];
+                    if !value.is_empty() {
+                        let value = value.trim_matches(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E');
+                        let parsed = value
+                            .parse::<f64>()
+                            .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
+                        return Ok(Some(parsed));
+                    }
+                }
+            }
         }
         Ok(None)
     }
