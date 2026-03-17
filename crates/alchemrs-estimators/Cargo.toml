@@ -1,0 +1,11 @@
+[package]
+name = "alchemrs-estimators"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alchemrs-core = { path = "../alchemrs-core" }
+nalgebra = "0.33"
+
+[dev-dependencies]
+alchemrs-parse = { path = "../alchemrs-parse" }

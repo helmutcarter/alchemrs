@@ -1,0 +1,6 @@
+/target
+*.csv
+*.txt
+*.code-workspace
+/alchemlyb
+/pymbar

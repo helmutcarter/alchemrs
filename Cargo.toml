@@ -1,0 +1,19 @@
+[package]
+name = "alchemrs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+alchemrs-core = { path = "crates/alchemrs-core" }
+alchemrs-analysis = { path = "crates/alchemrs-analysis" }
+alchemrs-estimators = { path = "crates/alchemrs-estimators" }
+alchemrs-parse = { path = "crates/alchemrs-parse" }
+alchemrs-prep = { path = "crates/alchemrs-prep" }
+
+[workspace]
+members = [
+  "crates/alchemrs-analysis",
+  "crates/alchemrs-core",
+  "crates/alchemrs-estimators",
+  "crates/alchemrs-parse", "crates/alchemrs-prep",
+]

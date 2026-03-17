@@ -1,0 +1,1024 @@
+use alchemrs_core::{CoreError, DhdlSeries, FreeEnergyEstimate, Result};
+use alchemrs_core::{DeltaFMatrix, StatePoint, UNkMatrix};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegrationMethod {
+    Trapezoidal,
+    Simpson,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TiOptions {
+    pub method: IntegrationMethod,
+}
+
+impl Default for TiOptions {
+    fn default() -> Self {
+        Self {
+            method: IntegrationMethod::Trapezoidal,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TiEstimator {
+    pub options: TiOptions,
+}
+
+impl TiEstimator {
+    pub fn new(options: TiOptions) -> Self {
+        Self { options }
+    }
+
+    pub fn fit(&self, series: &[DhdlSeries]) -> Result<FreeEnergyEstimate> {
+        if series.len() < 2 {
+            return Err(CoreError::InvalidShape {
+                expected: 2,
+                found: series.len(),
+            });
+        }
+
+        let mut points: Vec<(f64, f64, f64, &DhdlSeries)> = Vec::with_capacity(series.len());
+        for item in series {
+            let lambda = extract_lambda(item.state())?;
+            let mean = mean_values(item.values())?;
+            let sem2 = sem2_values(item.values())?;
+            points.push((lambda, mean, sem2, item));
+        }
+        points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+
+        let lambdas: Vec<f64> = points.iter().map(|(l, _, _, _)| *l).collect();
+        let values: Vec<f64> = points.iter().map(|(_, v, _, _)| *v).collect();
+        let sem2_values: Vec<f64> = points.iter().map(|(_, _, s, _)| *s).collect();
+
+        let delta_f = match self.options.method {
+            IntegrationMethod::Trapezoidal => integrate_trapezoidal(&lambdas, &values)?,
+            IntegrationMethod::Simpson => integrate_simpson(&lambdas, &values)?,
+        };
+
+        let uncertainty = match self.options.method {
+            IntegrationMethod::Trapezoidal => Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?),
+            IntegrationMethod::Simpson => None,
+        };
+
+        let from_state = points.first().unwrap().3.state().clone();
+        let to_state = points.last().unwrap().3.state().clone();
+        FreeEnergyEstimate::new(delta_f, uncertainty, from_state, to_state)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarMethod {
+    FalsePosition,
+    SelfConsistentIteration,
+    Bisection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BarUncertainty {
+    Bar,
+}
+
+#[derive(Debug, Clone)]
+pub struct BarOptions {
+    pub maximum_iterations: usize,
+    pub relative_tolerance: f64,
+    pub method: BarMethod,
+    pub uncertainty: BarUncertainty,
+}
+
+impl Default for BarOptions {
+    fn default() -> Self {
+        Self {
+            maximum_iterations: 10_000,
+            relative_tolerance: 1.0e-7,
+            method: BarMethod::FalsePosition,
+            uncertainty: BarUncertainty::Bar,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BarEstimator {
+    pub options: BarOptions,
+}
+
+impl BarEstimator {
+    pub fn new(options: BarOptions) -> Self {
+        Self { options }
+    }
+
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        if windows.len() < 2 {
+            return Err(CoreError::InvalidShape {
+                expected: 2,
+                found: windows.len(),
+            });
+        }
+        let eval_states = ensure_consistent_states(windows)?;
+        let lambdas: Vec<f64> = eval_states
+            .iter()
+            .map(|s| s.lambdas()[0])
+            .collect();
+        let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; lambdas.len()];
+        for window in windows {
+            let sampled = window.sampled_state().ok_or_else(|| {
+                CoreError::InvalidState("sampled_state required for BAR".to_string())
+            })?;
+            let lambda = sampled.lambdas()[0];
+            let idx = find_lambda_index(&lambdas, lambda)?;
+            window_by_index[idx] = Some(window);
+        }
+
+        let mut deltas = Vec::new();
+        let mut d_deltas = Vec::new();
+        for idx in 0..(lambdas.len() - 1) {
+            let lambda = lambdas[idx];
+            let lambda_next = lambdas[idx + 1];
+            let win_f = window_by_index[idx].ok_or_else(|| {
+                CoreError::InvalidState(format!(
+                    "missing window for lambda {lambda}"
+                ))
+            })?;
+            let win_r = window_by_index[idx + 1].ok_or_else(|| {
+                CoreError::InvalidState(format!(
+                    "missing window for lambda {lambda_next}"
+                ))
+            })?;
+            let w_f = work_values(win_f, idx, idx + 1)?;
+            let w_r = work_values(win_r, idx, idx + 1)?
+                .into_iter()
+                .map(|w| -w)
+                .collect::<Vec<_>>();
+            let (df, ddf) = bar_estimate(
+                &w_f,
+                &w_r,
+                self.options.method,
+                self.options.maximum_iterations,
+                self.options.relative_tolerance,
+            )?;
+            deltas.push(df);
+            d_deltas.push(ddf * ddf);
+        }
+
+        let n_states = lambdas.len();
+        let mut adelta = vec![0.0; n_states * n_states];
+        let mut ad_delta = vec![f64::NAN; n_states * n_states];
+
+        for j in 0..deltas.len() {
+            let mut out = Vec::new();
+            let mut dout = Vec::new();
+            for i in 0..(deltas.len() - j) {
+                out.push(deltas[i..=i + j].iter().sum::<f64>());
+                if j == 0 {
+                    dout.push(d_deltas[i..=i + j].iter().sum::<f64>());
+                } else {
+                    dout.push(f64::NAN);
+                }
+            }
+            for (i, value) in out.into_iter().enumerate() {
+                let row = i;
+                let col = i + j + 1;
+                adelta[row * n_states + col] = value;
+            }
+            for (i, value) in dout.into_iter().enumerate() {
+                let row = i;
+                let col = i + j + 1;
+                ad_delta[row * n_states + col] = value;
+            }
+        }
+
+        for i in 0..n_states {
+            for j in (i + 1)..n_states {
+                let val = adelta[i * n_states + j];
+                adelta[j * n_states + i] = -val;
+                let unc = ad_delta[i * n_states + j];
+                ad_delta[j * n_states + i] = unc;
+            }
+        }
+
+        DeltaFMatrix::new(adelta, Some(ad_delta), n_states, eval_states)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MbarOptions {
+    pub max_iterations: usize,
+    pub tolerance: f64,
+    pub initial_f_k: Option<Vec<f64>>,
+    pub compute_uncertainty: bool,
+}
+
+impl Default for MbarOptions {
+    fn default() -> Self {
+        Self {
+            max_iterations: 10_000,
+            tolerance: 1.0e-7,
+            initial_f_k: None,
+            compute_uncertainty: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MbarEstimator {
+    pub options: MbarOptions,
+}
+
+impl MbarEstimator {
+    pub fn new(options: MbarOptions) -> Self {
+        Self { options }
+    }
+
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        if windows.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        let (u_kn, n_k, states) = combine_windows(windows)?;
+        let mut f_k = initial_f_k(&self.options, states.len())?;
+
+        mbar_solve(&u_kn, &n_k, &mut f_k, self.options.tolerance, self.options.max_iterations)?;
+
+        let n_states = states.len();
+        let mut values = vec![0.0; n_states * n_states];
+        for i in 0..n_states {
+            for j in 0..n_states {
+                values[i * n_states + j] = f_k[j] - f_k[i];
+            }
+        }
+        let uncertainties = if self.options.compute_uncertainty {
+            Some(mbar_uncertainty(&u_kn, &n_k, &f_k)?)
+        } else {
+            None
+        };
+        DeltaFMatrix::new(values, uncertainties, n_states, states)
+    }
+}
+
+pub fn mbar_log_weights_from_windows(
+    windows: &[UNkMatrix],
+    options: &MbarOptions,
+) -> Result<(Vec<f64>, Vec<f64>, Vec<StatePoint>)> {
+    if windows.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let (u_kn, n_k, states) = combine_windows(windows)?;
+    let mut f_k = initial_f_k(options, states.len())?;
+    mbar_solve(&u_kn, &n_k, &mut f_k, options.tolerance, options.max_iterations)?;
+    let log_weights = mbar_log_weights(&u_kn, &n_k, &f_k)?;
+    Ok((log_weights, n_k, states))
+}
+
+fn initial_f_k(options: &MbarOptions, n_states: usize) -> Result<Vec<f64>> {
+    if let Some(ref initial) = options.initial_f_k {
+        if initial.len() != n_states {
+            return Err(CoreError::InvalidShape {
+                expected: n_states,
+                found: initial.len(),
+            });
+        }
+        Ok(initial.clone())
+    } else {
+        Ok(vec![0.0; n_states])
+    }
+}
+
+fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
+    let first = windows[0].evaluated_states();
+    for window in windows.iter().skip(1) {
+        let states = window.evaluated_states();
+        if states.len() != first.len() {
+            return Err(CoreError::InvalidShape {
+                expected: first.len(),
+                found: states.len(),
+            });
+        }
+        for (a, b) in first.iter().zip(states.iter()) {
+            if (a.lambdas()[0] - b.lambdas()[0]).abs() > 1e-6 {
+                return Err(CoreError::InvalidState(
+                    "evaluated_states differ between windows".to_string(),
+                ));
+            }
+        }
+    }
+    Ok(first.to_vec())
+}
+
+fn find_lambda_index(lambdas: &[f64], target: f64) -> Result<usize> {
+    for (idx, value) in lambdas.iter().enumerate() {
+        if (*value - target).abs() < 1e-6 {
+            return Ok(idx);
+        }
+    }
+    Err(CoreError::InvalidState(
+        "sampled_state not found in evaluated_states".to_string(),
+    ))
+}
+
+fn work_values(window: &UNkMatrix, idx_a: usize, idx_b: usize) -> Result<Vec<f64>> {
+    let n_states = window.n_states();
+    let n_samples = window.n_samples();
+    if idx_b >= n_states {
+        return Err(CoreError::InvalidShape {
+            expected: n_states,
+            found: idx_b + 1,
+        });
+    }
+    let data = window.data();
+    let mut out = Vec::with_capacity(n_samples);
+    for sample_idx in 0..n_samples {
+        let offset = sample_idx * n_states;
+        let a = data[offset + idx_a];
+        let b = data[offset + idx_b];
+        out.push(b - a);
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone)]
+pub struct ExpOptions {
+    pub compute_uncertainty: bool,
+}
+
+impl Default for ExpOptions {
+    fn default() -> Self {
+        Self {
+            compute_uncertainty: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExpEstimator {
+    pub options: ExpOptions,
+}
+
+impl ExpEstimator {
+    pub fn new(options: ExpOptions) -> Self {
+        Self { options }
+    }
+
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        if windows.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        let states = ensure_consistent_states(windows)?;
+        let n_states = states.len();
+        let lambdas: Vec<f64> = states.iter().map(|s| s.lambdas()[0]).collect();
+        let mut window_map: Vec<Option<&UNkMatrix>> = vec![None; n_states];
+
+        for window in windows {
+            let sampled = window.sampled_state().ok_or_else(|| {
+                CoreError::InvalidState("sampled_state required for EXP".to_string())
+            })?;
+            let idx = find_lambda_index(&lambdas, sampled.lambdas()[0])?;
+            if window_map[idx].is_some() {
+                return Err(CoreError::InvalidState(
+                    "multiple windows for same sampled_state".to_string(),
+                ));
+            }
+            window_map[idx] = Some(window);
+        }
+
+        for (idx, entry) in window_map.iter().enumerate() {
+            if entry.is_none() {
+                return Err(CoreError::InvalidState(format!(
+                    "missing window for state {idx}"
+                )));
+            }
+        }
+
+        let mut values = vec![0.0; n_states * n_states];
+        let mut uncertainties = if self.options.compute_uncertainty {
+            Some(vec![0.0; n_states * n_states])
+        } else {
+            None
+        };
+
+        for i in 0..n_states {
+            let window = window_map[i].expect("window present");
+            for j in 0..n_states {
+                let work = work_values(window, i, j)?;
+                let delta = exp_delta_f(&work);
+                values[i * n_states + j] = delta;
+                if let Some(ref mut unc) = uncertainties {
+                    unc[i * n_states + j] = exp_uncertainty(&work)?;
+                }
+            }
+        }
+
+        DeltaFMatrix::new(values, uncertainties, n_states, states)
+    }
+}
+
+fn combine_windows(
+    windows: &[UNkMatrix],
+) -> Result<(Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>)> {
+    let states = ensure_consistent_states(windows)?;
+    let n_states = states.len();
+    let mut n_k = vec![0.0; n_states];
+    let mut offsets = Vec::with_capacity(windows.len());
+    let mut total_samples = 0usize;
+
+    let lambdas: Vec<f64> = states.iter().map(|s| s.lambdas()[0]).collect();
+
+    for window in windows {
+        let sampled = window.sampled_state().ok_or_else(|| {
+            CoreError::InvalidState("sampled_state required for MBAR".to_string())
+        })?;
+        let lambda = sampled.lambdas()[0];
+        let idx = find_lambda_index(&lambdas, lambda)?;
+        n_k[idx] += window.n_samples() as f64;
+        offsets.push(total_samples);
+        total_samples += window.n_samples();
+    }
+
+    let mut u_kn = vec![vec![0.0; total_samples]; n_states];
+    for (win_idx, window) in windows.iter().enumerate() {
+        let offset = offsets[win_idx];
+        let data = window.data();
+        for sample_idx in 0..window.n_samples() {
+            let row_offset = sample_idx * n_states;
+            let out_idx = offset + sample_idx;
+            for k in 0..n_states {
+                u_kn[k][out_idx] = data[row_offset + k];
+            }
+        }
+    }
+
+    Ok((u_kn, n_k, states))
+}
+
+fn mbar_solve(
+    u_kn: &[Vec<f64>],
+    n_k: &[f64],
+    f_k: &mut [f64],
+    tolerance: f64,
+    max_iterations: usize,
+) -> Result<()> {
+    let n_states = u_kn.len();
+    if n_states == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let n_samples = u_kn[0].len();
+    let ln_n_k: Vec<f64> = n_k
+        .iter()
+        .map(|n| if *n > 0.0 { n.ln() } else { f64::NEG_INFINITY })
+        .collect();
+
+    let mut log_denominator = vec![0.0; n_samples];
+    for _ in 0..max_iterations {
+        for n in 0..n_samples {
+            let mut max_arg = f64::NEG_INFINITY;
+            for k in 0..n_states {
+                if n_k[k] == 0.0 {
+                    continue;
+                }
+                let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
+                if val > max_arg {
+                    max_arg = val;
+                }
+            }
+            let mut sum = 0.0;
+            for k in 0..n_states {
+                if n_k[k] == 0.0 {
+                    continue;
+                }
+                let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
+                sum += (val - max_arg).exp();
+            }
+            log_denominator[n] = max_arg + sum.ln();
+        }
+
+        let mut f_new = vec![0.0; n_states];
+        for k in 0..n_states {
+            let mut max_arg = f64::NEG_INFINITY;
+            for n in 0..n_samples {
+                let val = -log_denominator[n] - u_kn[k][n];
+                if val > max_arg {
+                    max_arg = val;
+                }
+            }
+            let mut sum = 0.0;
+            for n in 0..n_samples {
+                let val = -log_denominator[n] - u_kn[k][n];
+                sum += (val - max_arg).exp();
+            }
+            f_new[k] = -(max_arg + sum.ln());
+        }
+        let shift = f_new[0];
+        for k in 0..n_states {
+            f_new[k] -= shift;
+        }
+
+        let mut max_delta = 0.0;
+        for k in 0..n_states {
+            let delta = (f_new[k] - f_k[k]).abs();
+            if delta > max_delta {
+                max_delta = delta;
+            }
+        }
+        f_k.copy_from_slice(&f_new);
+        if max_delta < tolerance {
+            return Ok(());
+        }
+    }
+
+    Err(CoreError::ConvergenceFailure)
+}
+
+fn mbar_uncertainty(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f64>> {
+    use nalgebra::{DMatrix, SymmetricEigen};
+
+    let n_states = u_kn.len();
+    let n_samples = u_kn[0].len();
+
+    let log_w = mbar_log_weights(u_kn, n_k, f_k)?;
+    let mut w_data = Vec::with_capacity(n_samples * n_states);
+    for n in 0..n_samples {
+        for k in 0..n_states {
+            w_data.push(log_w[n * n_states + k].exp());
+        }
+    }
+    let w = DMatrix::from_row_slice(n_samples, n_states, &w_data);
+
+    let wtw = &w.transpose() * &w;
+    let eigen = SymmetricEigen::new(wtw);
+    let mut s2 = eigen.eigenvalues;
+    for value in s2.iter_mut() {
+        if *value < 0.0 {
+            *value = 0.0;
+        }
+    }
+    let sigma = DMatrix::from_diagonal(&s2.map(|v| v.sqrt()));
+    let v = eigen.eigenvectors;
+
+    let mut ndiag = DMatrix::zeros(n_states, n_states);
+    for i in 0..n_states {
+        ndiag[(i, i)] = n_k[i];
+    }
+
+    let identity = DMatrix::identity(n_states, n_states);
+    let a = &identity - &sigma * &v.transpose() * &ndiag * &v * &sigma;
+    let a_inv = pseudoinverse(&a, 1.0e-10)?;
+    let theta = &v * &sigma * a_inv * &sigma * v.transpose();
+
+    let mut uncertainties = vec![0.0; n_states * n_states];
+    for i in 0..n_states {
+        for j in 0..n_states {
+            let val = theta[(i, i)] + theta[(j, j)] - 2.0 * theta[(i, j)];
+            uncertainties[i * n_states + j] = if val < 0.0 && val > -1e-10 {
+                0.0
+            } else if val < 0.0 {
+                val.abs().sqrt()
+            } else {
+                val.sqrt()
+            };
+        }
+    }
+    Ok(uncertainties)
+}
+
+fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f64>> {
+    let n_states = u_kn.len();
+    let n_samples = u_kn[0].len();
+    let ln_n_k: Vec<f64> = n_k
+        .iter()
+        .map(|n| if *n > 0.0 { n.ln() } else { f64::NEG_INFINITY })
+        .collect();
+
+    let mut log_w = vec![0.0; n_samples * n_states];
+    for n in 0..n_samples {
+        let mut max_arg = f64::NEG_INFINITY;
+        for k in 0..n_states {
+            if n_k[k] == 0.0 {
+                continue;
+            }
+            let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
+            if val > max_arg {
+                max_arg = val;
+            }
+        }
+        let mut sum = 0.0;
+        for k in 0..n_states {
+            if n_k[k] == 0.0 {
+                continue;
+            }
+            let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
+            sum += (val - max_arg).exp();
+        }
+        let log_denom = max_arg + sum.ln();
+        for k in 0..n_states {
+            log_w[n * n_states + k] = f_k[k] - u_kn[k][n] - log_denom;
+        }
+    }
+    Ok(log_w)
+}
+
+fn pseudoinverse(matrix: &nalgebra::DMatrix<f64>, tol: f64) -> Result<nalgebra::DMatrix<f64>> {
+    let svd = matrix.clone().svd(true, true);
+    let u = svd.u.ok_or_else(|| CoreError::ConvergenceFailure)?;
+    let v_t = svd.v_t.ok_or_else(|| CoreError::ConvergenceFailure)?;
+    let mut sigma_inv = nalgebra::DMatrix::zeros(matrix.nrows(), matrix.ncols());
+    for i in 0..svd.singular_values.len() {
+        let value = svd.singular_values[i];
+        if value > tol {
+            sigma_inv[(i, i)] = 1.0 / value;
+        }
+    }
+    Ok(v_t.transpose() * sigma_inv * u.transpose())
+}
+
+fn logsumexp(values: &[f64]) -> f64 {
+    let max = values
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !max.is_finite() {
+        return max;
+    }
+    let sum = values.iter().map(|v| (v - max).exp()).sum::<f64>();
+    max + sum.ln()
+}
+
+fn exp_delta_f(work: &[f64]) -> f64 {
+    let t = work.len() as f64;
+    let neg: Vec<f64> = work.iter().map(|w| -w).collect();
+    -(logsumexp(&neg) - t.ln())
+}
+
+fn exp_uncertainty(work: &[f64]) -> Result<f64> {
+    if work.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let t = work.len() as f64;
+    let mut max_arg = f64::NEG_INFINITY;
+    for value in work {
+        let arg = -value;
+        if arg > max_arg {
+            max_arg = arg;
+        }
+    }
+    let mut x = Vec::with_capacity(work.len());
+    for value in work {
+        x.push((-value - max_arg).exp());
+    }
+    let mean = x.iter().sum::<f64>() / t;
+    let mut var = 0.0;
+    for value in &x {
+        let diff = value - mean;
+        var += diff * diff;
+    }
+    var /= t;
+    let std = var.sqrt();
+    let dx = std / (t.sqrt());
+    Ok(dx / mean)
+}
+
+fn exp_delta(w_f: &[f64]) -> f64 {
+    let log_sum = logsumexp(&w_f.iter().map(|w| -w).collect::<Vec<_>>());
+    let t = w_f.len() as f64;
+    -(log_sum - t.ln())
+}
+
+fn bar_zero(w_f: &[f64], w_r: &[f64], delta_f: f64) -> f64 {
+    let t_f = w_f.len() as f64;
+    let t_r = w_r.len() as f64;
+    let m = (t_f / t_r).ln();
+
+    let log_f_f: Vec<f64> = w_f
+        .iter()
+        .map(|w| {
+            let exp_arg = m + w - delta_f;
+            let max_arg = if exp_arg > 0.0 { exp_arg } else { 0.0 };
+            let denom = (-max_arg).exp() + (exp_arg - max_arg).exp();
+            -max_arg - denom.ln()
+        })
+        .collect();
+    let log_numer = logsumexp(&log_f_f);
+
+    let log_f_r: Vec<f64> = w_r
+        .iter()
+        .map(|w| {
+            let exp_arg = -(m - w - delta_f);
+            let max_arg = if exp_arg > 0.0 { exp_arg } else { 0.0 };
+            let denom = (-max_arg).exp() + (exp_arg - max_arg).exp();
+            -max_arg - denom.ln()
+        })
+        .collect();
+    let log_denom = logsumexp(&log_f_r);
+
+    log_numer - log_denom
+}
+
+fn bar_estimate(
+    w_f: &[f64],
+    w_r: &[f64],
+    method: BarMethod,
+    maximum_iterations: usize,
+    relative_tolerance: f64,
+) -> Result<(f64, f64)> {
+    if w_f.is_empty() || w_r.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    if w_f.iter().any(|v| !v.is_finite()) || w_r.iter().any(|v| !v.is_finite()) {
+        return Ok((0.0, 0.0));
+    }
+    let mut delta_f = 0.0;
+    let mut upper = exp_delta(w_f);
+    let mut lower = -exp_delta(w_r);
+    let mut f_upper = bar_zero(w_f, w_r, upper);
+    let mut f_lower = bar_zero(w_f, w_r, lower);
+
+    if !f_upper.is_finite() || !f_lower.is_finite() {
+        return Ok((0.0, 0.0));
+    }
+    while f_upper * f_lower > 0.0 {
+        let ave = (upper + lower) / 2.0;
+        upper -= (upper - ave).abs().max(0.1);
+        lower += (lower - ave).abs().max(0.1);
+        f_upper = bar_zero(w_f, w_r, upper);
+        f_lower = bar_zero(w_f, w_r, lower);
+    }
+
+    for _ in 0..=maximum_iterations {
+        let old = delta_f;
+        match method {
+            BarMethod::FalsePosition => {
+                delta_f = if upper == 0.0 && lower == 0.0 {
+                    0.0
+                } else {
+                    upper - f_upper * (upper - lower) / (f_upper - f_lower)
+                };
+            }
+            BarMethod::Bisection => {
+                delta_f = (upper + lower) / 2.0;
+            }
+            BarMethod::SelfConsistentIteration => {
+                delta_f = -bar_zero(w_f, w_r, delta_f) + delta_f;
+            }
+        }
+        let f_new = bar_zero(w_f, w_r, delta_f);
+        if delta_f != 0.0 {
+            let relative_change = ((delta_f - old) / delta_f).abs();
+            if relative_change < relative_tolerance {
+                break;
+            }
+        }
+
+        if matches!(method, BarMethod::FalsePosition | BarMethod::Bisection) {
+            if f_upper * f_new < 0.0 {
+                lower = delta_f;
+                f_lower = f_new;
+            } else if f_lower * f_new <= 0.0 {
+                upper = delta_f;
+                f_upper = f_new;
+            } else {
+                return Err(CoreError::ConvergenceFailure);
+            }
+        }
+    }
+
+    let d_delta_f = bar_uncertainty(w_f, w_r, delta_f)?;
+    Ok((delta_f, d_delta_f))
+}
+
+fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<f64> {
+    if w_f.iter().any(|v| !v.is_finite()) || w_r.iter().any(|v| !v.is_finite()) {
+        return Ok(0.0);
+    }
+    let t_f = w_f.len() as f64;
+    let t_r = w_r.len() as f64;
+    let m = (t_f / t_r).ln();
+    let c = m - delta_f;
+
+    let exp_arg_f: Vec<f64> = w_f.iter().map(|w| w + c).collect();
+    let max_arg_f = exp_arg_f
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let log_f_f: Vec<f64> = exp_arg_f
+        .iter()
+        .map(|arg| -(((-max_arg_f).exp() + (arg - max_arg_f).exp()).ln()))
+        .collect();
+    let af_f = (logsumexp(&log_f_f) - max_arg_f).exp() / t_f;
+    let af_f2 = (logsumexp(&log_f_f.iter().map(|v| 2.0 * v).collect::<Vec<_>>())
+        - 2.0 * max_arg_f)
+        .exp()
+        / t_f;
+
+    let exp_arg_r: Vec<f64> = w_r.iter().map(|w| w - c).collect();
+    let max_arg_r = exp_arg_r
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let log_f_r: Vec<f64> = exp_arg_r
+        .iter()
+        .map(|arg| -(((-max_arg_r).exp() + (arg - max_arg_r).exp()).ln()))
+        .collect();
+    let af_r = (logsumexp(&log_f_r) - max_arg_r).exp() / t_r;
+    let af_r2 = (logsumexp(&log_f_r.iter().map(|v| 2.0 * v).collect::<Vec<_>>())
+        - 2.0 * max_arg_r)
+        .exp()
+        / t_r;
+
+    let nrat = (t_f + t_r) / (t_f * t_r);
+    let variance = (af_f2 / (af_f * af_f)) / t_f + (af_r2 / (af_r * af_r)) / t_r - nrat;
+    Ok(variance.max(0.0).sqrt())
+}
+
+fn extract_lambda(state: &alchemrs_core::StatePoint) -> Result<f64> {
+    let lambdas = state.lambdas();
+    if lambdas.len() != 1 {
+        return Err(CoreError::InvalidState(
+            "TI requires exactly one lambda dimension".to_string(),
+        ));
+    }
+    Ok(lambdas[0])
+}
+
+fn mean_values(values: &[f64]) -> Result<f64> {
+    if values.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let sum: f64 = values.iter().sum();
+    Ok(sum / (values.len() as f64))
+}
+
+fn sem2_values(values: &[f64]) -> Result<f64> {
+    if values.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: values.len(),
+        });
+    }
+    let mean = mean_values(values)?;
+    let mut sum = 0.0;
+    for value in values {
+        let diff = value - mean;
+        sum += diff * diff;
+    }
+    let variance = sum / ((values.len() - 1) as f64);
+    Ok(variance / (values.len() as f64))
+}
+
+fn integrate_trapezoidal(lambdas: &[f64], values: &[f64]) -> Result<f64> {
+    let mut total = 0.0;
+    for i in 0..(lambdas.len() - 1) {
+        let dx = lambdas[i + 1] - lambdas[i];
+        total += dx * (values[i] + values[i + 1]) * 0.5;
+    }
+    Ok(total)
+}
+
+fn integrate_simpson(lambdas: &[f64], values: &[f64]) -> Result<f64> {
+    if lambdas.len() % 2 == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len() + 1,
+            found: lambdas.len(),
+        });
+    }
+    let n = lambdas.len();
+    let h = (lambdas[n - 1] - lambdas[0]) / ((n - 1) as f64);
+    if h == 0.0 {
+        return Err(CoreError::InvalidState(
+            "lambda spacing must be non-zero".to_string(),
+        ));
+    }
+    let tol = h.abs() * 1e-8;
+    for i in 1..n {
+        let expected = lambdas[0] + (i as f64) * h;
+        if (lambdas[i] - expected).abs() > tol {
+            return Err(CoreError::Unsupported(
+                "Simpson integration requires uniform lambda spacing".to_string(),
+            ));
+        }
+    }
+
+    let mut total = values[0] + values[n - 1];
+    for i in 1..(n - 1) {
+        if i % 2 == 0 {
+            total += 2.0 * values[i];
+        } else {
+            total += 4.0 * values[i];
+        }
+    }
+    Ok(total * h / 3.0)
+}
+
+fn trapezoidal_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
+    if lambdas.len() != sem2.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: sem2.len(),
+        });
+    }
+    if lambdas.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: lambdas.len(),
+        });
+    }
+    let mut variance = 0.0;
+    for i in 0..lambdas.len() {
+        let dl_prev = if i == 0 {
+            0.0
+        } else {
+            lambdas[i] - lambdas[i - 1]
+        };
+        let dl_next = if i + 1 < lambdas.len() {
+            lambdas[i + 1] - lambdas[i]
+        } else {
+            0.0
+        };
+        let coeff = dl_prev + dl_next;
+        variance += (coeff * coeff) * sem2[i] * 0.25;
+    }
+    Ok(variance.sqrt())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alchemrs_core::StatePoint;
+
+    #[test]
+    fn ti_fit_requires_two_windows() {
+        let state = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let series = DhdlSeries::new(state, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let estimator = TiEstimator::default();
+        let err = estimator.fit(&[series]).unwrap_err();
+        assert!(matches!(err, CoreError::InvalidShape { .. }));
+    }
+
+    #[test]
+    fn ti_trapezoidal_two_points() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::default();
+        let result = estimator.fit(&[d0, d1]).unwrap();
+        assert!((result.delta_f() - 1.0).abs() < 1e-12);
+        assert_eq!(result.uncertainty(), Some(0.0));
+    }
+
+    #[test]
+    fn ti_simpson_three_points() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Simpson,
+        });
+        let result = estimator.fit(&[d0, d1, d2]).unwrap();
+        assert!((result.delta_f() - 1.0).abs() < 1e-12);
+        assert_eq!(result.uncertainty(), None);
+    }
+
+    #[test]
+    fn ti_simpson_rejects_nonuniform_spacing() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.3], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Simpson,
+        });
+        let err = estimator.fit(&[d0, d1, d2]).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
+    fn mbar_requires_windows() {
+        let estimator = MbarEstimator::default();
+        let err = estimator.fit(&[]).unwrap_err();
+        assert!(matches!(err, CoreError::InvalidShape { .. }));
+    }
+}
