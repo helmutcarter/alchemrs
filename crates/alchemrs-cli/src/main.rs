@@ -8,6 +8,9 @@ use alchemrs_parse::amber::{extract_dhdl, extract_u_nk};
 use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk, DecorrelationOptions, UNkSeriesMethod};
 use clap::{Parser, Subcommand, ValueEnum};
 
+const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
+const K_B_KJ_PER_MOL_K: f64 = 0.00831446261815324;
+
 #[derive(Debug, Parser)]
 #[command(name = "alchemrs-cli")]
 #[command(about = "Alchemical free energy analysis CLI")]
@@ -28,6 +31,9 @@ enum Command {
         /// Integration method
         #[arg(long, value_enum, default_value_t = TiMethod::Trapezoidal)]
         method: TiMethod,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -60,6 +66,9 @@ enum Command {
         /// BAR method
         #[arg(long, value_enum, default_value_t = BarMethodArg::FalsePosition)]
         method: BarMethodArg,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -110,6 +119,9 @@ enum Command {
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -142,6 +154,9 @@ enum Command {
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -180,6 +195,9 @@ enum Command {
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -190,6 +208,29 @@ enum Command {
 enum TiMethod {
     Trapezoidal,
     Simpson,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum OutputUnits {
+    KT,
+    Kcal,
+    Kj,
+}
+
+fn convert_value(value: f64, units: OutputUnits, temperature: f64) -> f64 {
+    match units {
+        OutputUnits::KT => value,
+        OutputUnits::Kcal => value * (K_B_KCAL_PER_MOL_K * temperature),
+        OutputUnits::Kj => value * (K_B_KJ_PER_MOL_K * temperature),
+    }
+}
+
+fn format_units(units: OutputUnits) -> &'static str {
+    match units {
+        OutputUnits::KT => "kT",
+        OutputUnits::Kcal => "kcal/mol",
+        OutputUnits::Kj => "kJ/mol",
+    }
 }
 
 impl From<TiMethod> for IntegrationMethod {
@@ -281,6 +322,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             inputs,
             temperature,
             method,
+            output_units,
             parallel,
             decorrelate,
             remove_burnin,
@@ -329,9 +371,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let from_lambda = result.from_state().lambdas()[0];
             let to_lambda = result.to_state().lambdas()[0];
 
-            println!("delta_f: {}", result.delta_f());
+            println!(
+                "delta_f: {} {}",
+                convert_value(result.delta_f(), output_units, temperature),
+                format_units(output_units)
+            );
             match result.uncertainty() {
-                Some(value) => println!("uncertainty: {}", value),
+                Some(value) => println!(
+                    "uncertainty: {} {}",
+                    convert_value(value, output_units, temperature),
+                    format_units(output_units)
+                ),
                 None => println!("uncertainty: none"),
             }
             println!("from_lambda: {}", from_lambda);
@@ -341,6 +391,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             inputs,
             temperature,
             method,
+            output_units,
             parallel,
             decorrelate,
             remove_burnin,
@@ -376,9 +427,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let from_lambda = result.states().first().unwrap().lambdas()[0];
             let to_lambda = result.states().last().unwrap().lambdas()[0];
 
-            println!("delta_f: {}", delta);
+            println!(
+                "delta_f: {} {}",
+                convert_value(delta, output_units, temperature),
+                format_units(output_units)
+            );
             match sigma {
-                Some(value) => println!("uncertainty: {}", value),
+                Some(value) => println!(
+                    "uncertainty: {} {}",
+                    convert_value(value, output_units, temperature),
+                    format_units(output_units)
+                ),
                 None => println!("uncertainty: none"),
             }
             println!("from_lambda: {}", from_lambda);
@@ -394,6 +453,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             conservative,
             nskip,
             no_uncertainty,
+            output_units,
             parallel,
         } => {
             let (fast, conservative) =
@@ -423,9 +483,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let from_lambda = result.states().first().unwrap().lambdas()[0];
             let to_lambda = result.states().last().unwrap().lambdas()[0];
 
-            println!("delta_f: {}", delta);
+            println!(
+                "delta_f: {} {}",
+                convert_value(delta, output_units, temperature),
+                format_units(output_units)
+            );
             match sigma {
-                Some(value) => println!("uncertainty: {}", value),
+                Some(value) => println!(
+                    "uncertainty: {} {}",
+                    convert_value(value, output_units, temperature),
+                    format_units(output_units)
+                ),
                 None => println!("uncertainty: none"),
             }
             println!("from_lambda: {}", from_lambda);
@@ -441,6 +509,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             conservative,
             nskip,
             no_uncertainty,
+            output_units,
             parallel,
         } => {
             let (fast, conservative) =
@@ -470,9 +539,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let from_lambda = result.states().last().unwrap().lambdas()[0];
             let to_lambda = result.states().first().unwrap().lambdas()[0];
 
-            println!("delta_f: {}", delta);
+            println!(
+                "delta_f: {} {}",
+                convert_value(delta, output_units, temperature),
+                format_units(output_units)
+            );
             match sigma {
-                Some(value) => println!("uncertainty: {}", value),
+                Some(value) => println!(
+                    "uncertainty: {} {}",
+                    convert_value(value, output_units, temperature),
+                    format_units(output_units)
+                ),
                 None => println!("uncertainty: none"),
             }
             println!("from_lambda: {}", from_lambda);
@@ -490,6 +567,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             max_iterations,
             tolerance,
             no_uncertainty,
+            output_units,
             parallel,
         } => {
             let (fast, conservative) =
@@ -521,9 +599,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let from_lambda = result.states().first().unwrap().lambdas()[0];
             let to_lambda = result.states().last().unwrap().lambdas()[0];
 
-            println!("delta_f: {}", delta);
+            println!(
+                "delta_f: {} {}",
+                convert_value(delta, output_units, temperature),
+                format_units(output_units)
+            );
             match sigma {
-                Some(value) => println!("uncertainty: {}", value),
+                Some(value) => println!(
+                    "uncertainty: {} {}",
+                    convert_value(value, output_units, temperature),
+                    format_units(output_units)
+                ),
                 None => println!("uncertainty: none"),
             }
             println!("from_lambda: {}", from_lambda);
