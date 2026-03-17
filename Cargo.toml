@@ -12,6 +12,7 @@ alchemrs-prep = { path = "crates/alchemrs-prep" }
 
 [workspace]
 members = [
+  "crates/alchemrs-cli",
   "crates/alchemrs-analysis",
   "crates/alchemrs-core",
   "crates/alchemrs-estimators",
