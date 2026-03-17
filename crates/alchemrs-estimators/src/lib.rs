@@ -10,12 +10,14 @@ pub enum IntegrationMethod {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TiOptions {
     pub method: IntegrationMethod,
+    pub parallel: bool,
 }
 
 impl Default for TiOptions {
     fn default() -> Self {
         Self {
             method: IntegrationMethod::Trapezoidal,
+            parallel: false,
         }
     }
 }
@@ -38,13 +40,27 @@ impl TiEstimator {
             });
         }
 
-        let mut points: Vec<(f64, f64, f64, &DhdlSeries)> = Vec::with_capacity(series.len());
-        for item in series {
-            let lambda = extract_lambda(item.state())?;
-            let mean = mean_values(item.values())?;
-            let sem2 = sem2_values(item.values())?;
-            points.push((lambda, mean, sem2, item));
-        }
+        let mut points: Vec<(f64, f64, f64, StatePoint)> = if self.options.parallel {
+            use rayon::prelude::*;
+            series
+                .par_iter()
+                .map(|item| {
+                    let lambda = extract_lambda(item.state())?;
+                    let mean = mean_values(item.values())?;
+                    let sem2 = sem2_values(item.values())?;
+                    Ok((lambda, mean, sem2, item.state().clone()))
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            let mut out = Vec::with_capacity(series.len());
+            for item in series {
+                let lambda = extract_lambda(item.state())?;
+                let mean = mean_values(item.values())?;
+                let sem2 = sem2_values(item.values())?;
+                out.push((lambda, mean, sem2, item.state().clone()));
+            }
+            out
+        };
         points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
         let lambdas: Vec<f64> = points.iter().map(|(l, _, _, _)| *l).collect();
@@ -61,8 +77,8 @@ impl TiEstimator {
             IntegrationMethod::Simpson => None,
         };
 
-        let from_state = points.first().unwrap().3.state().clone();
-        let to_state = points.last().unwrap().3.state().clone();
+        let from_state = points.first().unwrap().3.clone();
+        let to_state = points.last().unwrap().3.clone();
         FreeEnergyEstimate::new(delta_f, uncertainty, from_state, to_state)
     }
 }
@@ -85,6 +101,7 @@ pub struct BarOptions {
     pub relative_tolerance: f64,
     pub method: BarMethod,
     pub uncertainty: BarUncertainty,
+    pub parallel: bool,
 }
 
 impl Default for BarOptions {
@@ -94,6 +111,7 @@ impl Default for BarOptions {
             relative_tolerance: 1.0e-7,
             method: BarMethod::FalsePosition,
             uncertainty: BarUncertainty::Bar,
+            parallel: false,
         }
     }
 }
@@ -130,35 +148,76 @@ impl BarEstimator {
             window_by_index[idx] = Some(window);
         }
 
-        let mut deltas = Vec::new();
-        let mut d_deltas = Vec::new();
-        for idx in 0..(lambdas.len() - 1) {
-            let lambda = lambdas[idx];
-            let lambda_next = lambdas[idx + 1];
-            let win_f = window_by_index[idx].ok_or_else(|| {
-                CoreError::InvalidState(format!(
-                    "missing window for lambda {lambda}"
-                ))
-            })?;
-            let win_r = window_by_index[idx + 1].ok_or_else(|| {
-                CoreError::InvalidState(format!(
-                    "missing window for lambda {lambda_next}"
-                ))
-            })?;
-            let w_f = work_values(win_f, idx, idx + 1)?;
-            let w_r = work_values(win_r, idx, idx + 1)?
-                .into_iter()
-                .map(|w| -w)
-                .collect::<Vec<_>>();
-            let (df, ddf) = bar_estimate(
-                &w_f,
-                &w_r,
-                self.options.method,
-                self.options.maximum_iterations,
-                self.options.relative_tolerance,
-            )?;
-            deltas.push(df);
-            d_deltas.push(ddf * ddf);
+        let pair_results = if self.options.parallel {
+            use rayon::prelude::*;
+            (0..(lambdas.len() - 1))
+                .into_par_iter()
+                .map(|idx| {
+                    let lambda = lambdas[idx];
+                    let lambda_next = lambdas[idx + 1];
+                    let win_f = window_by_index[idx].ok_or_else(|| {
+                        CoreError::InvalidState(format!(
+                            "missing window for lambda {lambda}"
+                        ))
+                    })?;
+                    let win_r = window_by_index[idx + 1].ok_or_else(|| {
+                        CoreError::InvalidState(format!(
+                            "missing window for lambda {lambda_next}"
+                        ))
+                    })?;
+                    let w_f = work_values(win_f, idx, idx + 1)?;
+                    let w_r = work_values(win_r, idx, idx + 1)?
+                        .into_iter()
+                        .map(|w| -w)
+                        .collect::<Vec<_>>();
+                    let (df, ddf) = bar_estimate(
+                        &w_f,
+                        &w_r,
+                        self.options.method,
+                        self.options.maximum_iterations,
+                        self.options.relative_tolerance,
+                    )?;
+                    Ok((df, ddf * ddf))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            let mut out = Vec::new();
+            for idx in 0..(lambdas.len() - 1) {
+                let lambda = lambdas[idx];
+                let lambda_next = lambdas[idx + 1];
+                let win_f = window_by_index[idx].ok_or_else(|| {
+                    CoreError::InvalidState(format!(
+                        "missing window for lambda {lambda}"
+                    ))
+                })?;
+                let win_r = window_by_index[idx + 1].ok_or_else(|| {
+                    CoreError::InvalidState(format!(
+                        "missing window for lambda {lambda_next}"
+                    ))
+                })?;
+                let w_f = work_values(win_f, idx, idx + 1)?;
+                let w_r = work_values(win_r, idx, idx + 1)?
+                    .into_iter()
+                    .map(|w| -w)
+                    .collect::<Vec<_>>();
+                let (df, ddf) = bar_estimate(
+                    &w_f,
+                    &w_r,
+                    self.options.method,
+                    self.options.maximum_iterations,
+                    self.options.relative_tolerance,
+                )?;
+                out.push(Ok((df, ddf * ddf)));
+            }
+            out
+        };
+
+        let mut deltas = Vec::with_capacity(pair_results.len());
+        let mut d_deltas = Vec::with_capacity(pair_results.len());
+        for result in pair_results {
+            let (delta, d_delta) = result?;
+            deltas.push(delta);
+            d_deltas.push(d_delta);
         }
 
         let n_states = lambdas.len();
@@ -207,6 +266,7 @@ pub struct MbarOptions {
     pub tolerance: f64,
     pub initial_f_k: Option<Vec<f64>>,
     pub compute_uncertainty: bool,
+    pub parallel: bool,
 }
 
 impl Default for MbarOptions {
@@ -216,6 +276,7 @@ impl Default for MbarOptions {
             tolerance: 1.0e-7,
             initial_f_k: None,
             compute_uncertainty: true,
+            parallel: false,
         }
     }
 }
@@ -344,12 +405,14 @@ fn work_values(window: &UNkMatrix, idx_a: usize, idx_b: usize) -> Result<Vec<f64
 #[derive(Debug, Clone)]
 pub struct ExpOptions {
     pub compute_uncertainty: bool,
+    pub parallel: bool,
 }
 
 impl Default for ExpOptions {
     fn default() -> Self {
         Self {
             compute_uncertainty: true,
+            parallel: false,
         }
     }
 }
@@ -404,14 +467,46 @@ impl ExpEstimator {
             None
         };
 
-        for i in 0..n_states {
-            let window = window_map[i].expect("window present");
-            for j in 0..n_states {
-                let work = work_values(window, i, j)?;
-                let delta = exp_delta_f(&work);
-                values[i * n_states + j] = delta;
+        if self.options.parallel {
+            use rayon::prelude::*;
+            let rows = (0..n_states)
+                .into_par_iter()
+                .map(|i| {
+                    let window = window_map[i].expect("window present");
+                    let mut row = Vec::with_capacity(n_states);
+                    let mut row_unc = Vec::with_capacity(n_states);
+                    for j in 0..n_states {
+                        let work = work_values(window, i, j)?;
+                        let delta = exp_delta_f(&work);
+                        row.push(delta);
+                        if self.options.compute_uncertainty {
+                            row_unc.push(exp_uncertainty(&work)?);
+                        }
+                    }
+                    Ok((i, row, row_unc))
+                })
+                .collect::<Vec<_>>();
+            for entry in rows {
+                let (i, row, row_unc) = entry?;
+                for (j, value) in row.into_iter().enumerate() {
+                    values[i * n_states + j] = value;
+                }
                 if let Some(ref mut unc) = uncertainties {
-                    unc[i * n_states + j] = exp_uncertainty(&work)?;
+                    for (j, value) in row_unc.into_iter().enumerate() {
+                        unc[i * n_states + j] = value;
+                    }
+                }
+            }
+        } else {
+            for i in 0..n_states {
+                let window = window_map[i].expect("window present");
+                for j in 0..n_states {
+                    let work = work_values(window, i, j)?;
+                    let delta = exp_delta_f(&work);
+                    values[i * n_states + j] = delta;
+                    if let Some(ref mut unc) = uncertainties {
+                        unc[i * n_states + j] = exp_uncertainty(&work)?;
+                    }
                 }
             }
         }
@@ -963,6 +1058,48 @@ mod tests {
     use super::*;
     use alchemrs_core::StatePoint;
 
+    fn make_two_state_windows() -> Vec<UNkMatrix> {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let states = vec![s0.clone(), s1.clone()];
+
+        let data0 = vec![
+            0.0, 0.2,
+            0.1, 0.3,
+            0.2, 0.4,
+        ];
+        let data1 = vec![
+            0.1, 0.0,
+            0.2, 0.1,
+            0.3, 0.2,
+        ];
+        let time = vec![0.0, 1.0, 2.0];
+
+        vec![
+            UNkMatrix::new(3, 2, data0, time.clone(), Some(s0), states.clone()).unwrap(),
+            UNkMatrix::new(3, 2, data1, time, Some(s1), states).unwrap(),
+        ]
+    }
+
+    fn assert_vec_eq_with_nan(left: Option<&[f64]>, right: Option<&[f64]>) {
+        match (left, right) {
+            (None, None) => {}
+            (Some(a), Some(b)) => {
+                assert_eq!(a.len(), b.len());
+                for (idx, (x, y)) in a.iter().zip(b.iter()).enumerate() {
+                    if x.is_nan() && y.is_nan() {
+                        continue;
+                    }
+                    assert!(
+                        (*x - *y).abs() < 1e-12,
+                        "mismatch at {idx}: {x} vs {y}"
+                    );
+                }
+            }
+            _ => panic!("option mismatch"),
+        }
+    }
+
     #[test]
     fn ti_fit_requires_two_windows() {
         let state = StatePoint::new(vec![0.0], 300.0).unwrap();
@@ -994,6 +1131,7 @@ mod tests {
         let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
         let estimator = TiEstimator::new(TiOptions {
             method: IntegrationMethod::Simpson,
+            parallel: false,
         });
         let result = estimator.fit(&[d0, d1, d2]).unwrap();
         assert!((result.delta_f() - 1.0).abs() < 1e-12);
@@ -1010,6 +1148,7 @@ mod tests {
         let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
         let estimator = TiEstimator::new(TiOptions {
             method: IntegrationMethod::Simpson,
+            parallel: false,
         });
         let err = estimator.fit(&[d0, d1, d2]).unwrap_err();
         assert!(matches!(err, CoreError::Unsupported(_)));
@@ -1020,5 +1159,89 @@ mod tests {
         let estimator = MbarEstimator::default();
         let err = estimator.fit(&[]).unwrap_err();
         assert!(matches!(err, CoreError::InvalidShape { .. }));
+    }
+
+    #[test]
+    fn ti_parallel_matches_serial() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0, 2.0], vec![0.0, 0.1, 0.2]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0, 2.0], vec![1.0, 1.1, 1.2]).unwrap();
+
+        let serial = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Trapezoidal,
+            parallel: false,
+        })
+        .fit(&[d0.clone(), d1.clone()])
+        .unwrap();
+        let parallel = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Trapezoidal,
+            parallel: true,
+        })
+        .fit(&[d0, d1])
+        .unwrap();
+
+        assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
+        assert_eq!(serial.uncertainty(), parallel.uncertainty());
+    }
+
+    #[test]
+    fn bar_parallel_matches_serial() {
+        let windows = make_two_state_windows();
+        let serial = BarEstimator::new(BarOptions {
+            parallel: false,
+            ..BarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let parallel = BarEstimator::new(BarOptions {
+            parallel: true,
+            ..BarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_eq!(serial.values(), parallel.values());
+        assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
+    }
+
+    #[test]
+    fn exp_parallel_matches_serial() {
+        let windows = make_two_state_windows();
+        let serial = ExpEstimator::new(ExpOptions {
+            parallel: false,
+            ..ExpOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let parallel = ExpEstimator::new(ExpOptions {
+            parallel: true,
+            ..ExpOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_eq!(serial.values(), parallel.values());
+        assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
+    }
+
+    #[test]
+    fn mbar_parallel_matches_serial() {
+        let windows = make_two_state_windows();
+        let serial = MbarEstimator::new(MbarOptions {
+            parallel: false,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let parallel = MbarEstimator::new(MbarOptions {
+            parallel: true,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_eq!(serial.values(), parallel.values());
+        assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
     }
 }

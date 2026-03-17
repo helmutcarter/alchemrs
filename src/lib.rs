@@ -13,5 +13,6 @@ pub use alchemrs_estimators::{BarEstimator, BarMethod, BarOptions, BarUncertaint
 pub use alchemrs_estimators::{ExpEstimator, ExpOptions, MbarEstimator, MbarOptions};
 pub use alchemrs_parse::amber::{extract_dhdl, extract_u_nk};
 pub use alchemrs_prep::{
-    decorrelate_dhdl, decorrelate_u_nk, DecorrelationOptions, UNkSeriesMethod,
+    decorrelate_dhdl, decorrelate_u_nk, detect_equilibration_dhdl, detect_equilibration_u_nk,
+    DecorrelationOptions, EquilibrationResult, UNkSeriesMethod,
 };

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 alchemrs-core = { path = "../alchemrs-core" }
+rayon = "1.10"
 nalgebra = "0.33"
 
 [dev-dependencies]

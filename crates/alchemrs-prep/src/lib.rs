@@ -13,6 +13,7 @@ pub struct DecorrelationOptions {
     pub conservative: bool,
     pub remove_burnin: bool,
     pub fast: bool,
+    pub nskip: usize,
     pub lower: Option<f64>,
     pub upper: Option<f64>,
     pub step: Option<usize>,
@@ -26,11 +27,19 @@ impl Default for DecorrelationOptions {
             conservative: true,
             remove_burnin: false,
             fast: false,
+            nskip: 1,
             lower: None,
             upper: None,
             step: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EquilibrationResult {
+    pub t0: usize,
+    pub g: f64,
+    pub neff_max: f64,
 }
 
 pub fn decorrelate_dhdl(series: &DhdlSeries, options: &DecorrelationOptions) -> Result<DhdlSeries> {
@@ -44,6 +53,20 @@ pub fn decorrelate_dhdl(series: &DhdlSeries, options: &DecorrelationOptions) -> 
     let indices = subsample_indices(&values, options)?;
     let (time, values) = apply_indices(&time, &values, &indices);
     DhdlSeries::new(series.state().clone(), time, values)
+}
+
+pub fn detect_equilibration_dhdl(
+    series: &DhdlSeries,
+    options: &DecorrelationOptions,
+) -> Result<EquilibrationResult> {
+    let (time, values) = prepare_series(
+        series.time_ps(),
+        series.values(),
+        options.drop_duplicates,
+        options.sort,
+    )?;
+    let (_time, values) = apply_time_slice(&time, &values, options)?;
+    detect_equilibration(&values, options.fast, options.nskip)
 }
 
 pub fn decorrelate_u_nk(
@@ -79,6 +102,30 @@ pub fn decorrelate_u_nk(
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
     )
+}
+
+pub fn detect_equilibration_u_nk(
+    u_nk: &UNkMatrix,
+    method: UNkSeriesMethod,
+    options: &DecorrelationOptions,
+) -> Result<EquilibrationResult> {
+    let (time, data) = prepare_u_nk(
+        u_nk.time_ps(),
+        u_nk.data(),
+        u_nk.n_states(),
+        options.drop_duplicates,
+        options.sort,
+    )?;
+    let series = u_nk_series(u_nk, &data, method)?;
+    let (time, _data, series) = apply_time_slice_u_nk(
+        &time,
+        &data,
+        u_nk.n_states(),
+        &series,
+        options,
+    )?;
+    let _ = time;
+    detect_equilibration(&series, options.fast, options.nskip)
 }
 
 fn prepare_series(
@@ -180,7 +227,9 @@ fn apply_time_slice_u_nk(
 
 fn subsample_indices(values: &[f64], options: &DecorrelationOptions) -> Result<Vec<usize>> {
     if options.remove_burnin {
-        let (t, g) = detect_equilibration(values, options.fast)?;
+        let result = detect_equilibration(values, options.fast, options.nskip)?;
+        let t = result.t0;
+        let g = result.g;
         let values = &values[t..];
         let indices = subsample_correlated_data(values, Some(g), options.fast, options.conservative)?;
         Ok(indices.into_iter().map(|idx| idx + t).collect())
@@ -424,7 +473,7 @@ fn subsample_correlated_data(
     }
 }
 
-fn detect_equilibration(values: &[f64], fast: bool) -> Result<(usize, f64)> {
+fn detect_equilibration(values: &[f64], fast: bool, nskip: usize) -> Result<EquilibrationResult> {
     if values.is_empty() {
         return Err(CoreError::InvalidShape { expected: 1, found: 0 });
     }
@@ -438,16 +487,21 @@ fn detect_equilibration(values: &[f64], fast: bool) -> Result<(usize, f64)> {
         .sum::<f64>()
         / values.len() as f64;
     if variance == 0.0 {
-        return Ok((0, 1.0));
+        return Ok(EquilibrationResult {
+            t0: 0,
+            g: 1.0,
+            neff_max: 1.0,
+        });
     }
 
     let mut g_t = vec![1.0; values.len().saturating_sub(1)];
     let mut neff_t = vec![1.0; values.len().saturating_sub(1)];
-    for t in 0..values.len().saturating_sub(1) {
+    let step = nskip.max(1);
+    for t in (0..values.len().saturating_sub(1)).step_by(step) {
         let slice = &values[t..];
         let g = statistical_inefficiency(slice, fast).unwrap_or(values.len() as f64);
         g_t[t] = g;
-        neff_t[t] = (values.len() - t) as f64 / g;
+        neff_t[t] = (values.len() - t + 1) as f64 / g;
     }
     let mut max_idx = 0usize;
     let mut max_value = neff_t[0];
@@ -457,7 +511,11 @@ fn detect_equilibration(values: &[f64], fast: bool) -> Result<(usize, f64)> {
             max_idx = idx;
         }
     }
-    Ok((max_idx, g_t[max_idx]))
+    Ok(EquilibrationResult {
+        t0: max_idx,
+        g: g_t[max_idx],
+        neff_max: max_value,
+    })
 }
 
 #[cfg(test)]
@@ -487,5 +545,15 @@ mod tests {
         let result = decorrelate_u_nk(&u_nk, UNkSeriesMethod::All, &DecorrelationOptions::default()).unwrap();
         assert!(result.n_samples() > 0);
         assert_eq!(result.n_states(), 2);
+    }
+
+    #[test]
+    fn detect_equilibration_constant_series() {
+        let state = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let series = DhdlSeries::new(state, vec![0.0, 1.0, 2.0], vec![1.0, 1.0, 1.0]).unwrap();
+        let result = detect_equilibration_dhdl(&series, &DecorrelationOptions::default()).unwrap();
+        assert_eq!(result.t0, 0);
+        assert_eq!(result.g, 1.0);
+        assert_eq!(result.neff_max, 1.0);
     }
 }
