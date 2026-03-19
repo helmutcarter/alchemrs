@@ -16,7 +16,7 @@ The library should eventually support:
 This document defines the architecture, scope, data model, public API direction, milestones, and implementation constraints.
 
 # Goals
-Primary goals
+Primary goals:
 - Make Rust the source of truth
 - Core algorithms, parsers, and data structures live in Rust.
     - Python is a client binding, not the implementation center.
@@ -86,6 +86,7 @@ Outputs must be deterministic when possible and accompanied by sufficient metada
 
 # Proposed architecture
 ## Initial repository layout
+~~~text
 alchemrs/
   Cargo.toml
   crates/
@@ -99,184 +100,118 @@ alchemrs/
   tests/
   fixtures/
   docs/
-
+~~~
 A simpler starting point is acceptable:
-
+~~~text
 alchemrs/
   crates/
     core/
     python/
-
+~~~
 but the architecture should conceptually preserve the following separation.
 
 ## Crate responsibilities
-alchemrs-core
-
+### `alchemrs-core`
 Defines canonical domain types and shared errors.
 
-Responsibilities:
-
-lambda/state metadata
-
-matrix and timeseries wrappers
-
-free energy result objects
-
-overlap and convergence result types
-
-validation logic
-
-common traits
-
-alchemrs-estimators
-
+- lambda/state metadata
+- matrix and timeseries wrappers
+- free energy result objects
+- overlap and convergence result types
+- validation logic
+- common traits
+### `alchemrs-estimators`
 Implements TI, BAR, and MBAR.
 
-Responsibilities:
-
-estimator algorithms
-
-uncertainty estimation
-
-estimator-specific configuration
-
-fit result types
-
-alchemrs-prep
-
+- estimator algorithms
+- uncertainty estimation
+- estimator-specific configuration
+- fit result types
+### `alchemrs-prep`
 Implements preprocessing operations.
 
-Responsibilities:
-
-equilibration trimming
-
-subsampling/decorrelation
-
-timeseries slicing
-
-state-wise normalization helpers
-
-alchemrs-parse
-
+- equilibration trimming
+- subsampling/decorrelation
+- timeseries slicing
+- state-wise normalization helpers
+### `alchemrs-parse`
 Parses engine-specific output into core types.
 
-Responsibilities:
-
-AMBER parser
-
-GROMACS parser
-
-NAMD parser
-
-shared parser utilities
-
-validation of parsed metadata
-
-alchemrs-analysis
-
+- AMBER parser
+- GROMACS parser
+- NAMD parser
+- shared parser utilities
+- validation of parsed metadata
+### `alchemrs-analysis`
 Implements diagnostics and analysis.
 
-Responsibilities:
-
-overlap matrices
-
-convergence analysis
-
-forward/reverse comparisons
-
-statistical summaries
-
-alchemrs-python
-
+- overlap matrices
+- convergence analysis
+- forward/reverse comparisons
+- statistical summaries
+### `alchemrs-python`
 Thin Python wrapper over the Rust core.
 
-Responsibilities:
-
-conversion between Python objects and Rust types
-
-exception mapping
-
-compatibility-facing convenience functions
-
-This crate should contain as little scientific logic as possible.
+- conversion between Python objects and Rust types
+- exception mapping
+- compatibility-facing convenience functions
+- This crate should contain as little scientific logic as possible.
 
 # Core domain model
-
 The most important design decision is the canonical representation of alchemical data.
 
 ## Requirements for the data model
-
 The internal data model must:
-
-represent values and metadata explicitly
-
-encode dimensions and invariants clearly
-
-support efficient numerical computation
-
-avoid dependence on Python objects or DataFrames
-
-be usable across parsers and estimators
+- represent values and metadata explicitly
+- encode dimensions and invariants clearly
+- support efficient numerical computation
+- avoid dependence on Python objects or DataFrames
+- be usable across parsers and estimators
 
 ## Fundamental concepts
-State point
-
-Represents the thermodynamic or alchemical state associated with samples or columns.
-
+### State point
+- Represents the thermodynamic or alchemical state associated with samples or columns.
 Possible fields:
-
-lambda vector
-
-temperature
-
-pressure if needed
-
-engine-specific identifiers only if required
+- lambda vector
+- temperature
+- pressure if needed
+- engine-specific identifiers only if required
 
 Example:
-
+~~~rust
 pub struct StatePoint {
     pub lambdas: Vec<f64>,
     pub temperature_k: f64,
 }
-
+~~~
 Longer term, this may become more structured, for example separate named lambda dimensions.
-
-Time series
-
-Represents time-indexed scalar or vector observations.
-
+### Time series
+- Represents time-indexed scalar or vector observations.
 Example:
-
+~~~rust
 pub struct TimeSeries<T> {
     pub time: Vec<f64>,
     pub values: Vec<T>,
 }
-DhdlSeries
-
-Represents dH/dλ samples associated with a specific state.
-
+~~~
+### DhdlSeries
+- Represents dH/dλ samples associated with a specific state.
 Example:
-
+~~~rust
 pub struct DhdlSeries {
     pub state: StatePoint,
     pub time_ps: Vec<f64>,
     pub values: Vec<f64>,
 }
-UNkMatrix
-
-Represents reduced potentials for samples evaluated across states.
-
+~~~
+### UNkMatrix
+- Represents reduced potentials for samples evaluated across states.
 Conceptually:
-
-rows = samples
-
-columns = evaluated states
-
-plus metadata identifying sampled state and evaluated states
-
+- rows = samples
+- columns = evaluated states
+- plus metadata identifying sampled state and evaluated states
 Example:
-
+~~~rust
 pub struct UNkMatrix {
     pub n_samples: usize,
     pub n_states: usize,
@@ -284,76 +219,65 @@ pub struct UNkMatrix {
     pub sampled_state: Option<StatePoint>,
     pub evaluated_states: Vec<StatePoint>,
 }
-
+~~~
 For real implementation, backing this with ndarray may be better than raw Vec<f64>.
 
-Result objects
+### Result objects
+~~~rust
 pub struct FreeEnergyEstimate {
     pub delta_f: f64,
     pub uncertainty: Option<f64>,
     pub from_state: StatePoint,
     pub to_state: StatePoint,
 }
-
+~~~
 For multi-state estimators, results may include full pairwise matrices:
-
+~~~rust
 pub struct DeltaFMatrix {
     pub values: Vec<f64>,
     pub uncertainties: Option<Vec<f64>>,
     pub n_states: usize,
     pub states: Vec<StatePoint>,
 }
-Diagnostics
+~~~
+### Diagnostics
+~~~rust
 pub struct OverlapMatrix {
     pub values: Vec<f64>,
     pub n_states: usize,
     pub states: Vec<StatePoint>,
 }
+~~~
 # Invariants and validation
-
 Every core type should have explicit invariants.
 
-StatePoint
-
-lambda values must be finite
-
-temperature must be finite and positive
-
-DhdlSeries
-
-time_ps.len() == values.len()
-
-time must be monotonic nondecreasing
-
-values must be finite
-
-associated StatePoint must be valid
-
-UNkMatrix
-
-data.len() == n_samples * n_states
-
-evaluated_states.len() == n_states
-
-all entries finite unless missing values are deliberately supported
-
-sampled-state metadata consistent with parser output
-
+## StatePoint
+- lambda values must be finite
+- temperature must be finite and positive
+## DhdlSeries
+`time_ps.len() == values.len()`
+- time must be monotonic nondecreasing
+- values must be finite
+- associated StatePoint must be valid
+## UNkMatrix
+`data.len() == n_samples * n_states`
+`evaluated_states.len() == n_states`
+- all entries finite unless missing values are deliberately supported
+- sampled-state metadata consistent with parser output
 Validation should occur at construction time through smart constructors rather than relying on public mutable fields.
-
 Example:
-
+~~~rust
 impl DhdlSeries {
     pub fn new(state: StatePoint, time_ps: Vec<f64>, values: Vec<f64>) -> Result<Self, Error> {
         // validate
         Ok(Self { state, time_ps, values })
     }
 }
+~~~
 # Public API philosophy
 ## Avoid mirroring Python dynamically
 
 The Rust API should not expose string-based mode switches everywhere.
-
 Prefer this:
 ~~~rust
 pub enum DecorrelationMethod {
@@ -592,365 +516,216 @@ Recommendation:
 - prioritize fixture coverage over theoretical completeness
 
 # Analysis and diagnostics
-
 These components are important, but they should follow the estimators rather than block them.
 
-Potential analysis functions:
-
-overlap matrix computation
-
-per-window contribution summary
-
-cumulative convergence analysis
-
-forward vs reverse estimate comparison
-
-uncertainty breakdowns
-
-API should remain result-centric and typed.
-
+## Potential analysis functions:
+- overlap matrix computation
+- per-window contribution summary
+- cumulative convergence analysis
+- forward vs reverse estimate comparison
+- uncertainty breakdowns
+- API should remain result-centric and typed.
 Example:
-
+~~~rust
 pub fn overlap_matrix(u_nk: &UNkMatrix) -> Result<OverlapMatrix, Error>;
-16. Python binding strategy
-
+~~~
+# Python binding strategy
 Python support should be added after the Rust core is coherent.
+## Principles
+- binding layer is thin
+- no core scientific logic in binding code
+- Python compatibility is an adapter, not the design center
+## Responsibilities
+- convert Python arrays/DataFrames into Rust core types
+- call Rust estimators/parsers
+- convert results back into Python-friendly objects
+- map Rust errors to Python exceptions
 
-16.1 Principles
-
-binding layer is thin
-
-no core scientific logic in binding code
-
-Python compatibility is an adapter, not the design center
-
-16.2 Responsibilities
-
-convert Python arrays/DataFrames into Rust core types
-
-call Rust estimators/parsers
-
-convert results back into Python-friendly objects
-
-map Rust errors to Python exceptions
-
-16.3 Likely stack
-
-PyO3
-
-maturin
-
+## Likely stack
+- PyO3
+- maturin
 The Python package should be treated as a separate product layer built on the Rust core.
 
-17. Testing strategy
-
+# Testing strategy
 Testing is central to this project.
 
-17.1 Unit tests
+## Unit tests
 
 Every core type and estimator should have unit tests for:
+- shape validation
+- invalid input rejection
+- simple known-result cases
+- edge cases such as empty or singular inputs
 
-shape validation
-
-invalid input rejection
-
-simple known-result cases
-
-edge cases such as empty or singular inputs
-
-17.2 Fixture tests
-
+## Fixture tests
 Use known engine outputs and reference results.
 
 Tests should verify:
+- parser correctness
+- TI/BAR/MBAR numerical output
+- metadata preservation
+- preprocessing behavior
 
-parser correctness
-
-TI/BAR/MBAR numerical output
-
-metadata preservation
-
-preprocessing behavior
-
-17.3 Cross-validation against trusted outputs
-
+## Cross-validation against trusted outputs
 A critical part of development will be comparing Rust outputs against established reference calculations.
 
 Comparison should include:
+- free energy estimates
+- uncertainties
+- pairwise matrices
+- overlap diagnostics where applicable
 
-free energy estimates
-
-uncertainties
-
-pairwise matrices
-
-overlap diagnostics where applicable
-
-17.4 Property testing
-
+## Property testing
 Where useful, add property tests for:
+- shape-preserving transformations
+- state ordering behavior
+- invariants under slicing/trimming
 
-shape-preserving transformations
-
-state ordering behavior
-
-invariants under slicing/trimming
-
-18. Documentation strategy
-
+# Documentation strategy
 The Rust docs must stand on their own.
 
-18.1 Required documentation
+## Required documentation
+- crate-level overview
+- type-level documentation
+- invariants on constructors
+- examples for core workflows
+- estimator assumptions
+- parser limitations
 
-crate-level overview
-
-type-level documentation
-
-invariants on constructors
-
-examples for core workflows
-
-estimator assumptions
-
-parser limitations
-
-18.2 Example programs
-
+## Example programs
 Include examples for:
+- TI from canonical dH/dλ
+- BAR from pairwise data
+- MBAR from u_nk
+- parsing one engine format
+- preprocessing plus estimation workflow
 
-TI from canonical dH/dλ
-
-BAR from pairwise data
-
-MBAR from u_nk
-
-parsing one engine format
-
-preprocessing plus estimation workflow
-
-19. Versioning and API stability
+# Versioning and API stability
 
 This project should be conservative about public API exposure.
-
-Guidelines
-
-keep most fields private
-
-use constructors and accessors
-
-avoid exposing internal implementation types
-
-prefer a narrow pub surface until design stabilizes
-
-do not promise semver stability too early
-
-20. Milestones
-Milestone 1: Core data model
-
-Deliverables:
-
-StatePoint
-
-DhdlSeries
-
-UNkMatrix
-
-result types
-
-typed error enum
-
-validation constructors
-
-unit tests
-
-Success criteria:
-
-canonical core types compile cleanly
-
-invariants enforced
-
-examples demonstrate construction and inspection
-
-Milestone 2: TI
-
-Deliverables:
-
-TI estimator
-
-integration methods
-
-fixture tests
-
-documentation examples
-
-Success criteria:
-
-reproduces trusted TI values on reference data
-
-handles invalid or incomplete inputs robustly
-
-Milestone 3: BAR
-
-Deliverables:
-
-BAR estimator
-
-uncertainty handling
-
-simple diagnostics
-
-reference tests
-
-Success criteria:
-
-stable convergence on test cases
-
-clear API for pairwise free energy estimation
-
-Milestone 4: MBAR
-
-Deliverables:
-
-MBAR estimator
-
-convergence controls
-
-pairwise matrix outputs
-
-overlap-related hooks
-
-Success criteria:
-
-numerically reliable on representative test cases
-
-practical performance on moderate datasets
-
-Milestone 5: First parser family
-
-Deliverables:
-
-one complete engine parser module
-
-fixtures
-
-parse-to-estimate example
-
-Success criteria:
-
-end-to-end workflow from engine output to ΔG
-
-Milestone 6: Preprocessing
-
-Deliverables:
-
-equilibration trimming
-
-decorrelation/subsampling
-
-transformation auditability
-
-Success criteria:
-
-preprocessing can be composed safely before estimators
-
-Milestone 7: Python bindings
-
-Deliverables:
-
-thin PyO3 wrapper
-
-packaging setup
-
-basic compatibility examples
-
-Success criteria:
-
-Python can call the Rust core successfully
-
-Rust remains the implementation center
-
-21. Recommended implementation order
-
+## Guidelines
+- keep most fields private
+- use constructors and accessors
+- avoid exposing internal implementation types
+- prefer a narrow pub surface until design stabilizes
+- do not promise semver stability too early
+
+# Milestones
+## Milestone 1: Core data model
+### Deliverables:
+- StatePoint
+- DhdlSeries
+- UNkMatrix
+- `result` types
+- typed error enum
+- validation constructors
+- unit tests
+### Success criteria:
+- canonical core types compile cleanly
+- invariants enforced
+- examples demonstrate construction and inspection
+
+## Milestone 2: TI
+### Deliverables:
+- TI estimator
+- integration methods
+- fixture tests
+- documentation examples
+### Success criteria:
+- reproduces trusted TI values on reference data
+- handles invalid or incomplete inputs robustly
+
+## Milestone 3: BAR
+### Deliverables:
+- BAR estimator
+- uncertainty handling
+- simple diagnostics
+- reference tests
+### Success criteria:
+- stable convergence on test cases
+- clear API for pairwise free energy estimation
+
+## Milestone 4: MBAR
+### Deliverables:
+- MBAR estimator
+- convergence controls
+- pairwise matrix outputs
+- overlap-related hooks
+### Success criteria:
+- numerically reliable on representative test cases
+- practical performance on moderate datasets
+## Milestone 5: First parser family
+### Deliverables:
+- one complete engine parser module
+- fixtures
+- parse-to-estimate example
+### Success criteria:
+- end-to-end workflow from engine output to ΔG
+
+## Milestone 6: Preprocessing
+### Deliverables:
+- equilibration trimming
+- decorrelation/subsampling
+- transformation auditability
+### Success criteria:
+- preprocessing can be composed safely before estimators
+
+## Milestone 7: Python bindings
+### Deliverables:
+- thin PyO3 wrapper
+- packaging setup
+- basic compatibility examples
+### Success criteria:
+- Python can call the Rust core successfully
+- Rust remains the implementation center
+
+# Recommended implementation order
 Follow this order:
-
-core types
-
-TI
-
-BAR
-
-MBAR
-
-one parser family
-
-preprocessing
-
-diagnostics
-
-Python bindings
+1) core types
+2) TI
+3) BAR
+4) MBAR
+5) first parser
+6) preprocessing
+7) diagnostics
+8) Python bindings
 
 This order minimizes architectural thrash and gets a useful Rust library working early.
 
-22. Key risks
-22.1 Data model mismatch
-
-Risk: the chosen canonical representation may not cover real parser and estimator needs cleanly.
-
+# Key risks
+## Data model mismatch
+The chosen canonical representation may not cover real parser and estimator needs cleanly.
 Mitigation:
+- keep initial API small
+- test against real fixtures early
+- revise core types before too much parser code exists
 
-keep initial API small
-
-test against real fixtures early
-
-revise core types before too much parser code exists
-
-22.2 MBAR complexity
-
-Risk: MBAR implementation may dominate time and complexity.
-
+## MBAR complexity
+MBAR implementation may dominate time and complexity.
 Mitigation:
+- do not begin with MBAR
+- validate core types through TI and BAR first
+- isolate numerical solver design
 
-do not begin with MBAR
-
-validate core types through TI and BAR first
-
-isolate numerical solver design
-
-22.3 Parser sprawl
-
-Risk: parser support expands too quickly and fragments the project.
-
+## Parser sprawl
+Parser support expands too quickly and fragments the project.
 Mitigation:
+- support one engine family first
+- require fixtures for every parser addition
 
-support one engine family first
-
-require fixtures for every parser addition
-
-22.4 Python compatibility pressure
-
-Risk: trying to preserve Python ergonomics too early may distort the Rust core.
-
+## Python compatibility pressure
+Trying to preserve Python ergonomics too early may distort the Rust core.
 Mitigation:
+- postpone bindings
+- treat compatibility as a wrapper concern
 
-postpone bindings
-
-treat compatibility as a wrapper concern
-
-23. Open design questions
-
+# Open design questions
 These should be resolved during implementation:
-
-Should lambda dimensions be named explicitly instead of stored as plain vectors?
-
-Should UNkMatrix expose ndarray publicly or keep it internal?
-
-What is the cleanest canonical input representation for BAR?
-
-How should uncertainty be represented for estimators with matrix outputs?
-
-Should time be stored as f64 in picoseconds, or as a stronger unit-aware type later?
-
-Should missing values be supported in parsed data, or rejected at construction?
-
-Which engine parser should be implemented first based on fixture availability and user relevance?
+- Should lambda dimensions be named explicitly instead of stored as plain vectors?
+- Should UNkMatrix expose ndarray publicly or keep it internal?
+- What is the cleanest canonical input representation for BAR?
+- How should uncertainty be represented for estimators with matrix outputs?
+- Should time be stored as f64 in picoseconds, or as a stronger unit-aware type later?
+- Should missing values be supported in parsed data, or rejected at construction?
+- Which engine parser should be implemented first based on fixture availability and user relevance?
 
