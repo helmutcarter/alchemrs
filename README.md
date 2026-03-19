@@ -64,4 +64,4 @@ cargo run -p alchemrs-cli --release -- dexp \
   /path/to/*/prod.out
 ```
 
-EXP reports ΔF from the first to last lambda using samples from the first window. DEXP reports the reverse direction using samples from the last window.
+EXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
