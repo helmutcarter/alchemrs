@@ -17,25 +17,24 @@ This document defines the architecture, scope, data model, public API direction,
 
 # Goals
 Primary goals:
-- Make Rust the source of truth
-- Core algorithms, parsers, and data structures live in Rust.
+- First-class support for alchemical free energy methods in Rust
+- All core algorithms, parsers, and data structures live in Rust.
     - Python is a client binding, not the implementation center.
 - Provide a clean Rust API
     - The library should feel like an idiomatic Rust crate.
     - Internal design should not be shaped around pandas or Python objects.
 - Preserve scientific correctness
-    - Results should reproduce trusted reference outputs within reasonable numerical tolerance.
+    - Results should reproduce trusted reference outputs within reasonable numerical tolerance, enforced with testing.
 - Support incremental adoption
-    - The project should deliver useful standalone milestones before full feature parity.
+    - The project should deliver useful standalone milestones
 - Enable Python compatibility later
     - The Rust core should be easy to wrap using PyO3 or similar bindings.
 
 # Non-goals
 
 These are explicitly out of scope for the initial design:
-- one-to-one reproduction of the full current Python API
+- one-to-one reproduction of `alchemlyb`
 - first-class plotting in the Rust core
-- perfect feature parity in the first release
 - support for every MD engine immediately
 - preserving pandas as the central abstraction
 - implementing every convenience helper before core estimators are stable
@@ -49,7 +48,7 @@ The final system should support a workflow like:
 3) Trim and decorrelate time series if needed
 4) Run TI, BAR, or MBAR
 5) Compute uncertainty, overlap, and convergence diagnostics
-6) Expose the same core functionality to Python users through bindings
+6) Expose the same core functionality through python bindings and a CLI
 
 Example future Rust usage:
 ~~~rust
@@ -67,7 +66,7 @@ fn main() -> Result<(), alchemrs::Error> {
 ~~~
 # Design principles
 ## Rust-first, not Python-first
-The internal architecture must remain valid even if Python bindings never exist.
+The internal architecture should remain valid even if Python bindings never exist.
 
 ## Strong typing over implicit conventions
 State metadata, dimensions, and measurement types should be encoded in types and validated structures, not inferred from DataFrame column names.
@@ -357,7 +356,7 @@ This keeps implementation flexible while preserving ergonomics.
 
 ## Floating-point precision
 
-Use f64 by default throughout the core.
+Use f64 by default throughout the core. Use fused-multiply add where possible.
 Reasoning:
 - scientific analysis requires stable precision
 - alignment with existing scientific Python expectations
@@ -370,7 +369,7 @@ If MBAR requires matrix operations or solvers, evaluate:
 - ndarray-linalg
 - custom iterative implementations where practical
 
-The abstraction should not assume a heavyweight backend until required.
+The abstraction should not use a heavyweight backend unless required.
 
 # Estimator design
 ## TI
@@ -380,7 +379,7 @@ Inputs
 
 Outputs
 - overall free energy estimate
-- uncertainty if supported
+- uncertainty 
 - per-window summaries if useful
 
 Initial API sketch
@@ -459,7 +458,7 @@ Functions should return a new structure or a view-like wrapper.
 
 Example:
 ~~~rust
-pub fn trim_equilibration(series: &DhdlSeries, start_index: usize) -> Result<DhdlSeries, Error>;
+pub fn remove_burnin(series: &DhdlSeries, start_index: usize) -> Result<DhdlSeries, Error>;
 ~~~
 ## Decorrelation
 
@@ -467,6 +466,7 @@ Possible methods:
 - statistical inefficiency-based subsampling
 - user-specified stride
 - no decorrelation
+- should match `alchemlyb`/`pymbar` to start with
 
 Example:
 ~~~rust
@@ -493,11 +493,13 @@ Parsers should convert engine outputs into canonical core types. They should not
 - minimal leakage of engine-specific quirks into the core API
 
 ## Parser module layout
+~~~text
 alchemrs-parse/
   amber/
   gromacs/
   namd/
   common/
+~~~
 ## Parser API sketch
 ~~~rust
 pub mod amber {
@@ -512,11 +514,11 @@ pub mod amber {
 
 Implement parser families one at a time. Do not attempt all engines in the first milestone.
 Recommendation:
-- start with the engine most relevant to your own work and available fixtures
+- start with AMBER (`.rst7` + `.parm7`) because I know it best, and it'll be most useful to me
 - prioritize fixture coverage over theoretical completeness
 
 # Analysis and diagnostics
-These components are important, but they should follow the estimators rather than block them.
+These components are important, but they should follow the estimators rather than block them. Performance concerns should be secondary.
 
 ## Potential analysis functions:
 - overlap matrix computation
@@ -547,7 +549,7 @@ Python support should be added after the Rust core is coherent.
 The Python package should be treated as a separate product layer built on the Rust core.
 
 # Testing strategy
-Testing is central to this project.
+Testing is central to this project. It will ensure first-class support for MD engines and trajectory formats that I have less familiarity with.
 
 ## Unit tests
 
@@ -558,7 +560,7 @@ Every core type and estimator should have unit tests for:
 - edge cases such as empty or singular inputs
 
 ## Fixture tests
-Use known engine outputs and reference results.
+Use minimal engine outputs and reference results.
 
 Tests should verify:
 - parser correctness
@@ -725,7 +727,7 @@ These should be resolved during implementation:
 - Should UNkMatrix expose ndarray publicly or keep it internal?
 - What is the cleanest canonical input representation for BAR?
 - How should uncertainty be represented for estimators with matrix outputs?
-- Should time be stored as f64 in picoseconds, or as a stronger unit-aware type later?
+- Should time be stored as `f64` in picoseconds, or as a stronger unit-aware type later? What about `usize` in femtoseconds?
 - Should missing values be supported in parsed data, or rejected at construction?
-- Which engine parser should be implemented first based on fixture availability and user relevance?
+- How are infintite potential energy values handled by different engines? How should I treat them?
 
