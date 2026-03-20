@@ -1,6 +1,6 @@
 # alchemrs
 
-Rust library for alchemical free energy analysis.
+`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. It provides a layered workspace of crates for parsing AMBER outputs, preprocessing time series (equilibration trimming and decorrelation), and running common estimators (TI, BAR, MBAR, EXP/DEXP) plus diagnostics like overlap analysis. A CLI (alchemrs-cli) offers a simple command-line workflow, and the top-level `alchemrs` crate re-exports a clean public API for library use. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
 
 ## CLI
 
