@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use alchemrs_core::{DhdlSeries, UNkMatrix};
-use alchemrs_parse::amber::{extract_dhdl, extract_u_nk};
-use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk, DecorrelationOptions, UNkSeriesMethod};
+use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk_with_observable, DecorrelationOptions};
 
 use crate::CliResult;
 
@@ -44,11 +44,20 @@ pub fn load_windows(
 ) -> CliResult<Vec<UNkMatrix>> {
     let mut windows = Vec::with_capacity(inputs.len());
     for path in inputs {
+        if options.decorrelate {
+            let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)?;
+            u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
+            let potential = trim_values(potential, options.remove_burnin)?;
+            u_nk = decorrelate_u_nk_with_observable(
+                &u_nk,
+                &potential,
+                &options.decorrelation_options(),
+            )?;
+            windows.push(u_nk);
+            continue;
+        }
         let mut u_nk = extract_u_nk(path, options.temperature)?;
         u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
-        if options.decorrelate {
-            u_nk = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &options.decorrelation_options())?;
-        }
         windows.push(u_nk);
     }
     Ok(windows)
@@ -106,4 +115,16 @@ fn trim_dhdl(dhdl: DhdlSeries, remove_burnin: usize) -> CliResult<DhdlSeries> {
     let new_time = dhdl.time_ps()[remove_burnin..].to_vec();
     let new_values = values[remove_burnin..].to_vec();
     Ok(DhdlSeries::new(dhdl.state().clone(), new_time, new_values)?)
+}
+
+fn trim_values(values: Vec<f64>, remove_burnin: usize) -> CliResult<Vec<f64>> {
+    if remove_burnin == 0 {
+        return Ok(values);
+    }
+
+    if remove_burnin >= values.len() {
+        return Err("remove-burnin exceeds series length".into());
+    }
+
+    Ok(values[remove_burnin..].to_vec())
 }

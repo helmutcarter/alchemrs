@@ -36,8 +36,12 @@ pub mod amber {
         },
         #[error("missing {field} in NSTEP block")]
         MissingGradientField { field: &'static str },
+        #[error("missing {field} in NSTEP block")]
+        MissingPotentialField { field: &'static str },
         #[error("no DV/DL gradients found in AMBER output")]
         NoGradients,
+        #[error("no EPtot values found in AMBER output")]
+        NoPotentialSamples,
         #[error("no MBAR lambda values found in AMBER output")]
         NoMbarLambdas,
         #[error("clambda {clambda:.4} not found in MBAR lambda list; cannot build u_nk")]
@@ -46,6 +50,13 @@ pub mod amber {
         NoMbarSamples,
         #[error("all MBAR samples contained non-finite values")]
         NoFiniteMbarSamples,
+        #[error(
+            "EPtot sample count {potential_samples} does not match MBAR sample count {u_nk_samples}"
+        )]
+        PotentialSampleCountMismatch {
+            u_nk_samples: usize,
+            potential_samples: usize,
+        },
         #[error(
             "missing MBAR energy entries in block {sample_idx} for lambdas {missing_lambdas:?}"
         )]
@@ -192,7 +203,24 @@ pub mod amber {
         path: impl AsRef<Path>,
         temperature_k: f64,
     ) -> Result<alchemrs_core::UNkMatrix> {
-        let header = read_u_nk_header(path.as_ref())?;
+        let (u_nk, _potential) = extract_u_nk_internal(path.as_ref(), temperature_k, false)?;
+        Ok(u_nk)
+    }
+
+    pub fn extract_u_nk_with_potential(
+        path: impl AsRef<Path>,
+        temperature_k: f64,
+    ) -> Result<(alchemrs_core::UNkMatrix, Vec<f64>)> {
+        let (u_nk, potential) = extract_u_nk_internal(path.as_ref(), temperature_k, true)?;
+        Ok((u_nk, potential.expect("potential samples requested")))
+    }
+
+    fn extract_u_nk_internal(
+        path: &Path,
+        temperature_k: f64,
+        include_potential: bool,
+    ) -> Result<(alchemrs_core::UNkMatrix, Option<Vec<f64>>)> {
+        let header = read_u_nk_header(path)?;
         if (temperature_k - header.temp0).abs() > 1e-2 {
             return Err(AmberParseError::TemperatureMismatch {
                 file_temperature_k: header.temp0,
@@ -213,7 +241,7 @@ pub mod amber {
             })?;
 
         let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
-        let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
+        let file = File::open(path).map_err(|err| AmberParseError::Io {
             operation: "open",
             message: err.to_string(),
         })?;
@@ -226,6 +254,9 @@ pub mod amber {
         let mut reduced_row = Vec::with_capacity(n_states);
         let mut time_ps = Vec::new();
         let mut data = Vec::new();
+        let mut potential_samples = Vec::new();
+        let mut pending_nstep_block: Option<String> = None;
+        let mut last_potential_nstep: Option<i64> = None;
 
         loop {
             line.clear();
@@ -239,6 +270,29 @@ pub mod amber {
                 break;
             }
             let line = line.trim_end_matches(&['\r', '\n'][..]);
+
+            if include_potential {
+                if let Some(mut block) = pending_nstep_block.take() {
+                    block.push(' ');
+                    block.push_str(line);
+                    if line.trim_start().starts_with("---") {
+                        handle_potential_block(
+                            &block,
+                            &mut last_potential_nstep,
+                            &mut potential_samples,
+                        )?;
+                    } else {
+                        pending_nstep_block = Some(block);
+                    }
+                    continue;
+                }
+            }
+
+            if include_potential && (line.starts_with(" NSTEP") || line.starts_with("NSTEP")) {
+                pending_nstep_block = Some(line.to_string());
+                continue;
+            }
+
             if is_mbar_energy_start(line) {
                 in_mbar_block = true;
                 block_energies.fill(None);
@@ -266,6 +320,12 @@ pub mod amber {
                 continue;
             }
             parse_mbar_energy_line(line, encountered_blocks, &lambda_index, &mut block_energies)?;
+        }
+
+        if let Some(block) = pending_nstep_block {
+            if include_potential {
+                handle_potential_block(&block, &mut last_potential_nstep, &mut potential_samples)?;
+            }
         }
 
         if in_mbar_block {
@@ -300,7 +360,7 @@ pub mod amber {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(AmberParseError::from)?;
 
-        alchemrs_core::UNkMatrix::new(
+        let u_nk = alchemrs_core::UNkMatrix::new(
             time_ps.len(),
             n_states,
             data,
@@ -308,7 +368,23 @@ pub mod amber {
             sampled_state,
             evaluated_states,
         )
-        .map_err(Into::into)
+        .map_err(AmberParseError::from)?;
+
+        if !include_potential {
+            return Ok((u_nk, None));
+        }
+
+        if potential_samples.is_empty() {
+            return Err(AmberParseError::NoPotentialSamples);
+        }
+        if potential_samples.len() != u_nk.n_samples() {
+            return Err(AmberParseError::PotentialSampleCountMismatch {
+                u_nk_samples: u_nk.n_samples(),
+                potential_samples: potential_samples.len(),
+            });
+        }
+
+        Ok((u_nk, Some(potential_samples)))
     }
 
     struct UNkHeader {
@@ -577,12 +653,33 @@ pub mod amber {
         *last_nstep = Some(nstep);
         Ok(())
     }
+
+    fn handle_potential_block(
+        block: &str,
+        last_nstep: &mut Option<i64>,
+        potential_samples: &mut Vec<f64>,
+    ) -> Result<()> {
+        let nstep = capture_field(block, "NSTEP")?
+            .map(|value| value as i64)
+            .ok_or(AmberParseError::MissingPotentialField { field: "NSTEP" })?;
+        if let Some(prev) = last_nstep {
+            if *prev == nstep {
+                return Ok(());
+            }
+        }
+        let epot = capture_field(block, "EPtot")?
+            .ok_or(AmberParseError::MissingPotentialField { field: "EPtot" })?;
+        potential_samples.push(epot);
+        *last_nstep = Some(nstep);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::amber::extract_dhdl;
     use super::amber::extract_u_nk;
+    use super::amber::extract_u_nk_with_potential;
     use std::io::Write;
 
     #[test]
@@ -716,5 +813,47 @@ Energy at 0.1000 =     -9.0
         let u_nk = extract_u_nk(file.path(), 300.0).unwrap();
         assert_eq!(u_nk.n_samples(), 1);
         assert_eq!(u_nk.data().len(), 2);
+    }
+
+    #[test]
+    fn parse_amber_u_nk_with_potential_samples() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Nature and format of output:
+ ntpr =       10
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.1000
+FEP MBAR options:
+    ifmbar = 1, bar_intervall = 10
+    mbar_states = 2
+    MBAR - lambda values considered:
+      2 total:  0.0000 0.1000
+    Extra energies will be computed 2 times.
+   3.  ATOMIC
+ begin time coords = 0.0
+   4.  RESULTS
+MBAR Energy analysis:
+Energy at 0.0000 =    -10.0
+Energy at 0.1000 =     -9.0
+ ---
+MBAR Energy analysis:
+Energy at 0.0000 =    -11.0
+Energy at 0.1000 =     -8.0
+ ---
+ NSTEP =       10  TIME(PS) =       0.02  EPtot =   -9.0000  DV/DL =     1.0000
+ ---
+ NSTEP =       20  TIME(PS) =       0.04  EPtot =   -8.0000  DV/DL =     2.0000
+ ---
+   5.  TIMINGS
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let (u_nk, potential) = extract_u_nk_with_potential(file.path(), 300.0).unwrap();
+        assert_eq!(u_nk.n_samples(), 2);
+        assert_eq!(potential, vec![-9.0, -8.0]);
     }
 }

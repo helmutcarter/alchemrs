@@ -99,6 +99,34 @@ pub fn decorrelate_u_nk(
     )
 }
 
+pub fn decorrelate_u_nk_with_observable(
+    u_nk: &UNkMatrix,
+    observable: &[f64],
+    options: &DecorrelationOptions,
+) -> Result<UNkMatrix> {
+    let (time, data, observable) = prepare_u_nk_with_observable(
+        u_nk.time_ps(),
+        u_nk.data(),
+        u_nk.n_states(),
+        observable,
+        options.drop_duplicates,
+        options.sort,
+    )?;
+    let (time, data, observable) =
+        apply_time_slice_u_nk(&time, &data, u_nk.n_states(), &observable, options)?;
+    let indices = subsample_indices(&observable, options)?;
+    let (time, data) = apply_indices_u_nk(&time, &data, u_nk.n_states(), &indices);
+
+    UNkMatrix::new(
+        indices.len(),
+        u_nk.n_states(),
+        data,
+        time,
+        u_nk.sampled_state().cloned(),
+        u_nk.evaluated_states().to_vec(),
+    )
+}
+
 pub fn detect_equilibration_u_nk(
     u_nk: &UNkMatrix,
     method: UNkSeriesMethod,
@@ -191,6 +219,55 @@ fn prepare_u_nk(
         }
     }
     Ok((time, data))
+}
+
+fn prepare_u_nk_with_observable(
+    time: &[f64],
+    data: &[f64],
+    n_states: usize,
+    observable: &[f64],
+    drop_duplicates: bool,
+    sort: bool,
+) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>)> {
+    if time.len() != observable.len() {
+        return Err(CoreError::InvalidShape {
+            expected: time.len(),
+            found: observable.len(),
+        });
+    }
+    if observable.iter().any(|value| !value.is_finite()) {
+        return Err(CoreError::NonFiniteValue(
+            "decorrelation observable must be finite".to_string(),
+        ));
+    }
+    let mut time = time.to_vec();
+    let mut data = data.to_vec();
+    let mut observable = observable.to_vec();
+    if has_duplicates(&time) {
+        if drop_duplicates {
+            let (new_time, indices) = unique_time_indices(&time);
+            time = new_time;
+            data = select_u_nk_rows(&data, n_states, &indices);
+            observable = select_values(&observable, &indices);
+        } else {
+            return Err(CoreError::InvalidState(
+                "duplicate time values found".to_string(),
+            ));
+        }
+    }
+    if !is_sorted(&time) {
+        if sort {
+            let (sorted_time, indices) = sorted_time_indices(&time);
+            time = sorted_time;
+            data = select_u_nk_rows(&data, n_states, &indices);
+            observable = select_values(&observable, &indices);
+        } else {
+            return Err(CoreError::InvalidTimeOrder(
+                "time values are not sorted".to_string(),
+            ));
+        }
+    }
+    Ok((time, data, observable))
 }
 
 fn apply_time_slice(
@@ -407,6 +484,14 @@ fn select_u_nk_rows(data: &[f64], n_states: usize, indices: &[usize]) -> Vec<f64
     out
 }
 
+fn select_values(values: &[f64], indices: &[usize]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(indices.len());
+    for &idx in indices {
+        out.push(values[idx]);
+    }
+    out
+}
+
 fn statistical_inefficiency(values: &[f64], fast: bool) -> Result<f64> {
     if values.is_empty() {
         return Err(CoreError::InvalidShape {
@@ -592,5 +677,30 @@ mod tests {
         let err = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
             .unwrap_err();
         assert!(matches!(err, CoreError::NonFiniteValue(_)));
+    }
+
+    #[test]
+    fn decorrelate_u_nk_with_observable_accepts_positive_infinity_matrix() {
+        let state0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let state1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let u_nk = UNkMatrix::new(
+            4,
+            2,
+            vec![0.0, 1.0, 0.0, f64::INFINITY, 0.0, 2.0, 0.0, 3.0],
+            vec![0.0, 1.0, 2.0, 3.0],
+            Some(state0.clone()),
+            vec![state0, state1],
+        )
+        .unwrap();
+
+        let result = decorrelate_u_nk_with_observable(
+            &u_nk,
+            &[10.0, 11.0, 12.0, 13.0],
+            &DecorrelationOptions::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.n_samples(), 4);
+        assert_eq!(result.data()[3], f64::INFINITY);
     }
 }
