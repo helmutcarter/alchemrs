@@ -16,7 +16,8 @@ pub fn run(
     output_path: Option<PathBuf>,
     parallel: bool,
 ) -> CliResult<()> {
-    let series = load_dhdl_series(inputs, input_options)?;
+    let loaded = load_dhdl_series(inputs, input_options)?;
+    let series = loaded.series;
     let estimator = TiEstimator::new(TiOptions {
         method: method.into(),
         parallel,
@@ -41,6 +42,7 @@ pub fn run(
                 conservative: input_options.conservative,
                 nskip: input_options.nskip,
             },
+            sample_counts: loaded.sample_counts,
         },
         output_format,
         output_path.as_deref(),

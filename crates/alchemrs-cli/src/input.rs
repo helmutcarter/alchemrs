@@ -6,6 +6,24 @@ use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk_with_observable, Decorrel
 
 use crate::CliResult;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnalysisSampleCounts {
+    pub windows: usize,
+    pub samples_in: usize,
+    pub samples_after_burnin: usize,
+    pub samples_kept: usize,
+}
+
+pub struct LoadedWindows {
+    pub windows: Vec<UNkMatrix>,
+    pub sample_counts: AnalysisSampleCounts,
+}
+
+pub struct LoadedDhdlSeries {
+    pub series: Vec<DhdlSeries>,
+    pub sample_counts: AnalysisSampleCounts,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct AnalysisInputOptions {
     pub temperature: f64,
@@ -41,42 +59,73 @@ impl AnalysisInputOptions {
 pub fn load_windows(
     inputs: Vec<PathBuf>,
     options: AnalysisInputOptions,
-) -> CliResult<Vec<UNkMatrix>> {
+) -> CliResult<LoadedWindows> {
     let mut windows = Vec::with_capacity(inputs.len());
+    let mut samples_in = 0;
+    let mut samples_after_burnin = 0;
+    let mut samples_kept = 0;
     for path in inputs {
         if options.decorrelate {
             let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)?;
+            samples_in += u_nk.n_samples();
             u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
+            samples_after_burnin += u_nk.n_samples();
             let potential = trim_values(potential, options.remove_burnin)?;
             u_nk = decorrelate_u_nk_with_observable(
                 &u_nk,
                 &potential,
                 &options.decorrelation_options(),
             )?;
+            samples_kept += u_nk.n_samples();
             windows.push(u_nk);
             continue;
         }
         let mut u_nk = extract_u_nk(path, options.temperature)?;
+        samples_in += u_nk.n_samples();
         u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
+        samples_after_burnin += u_nk.n_samples();
+        samples_kept += u_nk.n_samples();
         windows.push(u_nk);
     }
-    Ok(windows)
+    Ok(LoadedWindows {
+        sample_counts: AnalysisSampleCounts {
+            windows: windows.len(),
+            samples_in,
+            samples_after_burnin,
+            samples_kept,
+        },
+        windows,
+    })
 }
 
 pub fn load_dhdl_series(
     inputs: Vec<PathBuf>,
     options: AnalysisInputOptions,
-) -> CliResult<Vec<DhdlSeries>> {
+) -> CliResult<LoadedDhdlSeries> {
     let mut series = Vec::with_capacity(inputs.len());
+    let mut samples_in = 0;
+    let mut samples_after_burnin = 0;
+    let mut samples_kept = 0;
     for path in inputs {
         let mut dhdl = extract_dhdl(path, options.temperature)?;
+        samples_in += dhdl.values().len();
         dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
+        samples_after_burnin += dhdl.values().len();
         if options.decorrelate {
             dhdl = decorrelate_dhdl(&dhdl, &options.decorrelation_options())?;
         }
+        samples_kept += dhdl.values().len();
         series.push(dhdl);
     }
-    Ok(series)
+    Ok(LoadedDhdlSeries {
+        sample_counts: AnalysisSampleCounts {
+            windows: series.len(),
+            samples_in,
+            samples_after_burnin,
+            samples_kept,
+        },
+        series,
+    })
 }
 
 fn trim_u_nk(u_nk: UNkMatrix, remove_burnin: usize) -> CliResult<UNkMatrix> {

@@ -40,6 +40,7 @@ fn mbar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let result = estimator.fit(&windows).expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_overlap = compute_overlap_summary(&windows);
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
 
     assert_close(
         payload["delta_f"].as_f64().expect("delta_f"),
@@ -68,6 +69,22 @@ fn mbar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     assert_eq!(payload["provenance"]["fast"].as_bool(), Some(false));
     assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(true));
     assert_eq!(payload["provenance"]["nskip"].as_u64(), Some(1));
+    assert_eq!(
+        payload["provenance"]["windows"].as_u64(),
+        Some(expected_counts.windows as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_in"].as_u64(),
+        Some(expected_counts.samples_in as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_after_burnin"].as_u64(),
+        Some(expected_counts.samples_after_burnin as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
 
     let overlap = payload["overlap"].as_object().expect("overlap object");
     assert_close(
@@ -107,6 +124,7 @@ fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let result = estimator.fit(&windows).expect("fit BAR");
     let delta_index = result.n_states() - 1;
     let expected_overlap = compute_overlap_summary(&windows);
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
 
     assert_close(
         payload["delta_f"].as_f64().expect("delta_f"),
@@ -147,6 +165,22 @@ fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     assert_eq!(payload["provenance"]["fast"].as_bool(), Some(false));
     assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(true));
     assert_eq!(payload["provenance"]["nskip"].as_u64(), Some(1));
+    assert_eq!(
+        payload["provenance"]["windows"].as_u64(),
+        Some(expected_counts.windows as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_in"].as_u64(),
+        Some(expected_counts.samples_in as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_after_burnin"].as_u64(),
+        Some(expected_counts.samples_after_burnin as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
 
     let overlap = payload["overlap"].as_object().expect("overlap object");
     assert_close(
@@ -174,6 +208,7 @@ fn ti_cli_outputs_expected_json_when_decorrelating() {
         ..TiOptions::default()
     });
     let result = estimator.fit(&series).expect("fit TI");
+    let expected_counts = expected_dhdl_counts(&inputs, &series);
 
     assert_close(
         payload["delta_f"].as_f64().expect("delta_f"),
@@ -194,6 +229,22 @@ fn ti_cli_outputs_expected_json_when_decorrelating() {
     assert!(payload["overlap"].is_null(), "expected null overlap");
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("ti"));
     assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(
+        payload["provenance"]["windows"].as_u64(),
+        Some(expected_counts.windows as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_in"].as_u64(),
+        Some(expected_counts.samples_in as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_after_burnin"].as_u64(),
+        Some(expected_counts.samples_after_burnin as u64)
+    );
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
 }
 
 #[test]
@@ -219,6 +270,7 @@ fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let result = estimator.fit(&windows).expect("fit EXP");
     let delta_index = result.n_states() - 1;
     let expected_overlap = compute_overlap_summary(&windows);
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
 
     assert_close(
         payload["delta_f"].as_f64().expect("delta_f"),
@@ -232,6 +284,10 @@ fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 1.0);
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("exp"));
     assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
     assert_close(
         payload["overlap"]["scalar"]
             .as_f64()
@@ -264,6 +320,7 @@ fn dexp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let n_states = result.n_states();
     let delta_index = (n_states - 1) * n_states;
     let expected_overlap = compute_overlap_summary(&windows);
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
 
     assert_close(
         payload["delta_f"].as_f64().expect("delta_f"),
@@ -277,6 +334,10 @@ fn dexp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 0.0);
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("dexp"));
     assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
     assert_close(
         payload["overlap"]["scalar"]
             .as_f64()
@@ -312,6 +373,12 @@ fn mbar_cli_writes_json_to_output_file() {
     assert!(payload["delta_f"].as_f64().expect("delta_f").is_finite());
     assert_eq!(payload["units"].as_str(), Some("kT"));
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("mbar"));
+    assert!(
+        payload["provenance"]["samples_kept"]
+            .as_u64()
+            .expect("samples_kept")
+            > 0
+    );
 
     fs::remove_file(&output_path).expect("remove CLI output file");
 }
@@ -383,6 +450,50 @@ fn load_decorrelated_window(path: &Path) -> alchemrs_core::UNkMatrix {
         .expect("decorrelate u_nk")
 }
 
+fn expected_u_nk_counts(
+    inputs: &[PathBuf],
+    windows: &[alchemrs_core::UNkMatrix],
+) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
+    let samples_in = inputs
+        .iter()
+        .map(|path| {
+            extract_u_nk_with_potential(path, TEMPERATURE_K)
+                .expect("parse raw u_nk")
+                .0
+                .n_samples()
+        })
+        .sum();
+    let samples_kept = windows.iter().map(|window| window.n_samples()).sum();
+    alchemrs_cli_input_like::AnalysisSampleCountsLike {
+        windows: windows.len(),
+        samples_in,
+        samples_after_burnin: samples_in,
+        samples_kept,
+    }
+}
+
+fn expected_dhdl_counts(
+    inputs: &[PathBuf],
+    series: &[alchemrs_core::DhdlSeries],
+) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
+    let samples_in = inputs
+        .iter()
+        .map(|path| {
+            extract_dhdl(path, TEMPERATURE_K)
+                .expect("parse raw dhdl")
+                .values()
+                .len()
+        })
+        .sum();
+    let samples_kept = series.iter().map(|item| item.values().len()).sum();
+    alchemrs_cli_input_like::AnalysisSampleCountsLike {
+        windows: series.len(),
+        samples_in,
+        samples_after_burnin: samples_in,
+        samples_kept,
+    }
+}
+
 fn compute_overlap_summary(windows: &[alchemrs_core::UNkMatrix]) -> (f64, Vec<f64>) {
     let overlap = overlap_matrix(
         windows,
@@ -410,4 +521,13 @@ fn assert_close(actual: f64, expected: f64) {
         (actual - expected).abs() <= tolerance,
         "expected {expected}, got {actual}"
     );
+}
+
+mod alchemrs_cli_input_like {
+    pub struct AnalysisSampleCountsLike {
+        pub windows: usize,
+        pub samples_in: usize,
+        pub samples_after_burnin: usize,
+        pub samples_kept: usize,
+    }
 }

@@ -81,7 +81,11 @@ Example JSON payload:
     "auto_equilibrate": false,
     "fast": false,
     "conservative": true,
-    "nskip": 1
+    "nskip": 1,
+    "windows": 15,
+    "samples_in": 300,
+    "samples_after_burnin": 300,
+    "samples_kept": 126
   }
 }
 ```
@@ -98,7 +102,7 @@ cargo run -p alchemrs-cli --release -- bar \
 CSV columns now include estimator provenance after the result fields:
 
 ```text
-delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip
+delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,windows,samples_in,samples_after_burnin,samples_kept
 ```
 
 ### TI (trapezoidal)

@@ -22,7 +22,8 @@ pub fn run(
     input_options: AnalysisInputOptions,
     run_options: BarRunOptions,
 ) -> CliResult<()> {
-    let windows = load_windows(inputs, input_options)?;
+    let loaded = load_windows(inputs, input_options)?;
+    let windows = loaded.windows;
     let overlap = if run_options.overlap_summary {
         Some(summarize_overlap(
             &windows,
@@ -60,6 +61,7 @@ pub fn run(
                 conservative: input_options.conservative,
                 nskip: input_options.nskip,
             },
+            sample_counts: loaded.sample_counts,
         },
         run_options.output_format,
         run_options.output_path.as_deref(),

@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::cli::{OutputFormat, OutputUnits};
+use crate::input::AnalysisSampleCounts;
 
 const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
 const K_B_KJ_PER_MOL_K: f64 = 0.00831446261815324;
@@ -15,6 +16,7 @@ pub struct ScalarResult {
     pub temperature: f64,
     pub overlap: Option<OverlapSummary>,
     pub provenance: OutputProvenance,
+    pub sample_counts: AnalysisSampleCounts,
 }
 
 pub struct OverlapSummary {
@@ -41,6 +43,7 @@ struct RenderedScalarResult<'a> {
     temperature: f64,
     overlap: Option<&'a OverlapSummary>,
     provenance: &'a OutputProvenance,
+    sample_counts: AnalysisSampleCounts,
 }
 
 pub fn print_scalar_result(
@@ -69,6 +72,7 @@ fn render_scalar_result(result: &ScalarResult, format: OutputFormat) -> String {
         temperature: result.temperature,
         overlap: result.overlap.as_ref(),
         provenance: &result.provenance,
+        sample_counts: result.sample_counts,
     };
 
     match format {
@@ -84,8 +88,12 @@ fn render_text(result: &RenderedScalarResult<'_>) -> String {
         .map(|value| format!("{value} {}", result.units))
         .unwrap_or_else(|| "none".to_string());
     let mut output = format!(
-        "delta_f: {} {}\nuncertainty: {sigma}\nfrom_lambda: {}\nto_lambda: {}\n",
+        "delta_f: {} {}\nuncertainty: {sigma}\nfrom_lambda: {}\nto_lambda: {}\nwindows: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\n",
         result.delta, result.units, result.from_lambda, result.to_lambda
+        ,result.sample_counts.windows
+        ,result.sample_counts.samples_in
+        ,result.sample_counts.samples_after_burnin
+        ,result.sample_counts.samples_kept
     );
     if let Some(overlap) = result.overlap {
         output.push_str(&format!("overlap_scalar: {}\n", overlap.scalar));
@@ -125,7 +133,7 @@ fn render_json(result: &RenderedScalarResult<'_>) -> String {
         })
         .unwrap_or_else(|| "null".to_string());
     let provenance = format!(
-        "{{\"estimator\":\"{}\",\"temperature_k\":{},\"decorrelate\":{},\"remove_burnin\":{},\"auto_equilibrate\":{},\"fast\":{},\"conservative\":{},\"nskip\":{}}}",
+        "{{\"estimator\":\"{}\",\"temperature_k\":{},\"decorrelate\":{},\"remove_burnin\":{},\"auto_equilibrate\":{},\"fast\":{},\"conservative\":{},\"nskip\":{},\"windows\":{},\"samples_in\":{},\"samples_after_burnin\":{},\"samples_kept\":{}}}",
         result.provenance.estimator,
         result.temperature,
         result.provenance.decorrelate,
@@ -133,7 +141,11 @@ fn render_json(result: &RenderedScalarResult<'_>) -> String {
         result.provenance.auto_equilibrate,
         result.provenance.fast,
         result.provenance.conservative,
-        result.provenance.nskip
+        result.provenance.nskip,
+        result.sample_counts.windows,
+        result.sample_counts.samples_in,
+        result.sample_counts.samples_after_burnin,
+        result.sample_counts.samples_kept
     );
     format!(
         "{{\"delta_f\":{},\"uncertainty\":{sigma},\"from_lambda\":{},\"to_lambda\":{},\"units\":\"{}\",\"overlap\":{overlap},\"provenance\":{provenance}}}\n",
@@ -162,7 +174,7 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> String {
         })
         .unwrap_or_default();
     format!(
-        "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues},{},{temperature},{},{},{},{},{},{}\n",
+        "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,windows,samples_in,samples_after_burnin,samples_kept\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues},{},{temperature},{},{},{},{},{},{},{},{},{},{}\n",
         result.provenance.estimator,
         result.provenance.decorrelate,
         result.provenance.remove_burnin,
@@ -170,6 +182,10 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> String {
         result.provenance.fast,
         result.provenance.conservative,
         result.provenance.nskip,
+        result.sample_counts.windows,
+        result.sample_counts.samples_in,
+        result.sample_counts.samples_after_burnin,
+        result.sample_counts.samples_kept,
         delta = result.delta,
         from_lambda = result.from_lambda,
         to_lambda = result.to_lambda,
@@ -198,6 +214,7 @@ fn format_units(units: OutputUnits) -> &'static str {
 mod tests {
     use super::{render_scalar_result, OutputProvenance, OverlapSummary, ScalarResult};
     use crate::cli::{OutputFormat, OutputUnits};
+    use crate::input::AnalysisSampleCounts;
 
     #[test]
     fn renders_scalar_result_as_json() {
@@ -219,13 +236,19 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                 },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 15,
+                    samples_in: 300,
+                    samples_after_burnin: 225,
+                    samples_kept: 120,
+                },
             },
             OutputFormat::Json,
         );
 
         assert_eq!(
             output,
-            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":0,\"to_lambda\":1,\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":true,\"remove_burnin\":5,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1}}\n"
+            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":0,\"to_lambda\":1,\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":true,\"remove_burnin\":5,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1,\"windows\":15,\"samples_in\":300,\"samples_after_burnin\":225,\"samples_kept\":120}}\n"
         );
     }
 
@@ -249,13 +272,19 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                 },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 2,
+                    samples_in: 40,
+                    samples_after_burnin: 40,
+                    samples_kept: 20,
+                },
             },
             OutputFormat::Csv,
         );
 
         assert_eq!(
             output,
-            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1\n"
+            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1,2,40,40,20\n"
         );
     }
 
@@ -282,13 +311,19 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                 },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 15,
+                    samples_in: 300,
+                    samples_after_burnin: 300,
+                    samples_kept: 120,
+                },
             },
             OutputFormat::Text,
         );
 
         assert_eq!(
             output,
-            "delta_f: 1.5 kT\nuncertainty: 0.25 kT\nfrom_lambda: 0\nto_lambda: 1\noverlap_scalar: 0.125\noverlap_eigenvalues: 1, 0.875, 0.5\n"
+            "delta_f: 1.5 kT\nuncertainty: 0.25 kT\nfrom_lambda: 0\nto_lambda: 1\nwindows: 15\nsamples_in: 300\nsamples_after_burnin: 300\nsamples_kept: 120\noverlap_scalar: 0.125\noverlap_eigenvalues: 1, 0.875, 0.5\n"
         );
     }
 }
