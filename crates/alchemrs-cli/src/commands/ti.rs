@@ -30,6 +30,7 @@ pub fn run(
             to_lambda: result.to_state().lambdas()[0],
             units: output_units,
             temperature: input_options.temperature,
+            overlap: None,
         },
         output_format,
     );

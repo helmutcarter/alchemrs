@@ -36,6 +36,7 @@ dependencies = [
 name = "alchemrs-cli"
 version = "0.1.0"
 dependencies = [
+ "alchemrs-analysis",
  "alchemrs-core",
  "alchemrs-estimators",
  "alchemrs-parse",

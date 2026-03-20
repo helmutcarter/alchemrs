@@ -1,10 +1,11 @@
 use std::path::PathBuf;
 
-use alchemrs_estimators::{BarEstimator, BarOptions};
+use alchemrs_estimators::{BarEstimator, BarOptions, MbarOptions};
 
 use crate::cli::{BarMethodArg, OutputFormat, OutputUnits};
 use crate::input::{load_windows, AnalysisInputOptions};
 use crate::output::{print_scalar_result, ScalarResult};
+use crate::overlap::summarize_overlap;
 use crate::CliResult;
 
 pub fn run(
@@ -13,9 +14,21 @@ pub fn run(
     method: BarMethodArg,
     output_units: OutputUnits,
     output_format: OutputFormat,
+    overlap_summary: bool,
     parallel: bool,
 ) -> CliResult<()> {
     let windows = load_windows(inputs, input_options)?;
+    let overlap = if overlap_summary {
+        Some(summarize_overlap(
+            &windows,
+            Some(MbarOptions {
+                parallel,
+                ..MbarOptions::default()
+            }),
+        )?)
+    } else {
+        None
+    };
     let estimator = BarEstimator::new(BarOptions {
         method: method.into(),
         parallel,
@@ -32,6 +45,7 @@ pub fn run(
             to_lambda: result.states().last().unwrap().lambdas()[0],
             units: output_units,
             temperature: input_options.temperature,
+            overlap,
         },
         output_format,
     );

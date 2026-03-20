@@ -44,6 +44,7 @@ pub fn run(command: Command) -> CliResult<()> {
             method,
             output_units,
             output_format,
+            overlap_summary,
             parallel,
             decorrelate,
             remove_burnin,
@@ -65,6 +66,7 @@ pub fn run(command: Command) -> CliResult<()> {
             method,
             output_units,
             output_format,
+            overlap_summary,
             parallel,
         ),
         Command::Exp {
@@ -79,6 +81,7 @@ pub fn run(command: Command) -> CliResult<()> {
             no_uncertainty,
             output_units,
             output_format,
+            overlap_summary,
             parallel,
         } => exp::run_forward(
             inputs,
@@ -91,10 +94,13 @@ pub fn run(command: Command) -> CliResult<()> {
                 conservative,
                 nskip,
             ),
-            no_uncertainty,
-            output_units,
-            output_format,
-            parallel,
+            exp::ExpRunOptions {
+                no_uncertainty,
+                output_units,
+                output_format,
+                overlap_summary,
+                parallel,
+            },
         ),
         Command::Dexp {
             inputs,
@@ -108,6 +114,7 @@ pub fn run(command: Command) -> CliResult<()> {
             no_uncertainty,
             output_units,
             output_format,
+            overlap_summary,
             parallel,
         } => exp::run_reverse(
             inputs,
@@ -120,10 +127,13 @@ pub fn run(command: Command) -> CliResult<()> {
                 conservative,
                 nskip,
             ),
-            no_uncertainty,
-            output_units,
-            output_format,
-            parallel,
+            exp::ExpRunOptions {
+                no_uncertainty,
+                output_units,
+                output_format,
+                overlap_summary,
+                parallel,
+            },
         ),
         Command::Mbar {
             inputs,
@@ -139,6 +149,7 @@ pub fn run(command: Command) -> CliResult<()> {
             no_uncertainty,
             output_units,
             output_format,
+            overlap_summary,
             parallel,
         } => mbar::run(
             inputs,
@@ -157,6 +168,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 no_uncertainty,
                 output_units,
                 output_format,
+                overlap_summary,
                 parallel,
             },
         ),

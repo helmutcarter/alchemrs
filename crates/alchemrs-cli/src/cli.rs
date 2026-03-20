@@ -67,6 +67,9 @@ pub enum Command {
         /// Output format
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// Include overlap scalar and eigenvalues in the output
+        #[arg(long = "overlap-summary")]
+        overlap_summary: bool,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -123,6 +126,9 @@ pub enum Command {
         /// Output format
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// Include overlap scalar and eigenvalues in the output
+        #[arg(long = "overlap-summary")]
+        overlap_summary: bool,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -161,6 +167,9 @@ pub enum Command {
         /// Output format
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// Include overlap scalar and eigenvalues in the output
+        #[arg(long = "overlap-summary")]
+        overlap_summary: bool,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -205,6 +214,9 @@ pub enum Command {
         /// Output format
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// Include overlap scalar and eigenvalues in the output
+        #[arg(long = "overlap-summary")]
+        overlap_summary: bool,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,

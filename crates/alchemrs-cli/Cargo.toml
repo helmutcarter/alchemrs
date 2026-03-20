@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+alchemrs-analysis = { path = "../alchemrs-analysis" }
 alchemrs-core = { path = "../alchemrs-core" }
 alchemrs-estimators = { path = "../alchemrs-estimators" }
 alchemrs-parse = { path = "../alchemrs-parse" }

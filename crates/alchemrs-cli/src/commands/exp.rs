@@ -1,63 +1,58 @@
 use std::path::PathBuf;
 
-use alchemrs_estimators::{ExpEstimator, ExpOptions};
+use alchemrs_estimators::{ExpEstimator, ExpOptions, MbarOptions};
 
 use crate::cli::{OutputFormat, OutputUnits};
 use crate::input::{load_windows, AnalysisInputOptions};
 use crate::output::{print_scalar_result, ScalarResult};
+use crate::overlap::summarize_overlap;
 use crate::CliResult;
+
+pub struct ExpRunOptions {
+    pub no_uncertainty: bool,
+    pub output_units: OutputUnits,
+    pub output_format: OutputFormat,
+    pub overlap_summary: bool,
+    pub parallel: bool,
+}
 
 pub fn run_forward(
     inputs: Vec<PathBuf>,
     input_options: AnalysisInputOptions,
-    no_uncertainty: bool,
-    output_units: OutputUnits,
-    output_format: OutputFormat,
-    parallel: bool,
+    run_options: ExpRunOptions,
 ) -> CliResult<()> {
-    run(
-        inputs,
-        input_options,
-        no_uncertainty,
-        output_units,
-        output_format,
-        parallel,
-        false,
-    )
+    run(inputs, input_options, run_options, false)
 }
 
 pub fn run_reverse(
     inputs: Vec<PathBuf>,
     input_options: AnalysisInputOptions,
-    no_uncertainty: bool,
-    output_units: OutputUnits,
-    output_format: OutputFormat,
-    parallel: bool,
+    run_options: ExpRunOptions,
 ) -> CliResult<()> {
-    run(
-        inputs,
-        input_options,
-        no_uncertainty,
-        output_units,
-        output_format,
-        parallel,
-        true,
-    )
+    run(inputs, input_options, run_options, true)
 }
 
 fn run(
     inputs: Vec<PathBuf>,
     input_options: AnalysisInputOptions,
-    no_uncertainty: bool,
-    output_units: OutputUnits,
-    output_format: OutputFormat,
-    parallel: bool,
+    run_options: ExpRunOptions,
     reverse: bool,
 ) -> CliResult<()> {
     let windows = load_windows(inputs, input_options)?;
+    let overlap = if run_options.overlap_summary {
+        Some(summarize_overlap(
+            &windows,
+            Some(MbarOptions {
+                parallel: run_options.parallel,
+                ..MbarOptions::default()
+            }),
+        )?)
+    } else {
+        None
+    };
     let estimator = ExpEstimator::new(ExpOptions {
-        compute_uncertainty: !no_uncertainty,
-        parallel,
+        compute_uncertainty: !run_options.no_uncertainty,
+        parallel: run_options.parallel,
     });
     let result = estimator.fit(&windows)?;
     let n_states = result.n_states();
@@ -84,10 +79,11 @@ fn run(
             sigma: result.uncertainties().map(|u| u[delta_index]),
             from_lambda,
             to_lambda,
-            units: output_units,
+            units: run_options.output_units,
             temperature: input_options.temperature,
+            overlap,
         },
-        output_format,
+        run_options.output_format,
     );
     Ok(())
 }

@@ -4,6 +4,7 @@ mod cli;
 mod commands;
 mod input;
 mod output;
+mod overlap;
 
 use clap::Parser;
 
