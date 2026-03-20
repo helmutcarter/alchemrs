@@ -15,7 +15,7 @@ cargo build -p alchemrs-cli --release
 ### Common flags
 
 - `--remove-burnin <N>`: skip the first `N` samples in each window before analysis.
-- `--auto-equilibrate`: use pymbar-style equilibration detection (overrides `--fast`/`--conservative`).
+- `--auto-equilibrate`: use `pymbar`-style equilibration detection as described [here](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 - `--decorrelate`: subsample to reduce correlation before estimating.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 
@@ -65,3 +65,7 @@ cargo run -p alchemrs-cli --release -- dexp \
 ```
 
 EXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
+
+## Performance 
+Initial results demonstrate 6x performance improvement over `alchemlyb`. 
+TODO: Table of performance comparisons, include vs. `alchemlyb`, `pymbar`, `gmx bar` 
