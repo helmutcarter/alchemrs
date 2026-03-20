@@ -1,5 +1,7 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use alchemrs_analysis::{overlap_eigenvalues, overlap_matrix};
 use alchemrs_estimators::{BarEstimator, BarMethod, BarOptions, MbarEstimator, MbarOptions};
@@ -125,6 +127,36 @@ fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     }
 }
 
+#[test]
+fn mbar_cli_writes_json_to_output_file() {
+    let inputs = acetamide_inputs();
+    let output_path = unique_output_path("mbar-output.json");
+    let output_path_string = output_path.to_string_lossy().to_string();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--decorrelate",
+            "--output-format",
+            "json",
+            "--output",
+            &output_path_string,
+        ],
+        &inputs,
+    );
+
+    assert!(
+        output.stdout.is_empty(),
+        "expected stdout to be empty when writing to a file"
+    );
+
+    let written = fs::read(&output_path).expect("read CLI output file");
+    let payload: Value = serde_json::from_slice(&written).expect("parse CLI JSON file");
+    assert!(payload["delta_f"].as_f64().expect("delta_f").is_finite());
+    assert_eq!(payload["units"].as_str(), Some("kT"));
+
+    fs::remove_file(&output_path).expect("remove CLI output file");
+}
+
 fn workspace_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
@@ -193,6 +225,14 @@ fn compute_overlap_summary(windows: &[alchemrs_core::UNkMatrix]) -> (f64, Vec<f6
     .expect("compute overlap matrix");
     let eigenvalues = overlap_eigenvalues(&overlap).expect("compute overlap eigenvalues");
     (1.0 - eigenvalues[1], eigenvalues)
+}
+
+fn unique_output_path(file_name: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!("alchemrs-cli-{suffix}-{file_name}"))
 }
 
 fn assert_close(actual: f64, expected: f64) {

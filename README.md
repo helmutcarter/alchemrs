@@ -19,6 +19,7 @@ cargo build -p alchemrs-cli --release
 - `--decorrelate`: subsample to reduce correlation before estimating.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
+- `--output <PATH>`: write the formatted result to a file instead of stdout.
 - `--overlap-summary`: include overlap scalar and overlap eigenvalues for BAR/EXP/DEXP/MBAR runs.
 
 ### Structured output
@@ -31,6 +32,7 @@ cargo run -p alchemrs-cli --release -- mbar \
   --decorrelate \
   --overlap-summary \
   --output-format json \
+  --output results.json \
   /path/to/*/prod.out
 ```
 

@@ -12,6 +12,7 @@ pub struct ExpRunOptions {
     pub no_uncertainty: bool,
     pub output_units: OutputUnits,
     pub output_format: OutputFormat,
+    pub output_path: Option<PathBuf>,
     pub overlap_summary: bool,
     pub parallel: bool,
 }
@@ -84,6 +85,7 @@ fn run(
             overlap,
         },
         run_options.output_format,
-    );
+        run_options.output_path.as_deref(),
+    )?;
     Ok(())
 }

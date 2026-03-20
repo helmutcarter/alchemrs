@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use crate::cli::{OutputFormat, OutputUnits};
 
 const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
@@ -18,8 +21,18 @@ pub struct OverlapSummary {
     pub eigenvalues: Vec<f64>,
 }
 
-pub fn print_scalar_result(result: &ScalarResult, format: OutputFormat) {
-    print!("{}", render_scalar_result(result, format));
+pub fn print_scalar_result(
+    result: &ScalarResult,
+    format: OutputFormat,
+    output_path: Option<&Path>,
+) -> std::io::Result<()> {
+    let rendered = render_scalar_result(result, format);
+    if let Some(path) = output_path {
+        fs::write(path, rendered)
+    } else {
+        print!("{rendered}");
+        Ok(())
+    }
 }
 
 fn render_scalar_result(result: &ScalarResult, format: OutputFormat) -> String {

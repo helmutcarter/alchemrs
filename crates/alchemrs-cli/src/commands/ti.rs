@@ -13,6 +13,7 @@ pub fn run(
     method: TiMethod,
     output_units: OutputUnits,
     output_format: OutputFormat,
+    output_path: Option<PathBuf>,
     parallel: bool,
 ) -> CliResult<()> {
     let series = load_dhdl_series(inputs, input_options)?;
@@ -33,6 +34,7 @@ pub fn run(
             overlap: None,
         },
         output_format,
-    );
+        output_path.as_deref(),
+    )?;
     Ok(())
 }

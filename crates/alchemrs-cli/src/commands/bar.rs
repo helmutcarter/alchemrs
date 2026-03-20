@@ -8,21 +8,26 @@ use crate::output::{print_scalar_result, ScalarResult};
 use crate::overlap::summarize_overlap;
 use crate::CliResult;
 
+pub struct BarRunOptions {
+    pub method: BarMethodArg,
+    pub output_units: OutputUnits,
+    pub output_format: OutputFormat,
+    pub output_path: Option<PathBuf>,
+    pub overlap_summary: bool,
+    pub parallel: bool,
+}
+
 pub fn run(
     inputs: Vec<PathBuf>,
     input_options: AnalysisInputOptions,
-    method: BarMethodArg,
-    output_units: OutputUnits,
-    output_format: OutputFormat,
-    overlap_summary: bool,
-    parallel: bool,
+    run_options: BarRunOptions,
 ) -> CliResult<()> {
     let windows = load_windows(inputs, input_options)?;
-    let overlap = if overlap_summary {
+    let overlap = if run_options.overlap_summary {
         Some(summarize_overlap(
             &windows,
             Some(MbarOptions {
-                parallel,
+                parallel: run_options.parallel,
                 ..MbarOptions::default()
             }),
         )?)
@@ -30,8 +35,8 @@ pub fn run(
         None
     };
     let estimator = BarEstimator::new(BarOptions {
-        method: method.into(),
-        parallel,
+        method: run_options.method.into(),
+        parallel: run_options.parallel,
         ..BarOptions::default()
     });
     let result = estimator.fit(&windows)?;
@@ -43,11 +48,12 @@ pub fn run(
             sigma: result.uncertainties().map(|u| u[delta_index]),
             from_lambda: result.states().first().unwrap().lambdas()[0],
             to_lambda: result.states().last().unwrap().lambdas()[0],
-            units: output_units,
+            units: run_options.output_units,
             temperature: input_options.temperature,
             overlap,
         },
-        output_format,
-    );
+        run_options.output_format,
+        run_options.output_path.as_deref(),
+    )?;
     Ok(())
 }
