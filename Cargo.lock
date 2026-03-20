@@ -42,6 +42,7 @@ dependencies = [
  "alchemrs-parse",
  "alchemrs-prep",
  "clap",
+ "serde_json",
 ]
 
 [[package]]
