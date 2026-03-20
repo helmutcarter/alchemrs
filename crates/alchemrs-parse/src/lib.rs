@@ -3,7 +3,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use alchemrs_core::{CoreError, DhdlSeries, Result, StatePoint};
+use alchemrs_core::{CoreError, DhdlSeries, StatePoint};
+use thiserror::Error;
 
 pub mod amber {
     use super::*;
@@ -11,9 +12,76 @@ pub mod amber {
     const FP_RE: &str = r"[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?";
     const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
 
+    pub type Result<T> = std::result::Result<T, AmberParseError>;
+
+    #[derive(Debug, Error, Clone, PartialEq)]
+    pub enum AmberParseError {
+        #[error("failed to {operation} AMBER output: {message}")]
+        Io {
+            operation: &'static str,
+            message: String,
+        },
+        #[error("failed to locate {field} in AMBER output")]
+        MissingField { field: &'static str },
+        #[error("invalid {field} value `{value}` in AMBER output")]
+        InvalidField { field: &'static str, value: String },
+        #[error("missing value for {field} in AMBER output")]
+        MissingFieldValue { field: &'static str },
+        #[error(
+            "temperature mismatch: file {file_temperature_k:.2} K vs input {input_temperature_k:.2} K"
+        )]
+        TemperatureMismatch {
+            file_temperature_k: f64,
+            input_temperature_k: f64,
+        },
+        #[error("missing {field} in NSTEP block")]
+        MissingGradientField { field: &'static str },
+        #[error("no DV/DL gradients found in AMBER output")]
+        NoGradients,
+        #[error("no MBAR lambda values found in AMBER output")]
+        NoMbarLambdas,
+        #[error("clambda {clambda:.4} not found in MBAR lambda list; cannot build u_nk")]
+        LambdaNotInGrid { clambda: f64 },
+        #[error("no MBAR energy samples found in AMBER output")]
+        NoMbarSamples,
+        #[error("all MBAR samples contained non-finite values")]
+        NoFiniteMbarSamples,
+        #[error(
+            "missing MBAR energy entries in block {sample_idx} for lambdas {missing_lambdas:?}"
+        )]
+        IncompleteMbarBlock {
+            sample_idx: usize,
+            missing_lambdas: Vec<f64>,
+        },
+        #[error("duplicate MBAR energy entry in block {sample_idx} for lambda {lambda:.4}")]
+        DuplicateMbarEnergy { sample_idx: usize, lambda: f64 },
+        #[error("invalid MBAR energy line `{line}`")]
+        InvalidMbarEnergyLine { line: String },
+        #[error("invalid MBAR energy value `{value}` in line `{line}`")]
+        InvalidMbarEnergyValue { line: String, value: String },
+        #[error("invalid parsed data: {message}")]
+        InvalidParsedData { message: String },
+    }
+
+    impl From<AmberParseError> for CoreError {
+        fn from(error: AmberParseError) -> Self {
+            CoreError::Parse(error.to_string())
+        }
+    }
+
+    impl From<CoreError> for AmberParseError {
+        fn from(error: CoreError) -> Self {
+            AmberParseError::InvalidParsedData {
+                message: error.to_string(),
+            }
+        }
+    }
+
     pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSeries> {
-        let file = File::open(path.as_ref())
-            .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
+        let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
+            operation: "open",
+            message: err.to_string(),
+        })?;
         let mut reader = BufReader::new(file);
 
         let mut temp0: Option<f64> = None;
@@ -31,7 +99,10 @@ pub mod amber {
             line.clear();
             let bytes = reader
                 .read_line(&mut line)
-                .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+                .map_err(|err| AmberParseError::Io {
+                    operation: "read",
+                    message: err.to_string(),
+                })?;
             if bytes == 0 {
                 break;
             }
@@ -88,25 +159,20 @@ pub mod amber {
             handle_gradient_block(&block, &mut last_nstep, &mut gradients)?;
         }
 
-        let temp0 = temp0.ok_or_else(|| {
-            CoreError::Parse("failed to locate temp0 in AMBER output".to_string())
-        })?;
+        let temp0 = temp0.ok_or(AmberParseError::MissingField { field: "temp0" })?;
         if (temperature_k - temp0).abs() > 1e-2 {
-            return Err(CoreError::Parse(format!(
-                "temperature mismatch: file {temp0:.2} K vs input {temperature_k:.2} K"
-            )));
+            return Err(AmberParseError::TemperatureMismatch {
+                file_temperature_k: temp0,
+                input_temperature_k: temperature_k,
+            });
         }
-        let clambda = clambda.ok_or_else(|| {
-            CoreError::Parse("failed to locate clambda in AMBER output".to_string())
-        })?;
-        let dt = dt.ok_or_else(|| CoreError::Parse("failed to locate dt".to_string()))?;
-        let ntpr = ntpr.ok_or_else(|| CoreError::Parse("failed to locate ntpr".to_string()))?;
-        let t0 = t0.ok_or_else(|| CoreError::Parse("failed to locate t0".to_string()))?;
+        let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
+        let dt = dt.ok_or(AmberParseError::MissingField { field: "dt" })?;
+        let ntpr = ntpr.ok_or(AmberParseError::MissingField { field: "ntpr" })?;
+        let t0 = t0.ok_or(AmberParseError::MissingField { field: "t0" })?;
 
         if gradients.is_empty() {
-            return Err(CoreError::Parse(
-                "no DV/DL gradients found in AMBER output".to_string(),
-            ));
+            return Err(AmberParseError::NoGradients);
         }
 
         let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
@@ -119,7 +185,7 @@ pub mod amber {
             .collect();
 
         let state = StatePoint::new(vec![clambda], temperature_k)?;
-        DhdlSeries::new(state, time_ps, gradients)
+        DhdlSeries::new(state, time_ps, gradients).map_err(Into::into)
     }
 
     pub fn extract_u_nk(
@@ -128,31 +194,29 @@ pub mod amber {
     ) -> Result<alchemrs_core::UNkMatrix> {
         let header = read_u_nk_header(path.as_ref())?;
         if (temperature_k - header.temp0).abs() > 1e-2 {
-            return Err(CoreError::Parse(format!(
-                "temperature mismatch: file {:.2} K vs input {temperature_k:.2} K",
-                header.temp0
-            )));
+            return Err(AmberParseError::TemperatureMismatch {
+                file_temperature_k: header.temp0,
+                input_temperature_k: temperature_k,
+            });
         }
 
         if header.mbar_lambdas.is_empty() {
-            return Err(CoreError::Parse(
-                "no MBAR lambda values found in AMBER output".to_string(),
-            ));
+            return Err(AmberParseError::NoMbarLambdas);
         }
 
         let lambda_index = build_lambda_index(&header.mbar_lambdas);
         let reference_idx = lambda_index
             .get(&lambda_key(header.clambda))
             .copied()
-            .ok_or_else(|| {
-                CoreError::Parse(
-                    "clambda not found in MBAR lambda list; cannot build u_nk".to_string(),
-                )
+            .ok_or(AmberParseError::LambdaNotInGrid {
+                clambda: header.clambda,
             })?;
 
         let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
-        let file = File::open(path.as_ref())
-            .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
+        let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
+            operation: "open",
+            message: err.to_string(),
+        })?;
         let mut reader = BufReader::new(file);
         let mut line = String::new();
         let mut in_mbar_block = false;
@@ -167,7 +231,10 @@ pub mod amber {
             line.clear();
             let bytes = reader
                 .read_line(&mut line)
-                .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+                .map_err(|err| AmberParseError::Io {
+                    operation: "read",
+                    message: err.to_string(),
+                })?;
             if bytes == 0 {
                 break;
             }
@@ -183,6 +250,7 @@ pub mod amber {
             if line.trim_start().starts_with("---") {
                 finalize_mbar_block(
                     &block_energies,
+                    &header.mbar_lambdas,
                     reference_idx,
                     beta,
                     encountered_blocks,
@@ -197,12 +265,13 @@ pub mod amber {
                 in_mbar_block = false;
                 continue;
             }
-            parse_mbar_energy_line(line, &lambda_index, &mut block_energies)?;
+            parse_mbar_energy_line(line, encountered_blocks, &lambda_index, &mut block_energies)?;
         }
 
         if in_mbar_block {
             finalize_mbar_block(
                 &block_energies,
+                &header.mbar_lambdas,
                 reference_idx,
                 beta,
                 encountered_blocks,
@@ -217,14 +286,10 @@ pub mod amber {
         }
 
         if encountered_blocks == 0 {
-            return Err(CoreError::Parse(
-                "no MBAR energy samples found in AMBER output".to_string(),
-            ));
+            return Err(AmberParseError::NoMbarSamples);
         }
         if time_ps.is_empty() {
-            return Err(CoreError::Parse(
-                "all MBAR samples contained non-finite values".to_string(),
-            ));
+            return Err(AmberParseError::NoFiniteMbarSamples);
         }
 
         let sampled_state = Some(StatePoint::new(vec![header.clambda], temperature_k)?);
@@ -232,7 +297,8 @@ pub mod amber {
             .mbar_lambdas
             .iter()
             .map(|value| StatePoint::new(vec![*value], temperature_k))
-            .collect::<Result<Vec<_>>>()?;
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(AmberParseError::from)?;
 
         alchemrs_core::UNkMatrix::new(
             time_ps.len(),
@@ -242,6 +308,7 @@ pub mod amber {
             sampled_state,
             evaluated_states,
         )
+        .map_err(Into::into)
     }
 
     struct UNkHeader {
@@ -253,46 +320,24 @@ pub mod amber {
         mbar_lambdas: Vec<f64>,
     }
 
-    fn capture_field(line: &str, field: &str) -> Result<Option<f64>> {
+    fn capture_field(line: &str, field: &'static str) -> Result<Option<f64>> {
         let mut iter = line.split_whitespace().peekable();
         while let Some(token) = iter.next() {
             if token == field {
                 if let Some(next) = iter.next() {
                     let value = if next == "=" {
                         iter.next()
-                            .ok_or_else(|| CoreError::Parse(format!("missing {field} value")))?
+                            .ok_or(AmberParseError::MissingFieldValue { field })?
                     } else {
                         next
                     };
-                    let value = value.trim_matches(|c: char| {
-                        !c.is_ascii_digit()
-                            && c != '.'
-                            && c != '-'
-                            && c != '+'
-                            && c != 'e'
-                            && c != 'E'
-                    });
-                    let parsed = value
-                        .parse::<f64>()
-                        .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
-                    return Ok(Some(parsed));
+                    return parse_numeric_field(field, value).map(Some);
                 }
             } else if token.starts_with(field) {
                 if let Some(eq_idx) = token.find('=') {
                     let value = &token[(eq_idx + 1)..];
                     if !value.is_empty() {
-                        let value = value.trim_matches(|c: char| {
-                            !c.is_ascii_digit()
-                                && c != '.'
-                                && c != '-'
-                                && c != '+'
-                                && c != 'e'
-                                && c != 'E'
-                        });
-                        let parsed = value
-                            .parse::<f64>()
-                            .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
-                        return Ok(Some(parsed));
+                        return parse_numeric_field(field, value).map(Some);
                     }
                 }
             }
@@ -300,9 +345,29 @@ pub mod amber {
         Ok(None)
     }
 
+    fn parse_numeric_field(field: &'static str, raw_value: &str) -> Result<f64> {
+        let trimmed = raw_value.trim_matches(|c: char| {
+            !c.is_ascii_digit() && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E'
+        });
+        if trimmed.is_empty() {
+            return Err(AmberParseError::InvalidField {
+                field,
+                value: raw_value.to_string(),
+            });
+        }
+        trimmed
+            .parse::<f64>()
+            .map_err(|_| AmberParseError::InvalidField {
+                field,
+                value: raw_value.to_string(),
+            })
+    }
+
     fn read_u_nk_header(path: &Path) -> Result<UNkHeader> {
-        let file = File::open(path)
-            .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
+        let file = File::open(path).map_err(|err| AmberParseError::Io {
+            operation: "open",
+            message: err.to_string(),
+        })?;
         let mut reader = BufReader::new(file);
         let mut line = String::new();
         let mut temp0: Option<f64> = None;
@@ -317,7 +382,10 @@ pub mod amber {
             line.clear();
             let bytes = reader
                 .read_line(&mut line)
-                .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+                .map_err(|err| AmberParseError::Io {
+                    operation: "read",
+                    message: err.to_string(),
+                })?;
             if bytes == 0 {
                 break;
             }
@@ -353,16 +421,13 @@ pub mod amber {
         }
 
         Ok(UNkHeader {
-            temp0: temp0.ok_or_else(|| {
-                CoreError::Parse("failed to locate temp0 in AMBER output".to_string())
+            temp0: temp0.ok_or(AmberParseError::MissingField { field: "temp0" })?,
+            clambda: clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?,
+            dt: dt.ok_or(AmberParseError::MissingField { field: "dt" })?,
+            bar_intervall: bar_intervall.ok_or(AmberParseError::MissingField {
+                field: "bar_intervall",
             })?,
-            clambda: clambda.ok_or_else(|| {
-                CoreError::Parse("failed to locate clambda in AMBER output".to_string())
-            })?,
-            dt: dt.ok_or_else(|| CoreError::Parse("failed to locate dt".to_string()))?,
-            bar_intervall: bar_intervall
-                .ok_or_else(|| CoreError::Parse("failed to locate bar_intervall".to_string()))?,
-            t0: t0.ok_or_else(|| CoreError::Parse("failed to locate t0".to_string()))?,
+            t0: t0.ok_or(AmberParseError::MissingField { field: "t0" })?,
             mbar_lambdas,
         })
     }
@@ -401,6 +466,7 @@ pub mod amber {
 
     fn parse_mbar_energy_line(
         line: &str,
+        sample_idx: usize,
         lambda_index: &std::collections::HashMap<i64, usize>,
         energies: &mut [Option<f64>],
     ) -> Result<()> {
@@ -410,24 +476,38 @@ pub mod amber {
 
         let mut numbers = float_regex().find_iter(line);
         let Some(lambda_match) = numbers.next() else {
-            return Ok(());
+            return Err(AmberParseError::InvalidMbarEnergyLine {
+                line: line.to_string(),
+            });
         };
-        let lambda = lambda_match
-            .as_str()
-            .parse::<f64>()
-            .map_err(|err| CoreError::Parse(format!("invalid MBAR energy: {err}")))?;
-        let energy = if let Some(energy_match) = numbers.next() {
-            energy_match
-                .as_str()
+        let lambda_token = lambda_match.as_str();
+        let lambda =
+            lambda_token
                 .parse::<f64>()
-                .map_err(|err| CoreError::Parse(format!("invalid MBAR energy: {err}")))?
+                .map_err(|_| AmberParseError::InvalidMbarEnergyValue {
+                    line: line.to_string(),
+                    value: lambda_token.to_string(),
+                })?;
+        let energy = if let Some(energy_match) = numbers.next() {
+            let energy_token = energy_match.as_str();
+            energy_token
+                .parse::<f64>()
+                .map_err(|_| AmberParseError::InvalidMbarEnergyValue {
+                    line: line.to_string(),
+                    value: energy_token.to_string(),
+                })?
         } else if line.contains('*') {
             f64::INFINITY
         } else {
-            return Ok(());
+            return Err(AmberParseError::InvalidMbarEnergyLine {
+                line: line.to_string(),
+            });
         };
 
         if let Some(&idx) = lambda_index.get(&lambda_key(lambda)) {
+            if energies[idx].is_some() {
+                return Err(AmberParseError::DuplicateMbarEnergy { sample_idx, lambda });
+            }
             energies[idx] = Some(energy);
         }
         Ok(())
@@ -436,6 +516,7 @@ pub mod amber {
     #[allow(clippy::too_many_arguments)]
     fn finalize_mbar_block(
         energies: &[Option<f64>],
+        lambdas: &[f64],
         reference_idx: usize,
         beta: f64,
         sample_idx: usize,
@@ -447,9 +528,15 @@ pub mod amber {
         data: &mut Vec<f64>,
     ) -> Result<()> {
         if energies.iter().any(|value| value.is_none()) {
-            return Err(CoreError::Parse(
-                "missing MBAR energy entries in block".to_string(),
-            ));
+            let missing_lambdas = energies
+                .iter()
+                .zip(lambdas.iter().copied())
+                .filter_map(|(value, lambda)| value.is_none().then_some(lambda))
+                .collect();
+            return Err(AmberParseError::IncompleteMbarBlock {
+                sample_idx,
+                missing_lambdas,
+            });
         }
 
         let reference = energies[reference_idx].unwrap();
@@ -475,14 +562,14 @@ pub mod amber {
     ) -> Result<()> {
         let nstep = capture_field(block, "NSTEP")?
             .map(|value| value as i64)
-            .ok_or_else(|| CoreError::Parse("missing NSTEP in block".to_string()))?;
+            .ok_or(AmberParseError::MissingGradientField { field: "NSTEP" })?;
         if let Some(prev) = last_nstep {
             if *prev == nstep {
                 return Ok(());
             }
         }
         let dvdl = capture_field(block, "DV/DL")?
-            .ok_or_else(|| CoreError::Parse("missing DV/DL in NSTEP block".to_string()))?;
+            .ok_or(AmberParseError::MissingGradientField { field: "DV/DL" })?;
         gradients.push(dvdl);
         *last_nstep = Some(nstep);
         Ok(())
