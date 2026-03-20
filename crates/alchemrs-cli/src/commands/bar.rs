@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use alchemrs_estimators::{BarEstimator, BarOptions};
 
-use crate::cli::{BarMethodArg, OutputUnits};
+use crate::cli::{BarMethodArg, OutputFormat, OutputUnits};
 use crate::input::{load_windows, AnalysisInputOptions};
-use crate::output::print_scalar_result;
+use crate::output::{print_scalar_result, ScalarResult};
 use crate::CliResult;
 
 pub fn run(
@@ -12,6 +12,7 @@ pub fn run(
     input_options: AnalysisInputOptions,
     method: BarMethodArg,
     output_units: OutputUnits,
+    output_format: OutputFormat,
     parallel: bool,
 ) -> CliResult<()> {
     let windows = load_windows(inputs, input_options)?;
@@ -24,12 +25,15 @@ pub fn run(
     let delta_index = result.n_states() - 1;
 
     print_scalar_result(
-        result.values()[delta_index],
-        result.uncertainties().map(|u| u[delta_index]),
-        result.states().first().unwrap().lambdas()[0],
-        result.states().last().unwrap().lambdas()[0],
-        output_units,
-        input_options.temperature,
+        &ScalarResult {
+            delta: result.values()[delta_index],
+            sigma: result.uncertainties().map(|u| u[delta_index]),
+            from_lambda: result.states().first().unwrap().lambdas()[0],
+            to_lambda: result.states().last().unwrap().lambdas()[0],
+            units: output_units,
+            temperature: input_options.temperature,
+        },
+        output_format,
     );
     Ok(())
 }

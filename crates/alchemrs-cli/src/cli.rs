@@ -26,6 +26,9 @@ pub enum Command {
         /// Output units
         #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
         output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -61,6 +64,9 @@ pub enum Command {
         /// Output units
         #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
         output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -114,6 +120,9 @@ pub enum Command {
         /// Output units
         #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
         output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -149,6 +158,9 @@ pub enum Command {
         /// Output units
         #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
         output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -190,6 +202,9 @@ pub enum Command {
         /// Output units
         #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
         output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
@@ -216,6 +231,13 @@ pub enum OutputUnits {
     KT,
     Kcal,
     Kj,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
+    Csv,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]

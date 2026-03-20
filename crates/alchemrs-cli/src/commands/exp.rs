@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use alchemrs_estimators::{ExpEstimator, ExpOptions};
 
-use crate::cli::OutputUnits;
+use crate::cli::{OutputFormat, OutputUnits};
 use crate::input::{load_windows, AnalysisInputOptions};
-use crate::output::print_scalar_result;
+use crate::output::{print_scalar_result, ScalarResult};
 use crate::CliResult;
 
 pub fn run_forward(
@@ -12,6 +12,7 @@ pub fn run_forward(
     input_options: AnalysisInputOptions,
     no_uncertainty: bool,
     output_units: OutputUnits,
+    output_format: OutputFormat,
     parallel: bool,
 ) -> CliResult<()> {
     run(
@@ -19,6 +20,7 @@ pub fn run_forward(
         input_options,
         no_uncertainty,
         output_units,
+        output_format,
         parallel,
         false,
     )
@@ -29,6 +31,7 @@ pub fn run_reverse(
     input_options: AnalysisInputOptions,
     no_uncertainty: bool,
     output_units: OutputUnits,
+    output_format: OutputFormat,
     parallel: bool,
 ) -> CliResult<()> {
     run(
@@ -36,6 +39,7 @@ pub fn run_reverse(
         input_options,
         no_uncertainty,
         output_units,
+        output_format,
         parallel,
         true,
     )
@@ -46,6 +50,7 @@ fn run(
     input_options: AnalysisInputOptions,
     no_uncertainty: bool,
     output_units: OutputUnits,
+    output_format: OutputFormat,
     parallel: bool,
     reverse: bool,
 ) -> CliResult<()> {
@@ -74,12 +79,15 @@ fn run(
     };
 
     print_scalar_result(
-        result.values()[delta_index],
-        result.uncertainties().map(|u| u[delta_index]),
-        from_lambda,
-        to_lambda,
-        output_units,
-        input_options.temperature,
+        &ScalarResult {
+            delta: result.values()[delta_index],
+            sigma: result.uncertainties().map(|u| u[delta_index]),
+            from_lambda,
+            to_lambda,
+            units: output_units,
+            temperature: input_options.temperature,
+        },
+        output_format,
     );
     Ok(())
 }

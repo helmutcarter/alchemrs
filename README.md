@@ -4,7 +4,7 @@
 
 ## CLI
 
-`alchemrs-cli` provides a plain-text workflow for AMBER output files.
+`alchemrs-cli` provides a command-line workflow for AMBER output files.
 
 ### Build
 
@@ -18,6 +18,28 @@ cargo build -p alchemrs-cli --release
 - `--auto-equilibrate`: use `pymbar`-style equilibration detection as described [here](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 - `--decorrelate`: subsample to reduce correlation before estimating.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
+- `--output-format <text|json|csv>`: output format for estimator results (default `text`).
+
+### Structured output
+
+JSON output is useful for shell pipelines and downstream tools:
+
+```bash
+cargo run -p alchemrs-cli --release -- mbar \
+  --temperature 300 \
+  --decorrelate \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+CSV output is useful for quick ingestion into spreadsheets or tabular tools:
+
+```bash
+cargo run -p alchemrs-cli --release -- bar \
+  --temperature 300 \
+  --output-format csv \
+  /path/to/*/prod.out
+```
 
 ### TI (trapezoidal)
 

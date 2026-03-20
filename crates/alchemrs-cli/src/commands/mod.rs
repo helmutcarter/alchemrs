@@ -14,6 +14,7 @@ pub fn run(command: Command) -> CliResult<()> {
             temperature,
             method,
             output_units,
+            output_format,
             parallel,
             decorrelate,
             remove_burnin,
@@ -34,6 +35,7 @@ pub fn run(command: Command) -> CliResult<()> {
             ),
             method,
             output_units,
+            output_format,
             parallel,
         ),
         Command::Bar {
@@ -41,6 +43,7 @@ pub fn run(command: Command) -> CliResult<()> {
             temperature,
             method,
             output_units,
+            output_format,
             parallel,
             decorrelate,
             remove_burnin,
@@ -61,6 +64,7 @@ pub fn run(command: Command) -> CliResult<()> {
             ),
             method,
             output_units,
+            output_format,
             parallel,
         ),
         Command::Exp {
@@ -74,6 +78,7 @@ pub fn run(command: Command) -> CliResult<()> {
             nskip,
             no_uncertainty,
             output_units,
+            output_format,
             parallel,
         } => exp::run_forward(
             inputs,
@@ -88,6 +93,7 @@ pub fn run(command: Command) -> CliResult<()> {
             ),
             no_uncertainty,
             output_units,
+            output_format,
             parallel,
         ),
         Command::Dexp {
@@ -101,6 +107,7 @@ pub fn run(command: Command) -> CliResult<()> {
             nskip,
             no_uncertainty,
             output_units,
+            output_format,
             parallel,
         } => exp::run_reverse(
             inputs,
@@ -115,6 +122,7 @@ pub fn run(command: Command) -> CliResult<()> {
             ),
             no_uncertainty,
             output_units,
+            output_format,
             parallel,
         ),
         Command::Mbar {
@@ -130,6 +138,7 @@ pub fn run(command: Command) -> CliResult<()> {
             tolerance,
             no_uncertainty,
             output_units,
+            output_format,
             parallel,
         } => mbar::run(
             inputs,
@@ -142,11 +151,14 @@ pub fn run(command: Command) -> CliResult<()> {
                 conservative,
                 nskip,
             ),
-            max_iterations,
-            tolerance,
-            no_uncertainty,
-            output_units,
-            parallel,
+            mbar::MbarRunOptions {
+                max_iterations,
+                tolerance,
+                no_uncertainty,
+                output_units,
+                output_format,
+                parallel,
+            },
         ),
     }
 }
