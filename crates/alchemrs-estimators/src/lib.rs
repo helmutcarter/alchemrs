@@ -63,7 +63,7 @@ impl TiEstimator {
             }
             out
         };
-        points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        points.sort_by(|a, b| a.0.total_cmp(&b.0));
 
         let lambdas: Vec<f64> = points.iter().map(|(l, _, _, _)| *l).collect();
         let values: Vec<f64> = points.iter().map(|(_, v, _, _)| *v).collect();
@@ -146,6 +146,11 @@ impl BarEstimator {
             })?;
             let lambda = sampled.lambdas()[0];
             let idx = find_lambda_index(&lambdas, lambda)?;
+            if window_by_index[idx].is_some() {
+                return Err(CoreError::InvalidState(format!(
+                    "multiple windows for sampled_state lambda {lambda}"
+                )));
+            }
             window_by_index[idx] = Some(window);
         }
 
@@ -357,6 +362,19 @@ fn initial_f_k(options: &MbarOptions, n_states: usize) -> Result<Vec<f64>> {
 
 fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
     let first = windows[0].evaluated_states();
+    let first_temperature = first[0].temperature_k();
+    for state in first {
+        if state.lambdas().len() != 1 {
+            return Err(CoreError::Unsupported(
+                "estimators require one-dimensional lambda states".to_string(),
+            ));
+        }
+        if (state.temperature_k() - first_temperature).abs() > 1e-6 {
+            return Err(CoreError::InvalidState(
+                "evaluated_states temperatures differ within a window".to_string(),
+            ));
+        }
+    }
     for window in windows.iter().skip(1) {
         let states = window.evaluated_states();
         if states.len() != first.len() {
@@ -366,11 +384,50 @@ fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
             });
         }
         for (a, b) in first.iter().zip(states.iter()) {
+            if a.lambdas().len() != b.lambdas().len() {
+                return Err(CoreError::InvalidShape {
+                    expected: a.lambdas().len(),
+                    found: b.lambdas().len(),
+                });
+            }
+            if a.lambdas().len() != 1 {
+                return Err(CoreError::Unsupported(
+                    "estimators require one-dimensional lambda states".to_string(),
+                ));
+            }
+            if (a.temperature_k() - b.temperature_k()).abs() > 1e-6 {
+                return Err(CoreError::InvalidState(
+                    "evaluated_states temperatures differ between windows".to_string(),
+                ));
+            }
             if (a.lambdas()[0] - b.lambdas()[0]).abs() > 1e-6 {
                 return Err(CoreError::InvalidState(
                     "evaluated_states differ between windows".to_string(),
                 ));
             }
+        }
+    }
+    for window in windows {
+        let sampled = window.sampled_state().ok_or_else(|| {
+            CoreError::InvalidState("sampled_state required for estimator".to_string())
+        })?;
+        if sampled.lambdas().len() != 1 {
+            return Err(CoreError::Unsupported(
+                "estimators require one-dimensional lambda states".to_string(),
+            ));
+        }
+        if (sampled.temperature_k() - first_temperature).abs() > 1e-6 {
+            return Err(CoreError::InvalidState(
+                "sampled_state temperature differs from evaluated_states".to_string(),
+            ));
+        }
+        if !first
+            .iter()
+            .any(|state| (state.lambdas()[0] - sampled.lambdas()[0]).abs() < 1e-6)
+        {
+            return Err(CoreError::InvalidState(
+                "sampled_state not found in evaluated_states".to_string(),
+            ));
         }
     }
     Ok(first.to_vec())
@@ -402,7 +459,18 @@ fn work_values(window: &UNkMatrix, idx_a: usize, idx_b: usize) -> Result<Vec<f64
         let offset = sample_idx * n_states;
         let a = data[offset + idx_a];
         let b = data[offset + idx_b];
-        out.push(b - a);
+        if a.is_nan() || b.is_nan() {
+            return Err(CoreError::NonFiniteValue(format!(
+                "u_nk work input for states ({idx_a}, {idx_b}) at sample {sample_idx} must not be NaN"
+            )));
+        }
+        let delta = b - a;
+        if delta.is_nan() {
+            return Err(CoreError::NonFiniteValue(format!(
+                "work value for states ({idx_a}, {idx_b}) at sample {sample_idx} must not be NaN"
+            )));
+        }
+        out.push(delta);
     }
     Ok(out)
 }
@@ -482,7 +550,7 @@ impl ExpEstimator {
                     let mut row_unc = Vec::with_capacity(n_states);
                     for j in 0..n_states {
                         let work = work_values(window, i, j)?;
-                        let delta = exp_delta_f(&work);
+                        let delta = exp_delta_f(&work)?;
                         row.push(delta);
                         if self.options.compute_uncertainty {
                             row_unc.push(exp_uncertainty(&work)?);
@@ -507,7 +575,7 @@ impl ExpEstimator {
                 let window = window_map[i].expect("window present");
                 for j in 0..n_states {
                     let work = work_values(window, i, j)?;
-                    let delta = exp_delta_f(&work);
+                    let delta = exp_delta_f(&work)?;
                     values[i * n_states + j] = delta;
                     if let Some(ref mut unc) = uncertainties {
                         unc[i * n_states + j] = exp_uncertainty(&work)?;
@@ -552,6 +620,8 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
             }
         }
     }
+
+    validate_mbar_input(&u_kn)?;
 
     Ok((u_kn, n_k, states))
 }
@@ -598,6 +668,11 @@ fn mbar_solve(
                 sum += (val - max_arg).exp();
             }
             log_denominator[n] = max_arg + sum.ln();
+            if !log_denominator[n].is_finite() {
+                return Err(CoreError::NonFiniteValue(format!(
+                    "MBAR denominator became non-finite at sample {n}"
+                )));
+            }
         }
 
         let mut f_new = vec![0.0; n_states];
@@ -615,6 +690,11 @@ fn mbar_solve(
                 sum += (val - max_arg).exp();
             }
             f_new[k] = -(max_arg + sum.ln());
+            if !f_new[k].is_finite() {
+                return Err(CoreError::NonFiniteValue(format!(
+                    "MBAR free energy became non-finite for state {k}"
+                )));
+            }
         }
         let shift = f_new[0];
         for value in f_new.iter_mut().take(n_states) {
@@ -748,10 +828,24 @@ fn logsumexp(values: &[f64]) -> f64 {
     max + sum.ln()
 }
 
-fn exp_delta_f(work: &[f64]) -> f64 {
+fn exp_delta_f(work: &[f64]) -> Result<f64> {
+    if work
+        .iter()
+        .any(|value| *value == f64::NEG_INFINITY || value.is_nan())
+    {
+        return Err(CoreError::NonFiniteValue(
+            "EXP work values must be finite or +inf".to_string(),
+        ));
+    }
     let t = work.len() as f64;
     let neg: Vec<f64> = work.iter().map(|w| -w).collect();
-    -(logsumexp(&neg) - t.ln())
+    let delta_f = -(logsumexp(&neg) - t.ln());
+    if !delta_f.is_finite() {
+        return Err(CoreError::NonFiniteValue(
+            "EXP delta_f became non-finite; no finite Boltzmann weight remained".to_string(),
+        ));
+    }
+    Ok(delta_f)
 }
 
 fn exp_uncertainty(work: &[f64]) -> Result<f64> {
@@ -760,6 +854,14 @@ fn exp_uncertainty(work: &[f64]) -> Result<f64> {
             expected: 1,
             found: 0,
         });
+    }
+    if work
+        .iter()
+        .any(|value| *value == f64::NEG_INFINITY || value.is_nan())
+    {
+        return Err(CoreError::NonFiniteValue(
+            "EXP work values must be finite or +inf".to_string(),
+        ));
     }
     let t = work.len() as f64;
     let mut max_arg = f64::NEG_INFINITY;
@@ -774,6 +876,11 @@ fn exp_uncertainty(work: &[f64]) -> Result<f64> {
         x.push((-value - max_arg).exp());
     }
     let mean = x.iter().sum::<f64>() / t;
+    if mean == 0.0 || !mean.is_finite() {
+        return Err(CoreError::NonFiniteValue(
+            "EXP uncertainty became non-finite; no finite Boltzmann weight remained".to_string(),
+        ));
+    }
     let mut var = 0.0;
     for value in &x {
         let diff = value - mean;
@@ -782,13 +889,25 @@ fn exp_uncertainty(work: &[f64]) -> Result<f64> {
     var /= t;
     let std = var.sqrt();
     let dx = std / (t.sqrt());
-    Ok(dx / mean)
+    let uncertainty = dx / mean;
+    if !uncertainty.is_finite() {
+        return Err(CoreError::NonFiniteValue(
+            "EXP uncertainty became non-finite".to_string(),
+        ));
+    }
+    Ok(uncertainty)
 }
 
-fn exp_delta(w_f: &[f64]) -> f64 {
+fn exp_delta(w_f: &[f64]) -> Result<f64> {
     let log_sum = logsumexp(&w_f.iter().map(|w| -w).collect::<Vec<_>>());
     let t = w_f.len() as f64;
-    -(log_sum - t.ln())
+    let delta = -(log_sum - t.ln());
+    if !delta.is_finite() {
+        return Err(CoreError::NonFiniteValue(
+            "BAR initial estimate became non-finite".to_string(),
+        ));
+    }
+    Ok(delta)
 }
 
 fn bar_zero(w_f: &[f64], w_r: &[f64], delta_f: f64) -> f64 {
@@ -796,29 +915,28 @@ fn bar_zero(w_f: &[f64], w_r: &[f64], delta_f: f64) -> f64 {
     let t_r = w_r.len() as f64;
     let m = (t_f / t_r).ln();
 
-    let log_f_f: Vec<f64> = w_f
-        .iter()
-        .map(|w| {
-            let exp_arg = m + w - delta_f;
-            let max_arg = if exp_arg > 0.0 { exp_arg } else { 0.0 };
-            let denom = (-max_arg).exp() + (exp_arg - max_arg).exp();
-            -max_arg - denom.ln()
-        })
-        .collect();
+    let log_f_f: Vec<f64> = w_f.iter().map(|w| neg_log1pexp(m + w - delta_f)).collect();
     let log_numer = logsumexp(&log_f_f);
 
     let log_f_r: Vec<f64> = w_r
         .iter()
-        .map(|w| {
-            let exp_arg = -(m - w - delta_f);
-            let max_arg = if exp_arg > 0.0 { exp_arg } else { 0.0 };
-            let denom = (-max_arg).exp() + (exp_arg - max_arg).exp();
-            -max_arg - denom.ln()
-        })
+        .map(|w| neg_log1pexp(-(m - w - delta_f)))
         .collect();
     let log_denom = logsumexp(&log_f_r);
 
     log_numer - log_denom
+}
+
+fn neg_log1pexp(value: f64) -> f64 {
+    if value == f64::INFINITY {
+        f64::NEG_INFINITY
+    } else if value == f64::NEG_INFINITY {
+        0.0
+    } else if value > 0.0 {
+        -value - (-value).exp().ln_1p()
+    } else {
+        -value.exp().ln_1p()
+    }
 }
 
 fn bar_estimate(
@@ -834,17 +952,26 @@ fn bar_estimate(
             found: 0,
         });
     }
-    if w_f.iter().any(|v| !v.is_finite()) || w_r.iter().any(|v| !v.is_finite()) {
-        return Ok((0.0, 0.0));
+    if w_f.iter().any(|v| v.is_nan()) || w_r.iter().any(|v| v.is_nan()) {
+        return Err(CoreError::NonFiniteValue(
+            "BAR work values must not contain NaN".to_string(),
+        ));
+    }
+    if !w_f.iter().any(|v| v.is_finite()) || !w_r.iter().any(|v| v.is_finite()) {
+        return Err(CoreError::NonFiniteValue(
+            "BAR requires at least one finite work value in each direction".to_string(),
+        ));
     }
     let mut delta_f = 0.0;
-    let mut upper = exp_delta(w_f);
-    let mut lower = -exp_delta(w_r);
+    let mut upper = exp_delta(w_f)?;
+    let mut lower = -exp_delta(w_r)?;
     let mut f_upper = bar_zero(w_f, w_r, upper);
     let mut f_lower = bar_zero(w_f, w_r, lower);
 
     if !f_upper.is_finite() || !f_lower.is_finite() {
-        return Ok((0.0, 0.0));
+        return Err(CoreError::NonFiniteValue(
+            "BAR overlap function became non-finite while bracketing the solution".to_string(),
+        ));
     }
     while f_upper * f_lower > 0.0 {
         let ave = (upper + lower) / 2.0;
@@ -898,7 +1025,7 @@ fn bar_estimate(
 
 fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<f64> {
     if w_f.iter().any(|v| !v.is_finite()) || w_r.iter().any(|v| !v.is_finite()) {
-        return Ok(0.0);
+        return Ok(f64::NAN);
     }
     let t_f = w_f.len() as f64;
     let t_r = w_r.len() as f64;
@@ -930,6 +1057,45 @@ fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<f64> {
     let nrat = (t_f + t_r) / (t_f * t_r);
     let variance = (af_f2 / (af_f * af_f)) / t_f + (af_r2 / (af_r * af_r)) / t_r - nrat;
     Ok(variance.max(0.0).sqrt())
+}
+
+fn validate_mbar_input(u_kn: &[Vec<f64>]) -> Result<()> {
+    if u_kn.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let n_samples = u_kn[0].len();
+    for (state_idx, row) in u_kn.iter().enumerate() {
+        if row.len() != n_samples {
+            return Err(CoreError::InvalidShape {
+                expected: n_samples,
+                found: row.len(),
+            });
+        }
+        let has_finite = row.iter().any(|value| value.is_finite());
+        if !has_finite {
+            return Err(CoreError::NonFiniteValue(format!(
+                "MBAR state {state_idx} has no finite reduced potentials"
+            )));
+        }
+        for (sample_idx, value) in row.iter().enumerate() {
+            if value.is_nan() || *value == f64::NEG_INFINITY {
+                return Err(CoreError::NonFiniteValue(format!(
+                    "MBAR reduced potential for state {state_idx} sample {sample_idx} must be finite or +inf"
+                )));
+            }
+        }
+    }
+    for sample_idx in 0..n_samples {
+        if !u_kn.iter().any(|row| row[sample_idx].is_finite()) {
+            return Err(CoreError::NonFiniteValue(format!(
+                "MBAR sample {sample_idx} has no finite reduced potentials"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn extract_lambda(state: &alchemrs_core::StatePoint) -> Result<f64> {
@@ -1057,6 +1223,37 @@ mod tests {
 
         let data0 = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
         let data1 = vec![0.1, 0.0, 0.2, 0.1, 0.3, 0.2];
+        let time = vec![0.0, 1.0, 2.0];
+
+        vec![
+            UNkMatrix::new(3, 2, data0, time.clone(), Some(s0), states.clone()).unwrap(),
+            UNkMatrix::new(3, 2, data1, time, Some(s1), states).unwrap(),
+        ]
+    }
+
+    fn make_window(
+        sampled_lambda: f64,
+        sampled_temperature: f64,
+        evaluated_lambdas: [f64; 2],
+        evaluated_temperature: f64,
+    ) -> UNkMatrix {
+        let sampled_state = StatePoint::new(vec![sampled_lambda], sampled_temperature).unwrap();
+        let evaluated_states = evaluated_lambdas
+            .into_iter()
+            .map(|lambda| StatePoint::new(vec![lambda], evaluated_temperature).unwrap())
+            .collect::<Vec<_>>();
+        let data = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
+        let time = vec![0.0, 1.0, 2.0];
+        UNkMatrix::new(3, 2, data, time, Some(sampled_state), evaluated_states).unwrap()
+    }
+
+    fn make_two_state_windows_with_positive_infinity() -> Vec<UNkMatrix> {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let states = vec![s0.clone(), s1.clone()];
+
+        let data0 = vec![0.0, 1.0, 0.0, 2.0, 0.0, f64::INFINITY];
+        let data1 = vec![1.0, 0.0, 2.0, 0.0, 3.0, 0.0];
         let time = vec![0.0, 1.0, 2.0];
 
         vec![
@@ -1224,5 +1421,88 @@ mod tests {
 
         assert_eq!(serial.values(), parallel.values());
         assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
+    }
+
+    #[test]
+    fn bar_rejects_mismatched_evaluated_state_grid() {
+        let windows = vec![
+            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
+            make_window(1.0, 300.0, [0.0, 2.0], 300.0),
+        ];
+
+        let err = BarEstimator::default().fit(&windows).unwrap_err();
+        assert!(
+            matches!(err, CoreError::InvalidState(message) if message == "evaluated_states differ between windows")
+        );
+    }
+
+    #[test]
+    fn mbar_rejects_sampled_state_temperature_mismatch() {
+        let windows = vec![
+            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
+            make_window(1.0, 310.0, [0.0, 1.0], 300.0),
+        ];
+
+        let err = MbarEstimator::default().fit(&windows).unwrap_err();
+        assert!(
+            matches!(err, CoreError::InvalidState(message) if message == "sampled_state temperature differs from evaluated_states")
+        );
+    }
+
+    #[test]
+    fn exp_rejects_sampled_state_missing_from_grid() {
+        let windows = vec![
+            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
+            make_window(0.5, 300.0, [0.0, 1.0], 300.0),
+        ];
+
+        let err = ExpEstimator::default().fit(&windows).unwrap_err();
+        assert!(
+            matches!(err, CoreError::InvalidState(message) if message == "sampled_state not found in evaluated_states")
+        );
+    }
+
+    #[test]
+    fn bar_rejects_duplicate_windows_for_same_sampled_state() {
+        let windows = vec![
+            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
+            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
+        ];
+
+        let err = BarEstimator::default().fit(&windows).unwrap_err();
+        assert!(
+            matches!(err, CoreError::InvalidState(message) if message == "multiple windows for sampled_state lambda 0")
+        );
+    }
+
+    #[test]
+    fn exp_supports_positive_infinity_work_values() {
+        let windows = make_two_state_windows_with_positive_infinity();
+        let result = ExpEstimator::default().fit(&windows).unwrap();
+        assert!(result.values().iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn bar_supports_positive_infinity_work_values() {
+        let windows = make_two_state_windows_with_positive_infinity();
+        let result = BarEstimator::default().fit(&windows).unwrap();
+        assert!(result.values().iter().all(|value| value.is_finite()));
+        assert!(result
+            .uncertainties()
+            .expect("uncertainties")
+            .iter()
+            .any(|value| value.is_nan()));
+    }
+
+    #[test]
+    fn mbar_supports_positive_infinity_reduced_potentials() {
+        let windows = make_two_state_windows_with_positive_infinity();
+        let result = MbarEstimator::new(MbarOptions {
+            compute_uncertainty: false,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        assert!(result.values().iter().all(|value| value.is_finite()));
     }
 }

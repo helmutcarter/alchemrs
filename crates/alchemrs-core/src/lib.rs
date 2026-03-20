@@ -143,7 +143,7 @@ impl UNkMatrix {
                 found: time_ps.len(),
             });
         }
-        ensure_finite("u_nk", &data)?;
+        ensure_finite_or_positive_infinity("u_nk", &data)?;
         ensure_finite("time", &time_ps)?;
         for idx in 1..time_ps.len() {
             if time_ps[idx] < time_ps[idx - 1] {
@@ -367,6 +367,17 @@ fn ensure_finite(label: &str, values: &[f64]) -> Result<()> {
     Ok(())
 }
 
+fn ensure_finite_or_positive_infinity(label: &str, values: &[f64]) -> Result<()> {
+    for (idx, value) in values.iter().enumerate() {
+        if value.is_nan() || *value == f64::NEG_INFINITY {
+            return Err(CoreError::NonFiniteValue(format!(
+                "{label}[{idx}] must be finite or +inf"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn ensure_finite_or_nan(label: &str, values: &[f64]) -> Result<()> {
     for (idx, value) in values.iter().enumerate() {
         if value.is_infinite() {
@@ -427,6 +438,38 @@ mod tests {
     fn free_energy_estimate_rejects_nonfinite() {
         let state = StatePoint::new(vec![0.0], 300.0).unwrap();
         let err = FreeEnergyEstimate::new(f64::INFINITY, None, state.clone(), state).unwrap_err();
+        assert!(matches!(err, CoreError::NonFiniteValue(_)));
+    }
+
+    #[test]
+    fn unk_matrix_allows_positive_infinity() {
+        let state0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let state1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let matrix = UNkMatrix::new(
+            2,
+            2,
+            vec![0.0, f64::INFINITY, 0.0, 1.0],
+            vec![0.0, 1.0],
+            Some(state0.clone()),
+            vec![state0, state1],
+        )
+        .unwrap();
+        assert_eq!(matrix.data()[1], f64::INFINITY);
+    }
+
+    #[test]
+    fn unk_matrix_rejects_negative_infinity() {
+        let state0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let state1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let err = UNkMatrix::new(
+            1,
+            2,
+            vec![0.0, f64::NEG_INFINITY],
+            vec![0.0],
+            Some(state0.clone()),
+            vec![state0, state1],
+        )
+        .unwrap_err();
         assert!(matches!(err, CoreError::NonFiniteValue(_)));
     }
 }

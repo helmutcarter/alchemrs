@@ -540,11 +540,14 @@ pub mod amber {
         }
 
         let reference = energies[reference_idx].unwrap();
+        if !reference.is_finite() {
+            return Ok(());
+        }
         reduced_row.clear();
         reduced_row.reserve(energies.len());
         for energy in energies.iter().map(|value| value.unwrap()) {
             let reduced = beta * (energy - reference);
-            if !reduced.is_finite() {
+            if reduced.is_nan() || reduced == f64::NEG_INFINITY {
                 return Ok(());
             }
             reduced_row.push(reduced);
@@ -650,7 +653,7 @@ Energy at 0.1000 =     -8.0
     }
 
     #[test]
-    fn parse_amber_u_nk_skips_nonfinite_samples_without_reindexing_time() {
+    fn parse_amber_u_nk_retains_positive_infinity_samples() {
         let content = r#"
    2.  CONTROL  DATA  FOR  THE  RUN
 Molecular dynamics:
@@ -680,8 +683,9 @@ Energy at 0.1000 =     -8.0
         file.write_all(content.as_bytes()).unwrap();
 
         let u_nk = extract_u_nk(file.path(), 300.0).unwrap();
-        assert_eq!(u_nk.n_samples(), 1);
-        assert_eq!(u_nk.time_ps(), &[0.04]);
+        assert_eq!(u_nk.n_samples(), 2);
+        assert_eq!(u_nk.time_ps(), &[0.02, 0.04]);
+        assert_eq!(u_nk.data()[1], f64::INFINITY);
     }
 
     #[test]

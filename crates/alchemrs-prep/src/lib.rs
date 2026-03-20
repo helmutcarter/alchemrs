@@ -318,6 +318,15 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
             }
         }
     }
+    if let Some((idx, _)) = series
+        .iter()
+        .enumerate()
+        .find(|(_, value)| !value.is_finite())
+    {
+        return Err(CoreError::NonFiniteValue(format!(
+            "u_nk decorrelation series contains a non-finite value at sample {idx}; decorrelation is unsupported for +inf reduced energies"
+        )));
+    }
     Ok(series)
 }
 
@@ -564,5 +573,24 @@ mod tests {
         assert_eq!(result.t0, 0);
         assert_eq!(result.g, 1.0);
         assert_eq!(result.neff_max, 1.0);
+    }
+
+    #[test]
+    fn decorrelate_u_nk_rejects_positive_infinity_series() {
+        let state0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let state1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let u_nk = UNkMatrix::new(
+            2,
+            2,
+            vec![0.0, f64::INFINITY, 0.0, 1.0],
+            vec![0.0, 1.0],
+            Some(state0.clone()),
+            vec![state0, state1],
+        )
+        .unwrap();
+
+        let err = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
+            .unwrap_err();
+        assert!(matches!(err, CoreError::NonFiniteValue(_)));
     }
 }
