@@ -14,8 +14,7 @@ fn load_expected(path: &str) -> Vec<(f64, f64)> {
         }
         let parts: Vec<&str> = line.split(',').collect();
         let cols = header_cols.unwrap_or(parts.len());
-        let time = parts
-            .get(0)
+        let time = parts.first()
             .expect("time")
             .parse::<f64>()
             .expect("time parse");
