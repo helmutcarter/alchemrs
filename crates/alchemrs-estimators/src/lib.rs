@@ -980,7 +980,7 @@ fn integrate_trapezoidal(lambdas: &[f64], values: &[f64]) -> Result<f64> {
 }
 
 fn integrate_simpson(lambdas: &[f64], values: &[f64]) -> Result<f64> {
-    if lambdas.len().is_multiple_of(2) {
+    if (lambdas.len() & 1) == 0 {
         return Err(CoreError::InvalidShape {
             expected: lambdas.len() + 1,
             found: lambdas.len(),
