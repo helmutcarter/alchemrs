@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let estimator = TiEstimator::new(TiOptions::default());
     let result = estimator.fit(&series)?;
     println!(
-        "TI ΔG = {:.6} (from λ={:.4} to λ={:.4})",
+        "TI dG = {:.6} (from lambda={:.4} to lambda={:.4})",
         result.delta_f(),
         result.from_state().lambdas()[0],
         result.to_state().lambdas()[0]
