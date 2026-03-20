@@ -25,7 +25,12 @@ fn detect_equilibration_matches_pymbar() {
     let result = detect_equilibration_dhdl(&series, &options).expect("detect equilibration");
 
     assert_eq!(result.t0, t0);
-    assert!((result.g - g).abs() < 1e-6, "g mismatch: {} vs {}", result.g, g);
+    assert!(
+        (result.g - g).abs() < 1e-6,
+        "g mismatch: {} vs {}",
+        result.g,
+        g
+    );
     assert!(
         (result.neff_max - neff).abs() < 1e-6,
         "neff mismatch: {} vs {}",

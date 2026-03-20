@@ -28,22 +28,34 @@ fn read_scalar(path: &str) -> f64 {
 #[test]
 fn overlap_matches_alchemlyb() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/../../fixtures/amber/acetamide_tiny"))
-        .expect("read fixture directory")
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.is_dir() {
-                Some(path.join("acetamide.prod.out"))
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut paths: Vec<PathBuf> =
+        fs::read_dir(format!("{base}/../../fixtures/amber/acetamide_tiny"))
+            .expect("read fixture directory")
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.is_dir() {
+                    Some(path.join("acetamide.prod.out"))
+                } else {
+                    None
+                }
+            })
+            .collect();
     paths.sort_by(|a, b| {
-        let la = a.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap();
-        let lb = b.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap();
-        la.parse::<f64>().unwrap().partial_cmp(&lb.parse::<f64>().unwrap()).unwrap()
+        let la = a
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap();
+        let lb = b
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap();
+        la.parse::<f64>()
+            .unwrap()
+            .partial_cmp(&lb.parse::<f64>().unwrap())
+            .unwrap()
     });
 
     let mut windows = Vec::new();
@@ -52,8 +64,7 @@ fn overlap_matches_alchemlyb() {
     }
 
     let overlap = overlap_matrix(&windows, None).expect("overlap matrix");
-    let expected_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/overlap_matrix.txt");
+    let expected_path = format!("{base}/../../fixtures/amber/acetamide_tiny/overlap_matrix.txt");
     let expected = read_expected(&expected_path);
 
     let values = overlap.values();
@@ -65,10 +76,8 @@ fn overlap_matches_alchemlyb() {
         );
     }
 
-    let eigen_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/overlap_eigenvalues.txt");
-    let scalar_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/overlap_scalar.txt");
+    let eigen_path = format!("{base}/../../fixtures/amber/acetamide_tiny/overlap_eigenvalues.txt");
+    let scalar_path = format!("{base}/../../fixtures/amber/acetamide_tiny/overlap_scalar.txt");
     let expected_eigen = read_expected(&eigen_path);
     let expected_scalar = read_scalar(&scalar_path);
 

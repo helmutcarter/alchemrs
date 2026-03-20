@@ -83,13 +83,8 @@ pub fn decorrelate_u_nk(
     )?;
 
     let series = u_nk_series(u_nk, &data, method)?;
-    let (time, data, series) = apply_time_slice_u_nk(
-        &time,
-        &data,
-        u_nk.n_states(),
-        &series,
-        options,
-    )?;
+    let (time, data, series) =
+        apply_time_slice_u_nk(&time, &data, u_nk.n_states(), &series, options)?;
     let indices = subsample_indices(&series, options)?;
 
     let (time, data) = apply_indices_u_nk(&time, &data, u_nk.n_states(), &indices);
@@ -117,13 +112,8 @@ pub fn detect_equilibration_u_nk(
         options.sort,
     )?;
     let series = u_nk_series(u_nk, &data, method)?;
-    let (time, _data, series) = apply_time_slice_u_nk(
-        &time,
-        &data,
-        u_nk.n_states(),
-        &series,
-        options,
-    )?;
+    let (time, _data, series) =
+        apply_time_slice_u_nk(&time, &data, u_nk.n_states(), &series, options)?;
     let _ = time;
     detect_equilibration(&series, options.fast, options.nskip)
 }
@@ -231,7 +221,8 @@ fn subsample_indices(values: &[f64], options: &DecorrelationOptions) -> Result<V
         let t = result.t0;
         let g = result.g;
         let values = &values[t..];
-        let indices = subsample_correlated_data(values, Some(g), options.fast, options.conservative)?;
+        let indices =
+            subsample_correlated_data(values, Some(g), options.fast, options.conservative)?;
         Ok(indices.into_iter().map(|idx| idx + t).collect())
     } else {
         subsample_correlated_data(values, None, options.fast, options.conservative)
@@ -288,7 +279,10 @@ fn slice_time_indices(time: &[f64], options: &DecorrelationOptions) -> Result<Ve
         indices = indices.into_iter().step_by(step).collect();
     }
     if indices.is_empty() {
-        return Err(CoreError::InvalidShape { expected: 1, found: 0 });
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
     }
     Ok(indices)
 }
@@ -311,7 +305,11 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
             })?;
             let sampled_lambda = sampled.lambdas()[0];
             let index = find_state_index(u_nk.evaluated_states(), sampled_lambda)?;
-            let other_index = if index + 1 < n_states { index + 1 } else { index - 1 };
+            let other_index = if index + 1 < n_states {
+                index + 1
+            } else {
+                index - 1
+            };
             for sample_idx in 0..n_samples {
                 let offset = sample_idx * n_states;
                 let current = data[offset + index];
@@ -402,7 +400,10 @@ fn select_u_nk_rows(data: &[f64], n_states: usize, indices: &[usize]) -> Vec<f64
 
 fn statistical_inefficiency(values: &[f64], fast: bool) -> Result<f64> {
     if values.is_empty() {
-        return Err(CoreError::InvalidShape { expected: 1, found: 0 });
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
     }
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     let mut d_values = Vec::with_capacity(values.len());
@@ -475,7 +476,10 @@ fn subsample_correlated_data(
 
 fn detect_equilibration(values: &[f64], fast: bool, nskip: usize) -> Result<EquilibrationResult> {
     if values.is_empty() {
-        return Err(CoreError::InvalidShape { expected: 1, found: 0 });
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
     }
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     let variance = values
@@ -542,7 +546,12 @@ mod tests {
             vec![state.clone(), StatePoint::new(vec![1.0], 300.0).unwrap()],
         )
         .unwrap();
-        let result = decorrelate_u_nk(&u_nk, UNkSeriesMethod::All, &DecorrelationOptions::default()).unwrap();
+        let result = decorrelate_u_nk(
+            &u_nk,
+            UNkSeriesMethod::All,
+            &DecorrelationOptions::default(),
+        )
+        .unwrap();
         assert!(result.n_samples() > 0);
         assert_eq!(result.n_states(), 2);
     }

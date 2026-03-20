@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use alchemrs_estimators::{
-    BarEstimator, BarMethod, BarOptions, ExpEstimator, ExpOptions, IntegrationMethod, MbarEstimator,
-    MbarOptions, TiEstimator, TiOptions,
+    BarEstimator, BarMethod, BarOptions, ExpEstimator, ExpOptions, IntegrationMethod,
+    MbarEstimator, MbarOptions, TiEstimator, TiOptions,
 };
 use alchemrs_parse::amber::{extract_dhdl, extract_u_nk};
 use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk, DecorrelationOptions, UNkSeriesMethod};
@@ -342,11 +342,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let new_time = time[remove_burnin..].to_vec();
                     let new_values = values[remove_burnin..].to_vec();
-                    dhdl = alchemrs_core::DhdlSeries::new(
-                        dhdl.state().clone(),
-                        new_time,
-                        new_values,
-                    )?;
+                    dhdl =
+                        alchemrs_core::DhdlSeries::new(dhdl.state().clone(), new_time, new_values)?;
                 }
                 if decorrelate {
                     let (fast, conservative) =
@@ -420,10 +417,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             let result = estimator.fit(&windows)?;
             let n = result.n_states();
-            let delta = result.values()[0 * n + (n - 1)];
-            let sigma = result
-                .uncertainties()
-                .map(|u| u[0 * n + (n - 1)]);
+            let delta_index = n - 1;
+            let delta = result.values()[delta_index];
+            let sigma = result.uncertainties().map(|u| u[delta_index]);
             let from_lambda = result.states().first().unwrap().lambdas()[0];
             let to_lambda = result.states().last().unwrap().lambdas()[0];
 
@@ -472,14 +468,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let estimator = ExpEstimator::new(ExpOptions {
                 compute_uncertainty: !no_uncertainty,
                 parallel,
-                ..ExpOptions::default()
             });
             let result = estimator.fit(&windows)?;
             let n = result.n_states();
-            let delta = result.values()[0 * n + (n - 1)];
-            let sigma = result
-                .uncertainties()
-                .map(|u| u[0 * n + (n - 1)]);
+            let delta_index = n - 1;
+            let delta = result.values()[delta_index];
+            let sigma = result.uncertainties().map(|u| u[delta_index]);
             let from_lambda = result.states().first().unwrap().lambdas()[0];
             let to_lambda = result.states().last().unwrap().lambdas()[0];
 
@@ -528,14 +522,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let estimator = ExpEstimator::new(ExpOptions {
                 compute_uncertainty: !no_uncertainty,
                 parallel,
-                ..ExpOptions::default()
             });
             let result = estimator.fit(&windows)?;
             let n = result.n_states();
-            let delta = result.values()[(n - 1) * n + 0];
-            let sigma = result
-                .uncertainties()
-                .map(|u| u[(n - 1) * n + 0]);
+            let delta_index = (n - 1) * n;
+            let delta = result.values()[delta_index];
+            let sigma = result.uncertainties().map(|u| u[delta_index]);
             let from_lambda = result.states().last().unwrap().lambdas()[0];
             let to_lambda = result.states().first().unwrap().lambdas()[0];
 
@@ -592,10 +584,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             });
             let result = estimator.fit(&windows)?;
             let n = result.n_states();
-            let delta = result.values()[0 * n + (n - 1)];
-            let sigma = result
-                .uncertainties()
-                .map(|u| u[0 * n + (n - 1)]);
+            let delta_index = n - 1;
+            let delta = result.values()[delta_index];
+            let sigma = result.uncertainties().map(|u| u[delta_index]);
             let from_lambda = result.states().first().unwrap().lambdas()[0];
             let to_lambda = result.states().last().unwrap().lambdas()[0];
 

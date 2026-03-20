@@ -4,8 +4,15 @@ use alchemrs_core::{StatePoint, UNkMatrix};
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint]) -> UNkMatrix {
     let data = vec![0.0, 0.0];
     let time_ps = vec![0.0];
-    UNkMatrix::new(1, evaluated.len(), data, time_ps, Some(sampled), evaluated.to_vec())
-        .expect("window")
+    UNkMatrix::new(
+        1,
+        evaluated.len(),
+        data,
+        time_ps,
+        Some(sampled),
+        evaluated.to_vec(),
+    )
+    .expect("window")
 }
 
 #[test]

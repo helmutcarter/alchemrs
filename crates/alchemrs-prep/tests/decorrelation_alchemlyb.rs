@@ -15,7 +15,7 @@ fn load_expected(path: &str) -> Vec<(f64, f64)> {
         let parts: Vec<&str> = line.split(',').collect();
         let cols = header_cols.unwrap_or(parts.len());
         let time = parts
-            .get(0)
+            .first()
             .expect("time")
             .parse::<f64>()
             .expect("time parse");
@@ -38,8 +38,8 @@ fn decorrelate_dhdl_matches_alchemlyb() {
         format!("{base}/../../fixtures/amber/acetamide_tiny/0.1/dhdl.decorrelated.csv");
 
     let series = extract_dhdl(input, 300.0).expect("parse AMBER output");
-    let result = decorrelate_dhdl(&series, &DecorrelationOptions::default())
-        .expect("decorrelate dhdl");
+    let result =
+        decorrelate_dhdl(&series, &DecorrelationOptions::default()).expect("decorrelate dhdl");
 
     let expected = load_expected(&expected_path);
     assert_eq!(result.values().len(), expected.len());

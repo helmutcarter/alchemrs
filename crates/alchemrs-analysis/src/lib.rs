@@ -2,7 +2,10 @@ use alchemrs_core::{CoreError, OverlapMatrix, Result, UNkMatrix};
 use alchemrs_estimators::{mbar_log_weights_from_windows, MbarOptions};
 use nalgebra::{DMatrix, Schur};
 
-pub fn overlap_matrix(windows: &[UNkMatrix], options: Option<MbarOptions>) -> Result<OverlapMatrix> {
+pub fn overlap_matrix(
+    windows: &[UNkMatrix],
+    options: Option<MbarOptions>,
+) -> Result<OverlapMatrix> {
     let options = options.unwrap_or_default();
     let (log_w, n_k, states) = mbar_log_weights_from_windows(windows, &options)?;
     let n_states = states.len();

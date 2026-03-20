@@ -1,6 +1,8 @@
 use alchemrs_core::{CoreError, DhdlSeries, FreeEnergyEstimate, Result};
 use alchemrs_core::{DeltaFMatrix, StatePoint, UNkMatrix};
 
+type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegrationMethod {
     Trapezoidal,
@@ -73,7 +75,9 @@ impl TiEstimator {
         };
 
         let uncertainty = match self.options.method {
-            IntegrationMethod::Trapezoidal => Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?),
+            IntegrationMethod::Trapezoidal => {
+                Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?)
+            }
             IntegrationMethod::Simpson => None,
         };
 
@@ -134,10 +138,7 @@ impl BarEstimator {
             });
         }
         let eval_states = ensure_consistent_states(windows)?;
-        let lambdas: Vec<f64> = eval_states
-            .iter()
-            .map(|s| s.lambdas()[0])
-            .collect();
+        let lambdas: Vec<f64> = eval_states.iter().map(|s| s.lambdas()[0]).collect();
         let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; lambdas.len()];
         for window in windows {
             let sampled = window.sampled_state().ok_or_else(|| {
@@ -156,14 +157,10 @@ impl BarEstimator {
                     let lambda = lambdas[idx];
                     let lambda_next = lambdas[idx + 1];
                     let win_f = window_by_index[idx].ok_or_else(|| {
-                        CoreError::InvalidState(format!(
-                            "missing window for lambda {lambda}"
-                        ))
+                        CoreError::InvalidState(format!("missing window for lambda {lambda}"))
                     })?;
                     let win_r = window_by_index[idx + 1].ok_or_else(|| {
-                        CoreError::InvalidState(format!(
-                            "missing window for lambda {lambda_next}"
-                        ))
+                        CoreError::InvalidState(format!("missing window for lambda {lambda_next}"))
                     })?;
                     let w_f = work_values(win_f, idx, idx + 1)?;
                     let w_r = work_values(win_r, idx, idx + 1)?
@@ -186,14 +183,10 @@ impl BarEstimator {
                 let lambda = lambdas[idx];
                 let lambda_next = lambdas[idx + 1];
                 let win_f = window_by_index[idx].ok_or_else(|| {
-                    CoreError::InvalidState(format!(
-                        "missing window for lambda {lambda}"
-                    ))
+                    CoreError::InvalidState(format!("missing window for lambda {lambda}"))
                 })?;
                 let win_r = window_by_index[idx + 1].ok_or_else(|| {
-                    CoreError::InvalidState(format!(
-                        "missing window for lambda {lambda_next}"
-                    ))
+                    CoreError::InvalidState(format!("missing window for lambda {lambda_next}"))
                 })?;
                 let w_f = work_values(win_f, idx, idx + 1)?;
                 let w_r = work_values(win_r, idx, idx + 1)?
@@ -301,7 +294,13 @@ impl MbarEstimator {
         let (u_kn, n_k, states) = combine_windows(windows)?;
         let mut f_k = initial_f_k(&self.options, states.len())?;
 
-        mbar_solve(&u_kn, &n_k, &mut f_k, self.options.tolerance, self.options.max_iterations)?;
+        mbar_solve(
+            &u_kn,
+            &n_k,
+            &mut f_k,
+            self.options.tolerance,
+            self.options.max_iterations,
+        )?;
 
         let n_states = states.len();
         let mut values = vec![0.0; n_states * n_states];
@@ -331,7 +330,13 @@ pub fn mbar_log_weights_from_windows(
     }
     let (u_kn, n_k, states) = combine_windows(windows)?;
     let mut f_k = initial_f_k(options, states.len())?;
-    mbar_solve(&u_kn, &n_k, &mut f_k, options.tolerance, options.max_iterations)?;
+    mbar_solve(
+        &u_kn,
+        &n_k,
+        &mut f_k,
+        options.tolerance,
+        options.max_iterations,
+    )?;
     let log_weights = mbar_log_weights(&u_kn, &n_k, &f_k)?;
     Ok((log_weights, n_k, states))
 }
@@ -515,9 +520,7 @@ impl ExpEstimator {
     }
 }
 
-fn combine_windows(
-    windows: &[UNkMatrix],
-) -> Result<(Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>)> {
+fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
     let states = ensure_consistent_states(windows)?;
     let n_states = states.len();
     let mut n_k = vec![0.0; n_states];
@@ -614,8 +617,8 @@ fn mbar_solve(
             f_new[k] = -(max_arg + sum.ln());
         }
         let shift = f_new[0];
-        for k in 0..n_states {
-            f_new[k] -= shift;
+        for value in f_new.iter_mut().take(n_states) {
+            *value -= shift;
         }
 
         let mut max_delta = 0.0;
@@ -724,8 +727,8 @@ fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f
 
 fn pseudoinverse(matrix: &nalgebra::DMatrix<f64>, tol: f64) -> Result<nalgebra::DMatrix<f64>> {
     let svd = matrix.clone().svd(true, true);
-    let u = svd.u.ok_or_else(|| CoreError::ConvergenceFailure)?;
-    let v_t = svd.v_t.ok_or_else(|| CoreError::ConvergenceFailure)?;
+    let u = svd.u.ok_or(CoreError::ConvergenceFailure)?;
+    let v_t = svd.v_t.ok_or(CoreError::ConvergenceFailure)?;
     let mut sigma_inv = nalgebra::DMatrix::zeros(matrix.nrows(), matrix.ncols());
     for i in 0..svd.singular_values.len() {
         let value = svd.singular_values[i];
@@ -737,10 +740,7 @@ fn pseudoinverse(matrix: &nalgebra::DMatrix<f64>, tol: f64) -> Result<nalgebra::
 }
 
 fn logsumexp(values: &[f64]) -> f64 {
-    let max = values
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if !max.is_finite() {
         return max;
     }
@@ -906,32 +906,24 @@ fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<f64> {
     let c = m - delta_f;
 
     let exp_arg_f: Vec<f64> = w_f.iter().map(|w| w + c).collect();
-    let max_arg_f = exp_arg_f
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let max_arg_f = exp_arg_f.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     let log_f_f: Vec<f64> = exp_arg_f
         .iter()
         .map(|arg| -(((-max_arg_f).exp() + (arg - max_arg_f).exp()).ln()))
         .collect();
     let af_f = (logsumexp(&log_f_f) - max_arg_f).exp() / t_f;
-    let af_f2 = (logsumexp(&log_f_f.iter().map(|v| 2.0 * v).collect::<Vec<_>>())
-        - 2.0 * max_arg_f)
+    let af_f2 = (logsumexp(&log_f_f.iter().map(|v| 2.0 * v).collect::<Vec<_>>()) - 2.0 * max_arg_f)
         .exp()
         / t_f;
 
     let exp_arg_r: Vec<f64> = w_r.iter().map(|w| w - c).collect();
-    let max_arg_r = exp_arg_r
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let max_arg_r = exp_arg_r.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     let log_f_r: Vec<f64> = exp_arg_r
         .iter()
         .map(|arg| -(((-max_arg_r).exp() + (arg - max_arg_r).exp()).ln()))
         .collect();
     let af_r = (logsumexp(&log_f_r) - max_arg_r).exp() / t_r;
-    let af_r2 = (logsumexp(&log_f_r.iter().map(|v| 2.0 * v).collect::<Vec<_>>())
-        - 2.0 * max_arg_r)
+    let af_r2 = (logsumexp(&log_f_r.iter().map(|v| 2.0 * v).collect::<Vec<_>>()) - 2.0 * max_arg_r)
         .exp()
         / t_r;
 
@@ -988,7 +980,7 @@ fn integrate_trapezoidal(lambdas: &[f64], values: &[f64]) -> Result<f64> {
 }
 
 fn integrate_simpson(lambdas: &[f64], values: &[f64]) -> Result<f64> {
-    if lambdas.len() % 2 == 0 {
+    if lambdas.len().is_multiple_of(2) {
         return Err(CoreError::InvalidShape {
             expected: lambdas.len() + 1,
             found: lambdas.len(),
@@ -1012,11 +1004,11 @@ fn integrate_simpson(lambdas: &[f64], values: &[f64]) -> Result<f64> {
     }
 
     let mut total = values[0] + values[n - 1];
-    for i in 1..(n - 1) {
+    for (i, value) in values.iter().enumerate().take(n - 1).skip(1) {
         if i % 2 == 0 {
-            total += 2.0 * values[i];
+            total += 2.0 * value;
         } else {
-            total += 4.0 * values[i];
+            total += 4.0 * value;
         }
     }
     Ok(total * h / 3.0)
@@ -1063,16 +1055,8 @@ mod tests {
         let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
         let states = vec![s0.clone(), s1.clone()];
 
-        let data0 = vec![
-            0.0, 0.2,
-            0.1, 0.3,
-            0.2, 0.4,
-        ];
-        let data1 = vec![
-            0.1, 0.0,
-            0.2, 0.1,
-            0.3, 0.2,
-        ];
+        let data0 = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
+        let data1 = vec![0.1, 0.0, 0.2, 0.1, 0.3, 0.2];
         let time = vec![0.0, 1.0, 2.0];
 
         vec![
@@ -1090,10 +1074,7 @@ mod tests {
                     if x.is_nan() && y.is_nan() {
                         continue;
                     }
-                    assert!(
-                        (*x - *y).abs() < 1e-12,
-                        "mismatch at {idx}: {x} vs {y}"
-                    );
+                    assert!((*x - *y).abs() < 1e-12, "mismatch at {idx}: {x} vs {y}");
                 }
             }
             _ => panic!("option mismatch"),

@@ -23,22 +23,34 @@ fn read_matrix(path: &str) -> Vec<f64> {
 #[test]
 fn exp_matches_pymbar_matrix() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/../../fixtures/amber/acetamide_tiny"))
-        .expect("read fixture directory")
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.is_dir() {
-                Some(path.join("acetamide.prod.out"))
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut paths: Vec<PathBuf> =
+        fs::read_dir(format!("{base}/../../fixtures/amber/acetamide_tiny"))
+            .expect("read fixture directory")
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.is_dir() {
+                    Some(path.join("acetamide.prod.out"))
+                } else {
+                    None
+                }
+            })
+            .collect();
     paths.sort_by(|a, b| {
-        let la = a.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap();
-        let lb = b.parent().and_then(|p| p.file_name()).and_then(|s| s.to_str()).unwrap();
-        la.parse::<f64>().unwrap().partial_cmp(&lb.parse::<f64>().unwrap()).unwrap()
+        let la = a
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap();
+        let lb = b
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap();
+        la.parse::<f64>()
+            .unwrap()
+            .partial_cmp(&lb.parse::<f64>().unwrap())
+            .unwrap()
     });
 
     let mut windows = Vec::new();
@@ -49,10 +61,8 @@ fn exp_matches_pymbar_matrix() {
     let estimator = ExpEstimator::default();
     let result = estimator.fit(&windows).expect("EXP fit");
 
-    let expected_delta_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/exp_matrix.txt");
-    let expected_sigma_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/exp_sigma.txt");
+    let expected_delta_path = format!("{base}/../../fixtures/amber/acetamide_tiny/exp_matrix.txt");
+    let expected_sigma_path = format!("{base}/../../fixtures/amber/acetamide_tiny/exp_sigma.txt");
     let expected_delta = read_matrix(&expected_delta_path);
     let expected_sigma = read_matrix(&expected_sigma_path);
 

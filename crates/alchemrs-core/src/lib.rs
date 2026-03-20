@@ -121,7 +121,7 @@ impl UNkMatrix {
     ) -> Result<Self> {
         let expected = n_samples
             .checked_mul(n_states)
-            .ok_or_else(|| CoreError::InvalidShape {
+            .ok_or(CoreError::InvalidShape {
                 expected: n_samples,
                 found: n_states,
             })?;
@@ -257,7 +257,7 @@ impl DeltaFMatrix {
     ) -> Result<Self> {
         let expected = n_states
             .checked_mul(n_states)
-            .ok_or_else(|| CoreError::InvalidShape {
+            .ok_or(CoreError::InvalidShape {
                 expected: n_states,
                 found: n_states,
             })?;
@@ -319,7 +319,7 @@ impl OverlapMatrix {
     pub fn new(values: Vec<f64>, n_states: usize, states: Vec<StatePoint>) -> Result<Self> {
         let expected = n_states
             .checked_mul(n_states)
-            .ok_or_else(|| CoreError::InvalidShape {
+            .ok_or(CoreError::InvalidShape {
                 expected: n_states,
                 found: n_states,
             })?;
@@ -411,14 +411,7 @@ mod tests {
     #[test]
     fn unk_matrix_checks_shape() {
         let state = StatePoint::new(vec![0.0], 300.0).unwrap();
-        let err = UNkMatrix::new(
-            2,
-            2,
-            vec![1.0, 2.0, 3.0],
-            vec![0.0, 1.0],
-            None,
-            vec![state],
-        )
+        let err = UNkMatrix::new(2, 2, vec![1.0, 2.0, 3.0], vec![0.0, 1.0], None, vec![state])
             .unwrap_err();
         assert!(matches!(err, CoreError::InvalidShape { .. }));
     }
@@ -426,16 +419,14 @@ mod tests {
     #[test]
     fn delta_f_matrix_checks_lengths() {
         let state = StatePoint::new(vec![0.0], 300.0).unwrap();
-        let err = DeltaFMatrix::new(vec![0.0, 1.0, 2.0], None, 2, vec![state])
-            .unwrap_err();
+        let err = DeltaFMatrix::new(vec![0.0, 1.0, 2.0], None, 2, vec![state]).unwrap_err();
         assert!(matches!(err, CoreError::InvalidShape { .. }));
     }
 
     #[test]
     fn free_energy_estimate_rejects_nonfinite() {
         let state = StatePoint::new(vec![0.0], 300.0).unwrap();
-        let err =
-            FreeEnergyEstimate::new(f64::INFINITY, None, state.clone(), state).unwrap_err();
+        let err = FreeEnergyEstimate::new(f64::INFINITY, None, state.clone(), state).unwrap_err();
         assert!(matches!(err, CoreError::NonFiniteValue(_)));
     }
 }
