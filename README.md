@@ -17,6 +17,8 @@ cargo build -p alchemrs-cli --release
 - `--remove-burnin <N>`: skip the first `N` samples in each window before analysis.
 - `--auto-equilibrate`: use `pymbar`-style equilibration detection as described [here](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 - `--decorrelate`: subsample to reduce correlation before estimating.
+  - `ti` uses the parsed `dH/dlambda` series.
+  - `bar`, `exp`, `dexp`, and `mbar` use `EPtot` parsed from the AMBER output when decorrelation is requested.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
 - `--output <PATH>`: write the formatted result to a file instead of stdout.
@@ -35,6 +37,8 @@ cargo run -p alchemrs-cli --release -- mbar \
   --output results.json \
   /path/to/*/prod.out
 ```
+
+For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), `--decorrelate` uses `EPtot` as the finite decorrelation observable and then applies those retained indices back to the parsed `u_nk` samples.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 

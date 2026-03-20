@@ -35,7 +35,7 @@ pub enum Command {
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
-        /// Apply decorrelation to each window
+        /// Apply decorrelation to each window using the dH/dlambda series
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -79,7 +79,7 @@ pub enum Command {
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
-        /// Apply decorrelation to each window
+        /// Apply decorrelation to each window using EPtot from the AMBER output
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -105,7 +105,7 @@ pub enum Command {
         /// Temperature in K
         #[arg(long, default_value_t = 300.0)]
         temperature: f64,
-        /// Apply decorrelation to each window
+        /// Apply decorrelation to each window using EPtot from the AMBER output
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -149,7 +149,7 @@ pub enum Command {
         /// Temperature in K
         #[arg(long, default_value_t = 300.0)]
         temperature: f64,
-        /// Apply decorrelation to each window
+        /// Apply decorrelation to each window using EPtot from the AMBER output
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -193,7 +193,7 @@ pub enum Command {
         /// Temperature in K
         #[arg(long, default_value_t = 300.0)]
         temperature: f64,
-        /// Apply decorrelation to each window
+        /// Apply decorrelation to each window using EPtot from the AMBER output
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
