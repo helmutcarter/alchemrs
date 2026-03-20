@@ -1,5 +1,4 @@
 /target
-*.txt
 *.code-workspace
 /alchemlyb
 /pymbar
