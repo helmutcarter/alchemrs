@@ -1,8 +1,8 @@
 [package]
 name = "alchemrs"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.85"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 alchemrs-core = { path = "crates/alchemrs-core" }
@@ -12,10 +12,17 @@ alchemrs-parse = { path = "crates/alchemrs-parse" }
 alchemrs-prep = { path = "crates/alchemrs-prep" }
 
 [workspace]
+resolver = "2"
 members = [
   "crates/alchemrs-cli",
   "crates/alchemrs-analysis",
   "crates/alchemrs-core",
   "crates/alchemrs-estimators",
-  "crates/alchemrs-parse", "crates/alchemrs-prep",
+  "crates/alchemrs-parse",
+  "crates/alchemrs-prep",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
