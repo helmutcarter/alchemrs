@@ -4,9 +4,12 @@ use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use alchemrs_analysis::{overlap_eigenvalues, overlap_matrix};
-use alchemrs_estimators::{BarEstimator, BarMethod, BarOptions, MbarEstimator, MbarOptions};
-use alchemrs_parse::amber::extract_u_nk_with_potential;
-use alchemrs_prep::{decorrelate_u_nk_with_observable, DecorrelationOptions};
+use alchemrs_estimators::{
+    BarEstimator, BarMethod, BarOptions, ExpEstimator, ExpOptions, MbarEstimator, MbarOptions,
+    TiEstimator, TiOptions,
+};
+use alchemrs_parse::amber::{extract_dhdl, extract_u_nk_with_potential};
+use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk_with_observable, DecorrelationOptions};
 use serde_json::Value;
 
 const TEMPERATURE_K: f64 = 300.0;
@@ -160,6 +163,129 @@ fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
 }
 
 #[test]
+fn ti_cli_outputs_expected_json_when_decorrelating() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(&["ti", "--decorrelate", "--output-format", "json"], &inputs);
+    let payload = parse_json_output(&output);
+
+    let series = load_decorrelated_dhdl_series(&inputs);
+    let estimator = TiEstimator::new(TiOptions {
+        parallel: false,
+        ..TiOptions::default()
+    });
+    let result = estimator.fit(&series).expect("fit TI");
+
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        result.delta_f(),
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        result.uncertainty().expect("uncertainty"),
+    );
+    assert_close(
+        payload["from_lambda"].as_f64().expect("from_lambda"),
+        result.from_state().lambdas()[0],
+    );
+    assert_close(
+        payload["to_lambda"].as_f64().expect("to_lambda"),
+        result.to_state().lambdas()[0],
+    );
+    assert!(payload["overlap"].is_null(), "expected null overlap");
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("ti"));
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+}
+
+#[test]
+fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "exp",
+            "--decorrelate",
+            "--output-format",
+            "json",
+            "--overlap-summary",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let windows = load_decorrelated_windows(&inputs);
+    let estimator = ExpEstimator::new(ExpOptions {
+        compute_uncertainty: true,
+        parallel: false,
+    });
+    let result = estimator.fit(&windows).expect("fit EXP");
+    let delta_index = result.n_states() - 1;
+    let expected_overlap = compute_overlap_summary(&windows);
+
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        result.values()[delta_index],
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        result.uncertainties().expect("uncertainties")[delta_index],
+    );
+    assert_close(payload["from_lambda"].as_f64().expect("from_lambda"), 0.0);
+    assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 1.0);
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("exp"));
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_close(
+        payload["overlap"]["scalar"]
+            .as_f64()
+            .expect("overlap scalar"),
+        expected_overlap.0,
+    );
+}
+
+#[test]
+fn dexp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "dexp",
+            "--decorrelate",
+            "--output-format",
+            "json",
+            "--overlap-summary",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let windows = load_decorrelated_windows(&inputs);
+    let estimator = ExpEstimator::new(ExpOptions {
+        compute_uncertainty: true,
+        parallel: false,
+    });
+    let result = estimator.fit(&windows).expect("fit DEXP");
+    let n_states = result.n_states();
+    let delta_index = (n_states - 1) * n_states;
+    let expected_overlap = compute_overlap_summary(&windows);
+
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        result.values()[delta_index],
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        result.uncertainties().expect("uncertainties")[delta_index],
+    );
+    assert_close(payload["from_lambda"].as_f64().expect("from_lambda"), 1.0);
+    assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 0.0);
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("dexp"));
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_close(
+        payload["overlap"]["scalar"]
+            .as_f64()
+            .expect("overlap scalar"),
+        expected_overlap.0,
+    );
+}
+
+#[test]
 fn mbar_cli_writes_json_to_output_file() {
     let inputs = acetamide_inputs();
     let output_path = unique_output_path("mbar-output.json");
@@ -237,6 +363,16 @@ fn load_decorrelated_windows(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix
     inputs
         .iter()
         .map(|path| load_decorrelated_window(path))
+        .collect()
+}
+
+fn load_decorrelated_dhdl_series(inputs: &[PathBuf]) -> Vec<alchemrs_core::DhdlSeries> {
+    inputs
+        .iter()
+        .map(|path| {
+            let series = extract_dhdl(path, TEMPERATURE_K).expect("parse dhdl");
+            decorrelate_dhdl(&series, &DecorrelationOptions::default()).expect("decorrelate dhdl")
+        })
         .collect()
 }
 
