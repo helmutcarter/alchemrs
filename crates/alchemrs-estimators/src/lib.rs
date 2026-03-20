@@ -514,7 +514,7 @@ impl ExpEstimator {
         DeltaFMatrix::new(values, uncertainties, n_states, states)
     }
 }
-
+#[allow(clippy::type_complexity)]
 fn combine_windows(
     windows: &[UNkMatrix],
 ) -> Result<(Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>)> {
@@ -614,9 +614,9 @@ fn mbar_solve(
             f_new[k] = -(max_arg + sum.ln());
         }
         let shift = f_new[0];
-        for k in 0..n_states {
+        (0..n_states).for_each(|k| {
             f_new[k] -= shift;
-        }
+        });
 
         let mut max_delta = 0.0;
         for k in 0..n_states {
@@ -724,8 +724,8 @@ fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f
 
 fn pseudoinverse(matrix: &nalgebra::DMatrix<f64>, tol: f64) -> Result<nalgebra::DMatrix<f64>> {
     let svd = matrix.clone().svd(true, true);
-    let u = svd.u.ok_or_else(|| CoreError::ConvergenceFailure)?;
-    let v_t = svd.v_t.ok_or_else(|| CoreError::ConvergenceFailure)?;
+    let u = svd.u.ok_or(CoreError::ConvergenceFailure)?;
+    let v_t = svd.v_t.ok_or(CoreError::ConvergenceFailure)?;
     let mut sigma_inv = nalgebra::DMatrix::zeros(matrix.nrows(), matrix.ncols());
     for i in 0..svd.singular_values.len() {
         let value = svd.singular_values[i];
@@ -988,7 +988,7 @@ fn integrate_trapezoidal(lambdas: &[f64], values: &[f64]) -> Result<f64> {
 }
 
 fn integrate_simpson(lambdas: &[f64], values: &[f64]) -> Result<f64> {
-    if lambdas.len() % 2 == 0 {
+    if lambdas.len().is_multiple_of(2) {
         return Err(CoreError::InvalidShape {
             expected: lambdas.len() + 1,
             found: lambdas.len(),
@@ -1012,13 +1012,13 @@ fn integrate_simpson(lambdas: &[f64], values: &[f64]) -> Result<f64> {
     }
 
     let mut total = values[0] + values[n - 1];
-    for i in 1..(n - 1) {
+    (1..(n - 1)).for_each(|i| {
         if i % 2 == 0 {
             total += 2.0 * values[i];
         } else {
             total += 4.0 * values[i];
         }
-    }
+    });
     Ok(total * h / 3.0)
 }
 

@@ -206,18 +206,13 @@ pub mod amber {
         }
 
         let mut valid_indices = Vec::new();
-        for sample_idx in 0..n_samples {
-            let mut ok = true;
-            for state_idx in 0..n_states {
-                if !mbar_energies[state_idx][sample_idx].is_finite() {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok {
+        (0..n_samples).for_each(|sample_idx| {
+            if (0..n_states).all(|state_idx| {
+                mbar_energies[state_idx][sample_idx].is_finite()
+            }) {
                 valid_indices.push(sample_idx);
             }
-        }
+        });
 
         if valid_indices.is_empty() {
             return Err(CoreError::Parse(
@@ -233,9 +228,9 @@ pub mod amber {
 
         let mut data = Vec::with_capacity(valid_indices.len() * n_states);
         for &sample_idx in &valid_indices {
-            for state_idx in 0..n_states {
+            (0..n_states).for_each(|state_idx| {
                 data.push(mbar_energies[state_idx][sample_idx]);
-            }
+            });
         }
 
         let sampled_state = Some(StatePoint::new(vec![clambda], temperature_k)?);

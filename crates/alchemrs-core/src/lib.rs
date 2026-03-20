@@ -121,7 +121,7 @@ impl UNkMatrix {
     ) -> Result<Self> {
         let expected = n_samples
             .checked_mul(n_states)
-            .ok_or_else(|| CoreError::InvalidShape {
+            .ok_or(CoreError::InvalidShape {
                 expected: n_samples,
                 found: n_states,
             })?;
@@ -257,7 +257,7 @@ impl DeltaFMatrix {
     ) -> Result<Self> {
         let expected = n_states
             .checked_mul(n_states)
-            .ok_or_else(|| CoreError::InvalidShape {
+            .ok_or(CoreError::InvalidShape {
                 expected: n_states,
                 found: n_states,
             })?;
@@ -319,7 +319,7 @@ impl OverlapMatrix {
     pub fn new(values: Vec<f64>, n_states: usize, states: Vec<StatePoint>) -> Result<Self> {
         let expected = n_states
             .checked_mul(n_states)
-            .ok_or_else(|| CoreError::InvalidShape {
+            .ok_or(CoreError::InvalidShape {
                 expected: n_states,
                 found: n_states,
             })?;
