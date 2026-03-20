@@ -40,6 +40,32 @@ cargo run -p alchemrs-cli --release -- mbar \
 
 For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), `--decorrelate` uses `EPtot` as the finite decorrelation observable and then applies those retained indices back to the parsed `u_nk` samples.
 
+Example JSON payload:
+
+```json
+{
+  "delta_f": -113.58,
+  "uncertainty": 1.17,
+  "from_lambda": 0.0,
+  "to_lambda": 1.0,
+  "units": "kT",
+  "overlap": {
+    "scalar": 0.0183,
+    "eigenvalues": [1.0, 0.9817]
+  },
+  "provenance": {
+    "estimator": "mbar",
+    "temperature_k": 300.0,
+    "decorrelate": true,
+    "remove_burnin": 0,
+    "auto_equilibrate": false,
+    "fast": false,
+    "conservative": true,
+    "nskip": 1
+  }
+}
+```
+
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
 ```bash
@@ -47,6 +73,12 @@ cargo run -p alchemrs-cli --release -- bar \
   --temperature 300 \
   --output-format csv \
   /path/to/*/prod.out
+```
+
+CSV columns now include estimator provenance after the result fields:
+
+```text
+delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip
 ```
 
 ### TI (trapezoidal)
@@ -69,7 +101,7 @@ cargo run -p alchemrs-cli --release -- bar \
   /path/to/*/prod.out
 ```
 
-Note: BAR uncertainty is only computed for adjacent windows; non-adjacent entries (e.g. 0→1) are reported as `NaN`, matching alchemlyb.
+Note: BAR uncertainties are only computed for adjacent windows; non-adjacent state pairs (for example, `0→1`) are reported as `NaN`, matching alchemlyb.
 
 ### MBAR
 

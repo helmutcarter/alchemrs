@@ -49,6 +49,22 @@ fn mbar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     assert_close(payload["from_lambda"].as_f64().expect("from_lambda"), 0.0);
     assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 1.0);
     assert_eq!(payload["units"].as_str(), Some("kT"));
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("mbar"));
+    assert_close(
+        payload["provenance"]["temperature_k"]
+            .as_f64()
+            .expect("temperature_k"),
+        TEMPERATURE_K,
+    );
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["remove_burnin"].as_u64(), Some(0));
+    assert_eq!(
+        payload["provenance"]["auto_equilibrate"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(payload["provenance"]["fast"].as_bool(), Some(false));
+    assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["nskip"].as_u64(), Some(1));
 
     let overlap = payload["overlap"].as_object().expect("overlap object");
     assert_close(
@@ -112,6 +128,22 @@ fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     assert_close(payload["from_lambda"].as_f64().expect("from_lambda"), 0.0);
     assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 1.0);
     assert_eq!(payload["units"].as_str(), Some("kT"));
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("bar"));
+    assert_close(
+        payload["provenance"]["temperature_k"]
+            .as_f64()
+            .expect("temperature_k"),
+        TEMPERATURE_K,
+    );
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["remove_burnin"].as_u64(), Some(0));
+    assert_eq!(
+        payload["provenance"]["auto_equilibrate"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(payload["provenance"]["fast"].as_bool(), Some(false));
+    assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["nskip"].as_u64(), Some(1));
 
     let overlap = payload["overlap"].as_object().expect("overlap object");
     assert_close(
@@ -153,6 +185,7 @@ fn mbar_cli_writes_json_to_output_file() {
     let payload: Value = serde_json::from_slice(&written).expect("parse CLI JSON file");
     assert!(payload["delta_f"].as_f64().expect("delta_f").is_finite());
     assert_eq!(payload["units"].as_str(), Some("kT"));
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("mbar"));
 
     fs::remove_file(&output_path).expect("remove CLI output file");
 }

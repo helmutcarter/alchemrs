@@ -14,11 +14,33 @@ pub struct ScalarResult {
     pub units: OutputUnits,
     pub temperature: f64,
     pub overlap: Option<OverlapSummary>,
+    pub provenance: OutputProvenance,
 }
 
 pub struct OverlapSummary {
     pub scalar: f64,
     pub eigenvalues: Vec<f64>,
+}
+
+pub struct OutputProvenance {
+    pub estimator: &'static str,
+    pub decorrelate: bool,
+    pub remove_burnin: usize,
+    pub auto_equilibrate: bool,
+    pub fast: bool,
+    pub conservative: bool,
+    pub nskip: usize,
+}
+
+struct RenderedScalarResult<'a> {
+    delta: f64,
+    sigma: Option<f64>,
+    from_lambda: f64,
+    to_lambda: f64,
+    units: &'static str,
+    temperature: f64,
+    overlap: Option<&'a OverlapSummary>,
+    provenance: &'a OutputProvenance,
 }
 
 pub fn print_scalar_result(
@@ -36,55 +58,36 @@ pub fn print_scalar_result(
 }
 
 fn render_scalar_result(result: &ScalarResult, format: OutputFormat) -> String {
-    let delta = convert_value(result.delta, result.units, result.temperature);
-    let sigma = result
-        .sigma
-        .map(|value| convert_value(value, result.units, result.temperature));
-    let units = format_units(result.units);
+    let rendered = RenderedScalarResult {
+        delta: convert_value(result.delta, result.units, result.temperature),
+        sigma: result
+            .sigma
+            .map(|value| convert_value(value, result.units, result.temperature)),
+        from_lambda: result.from_lambda,
+        to_lambda: result.to_lambda,
+        units: format_units(result.units),
+        temperature: result.temperature,
+        overlap: result.overlap.as_ref(),
+        provenance: &result.provenance,
+    };
 
     match format {
-        OutputFormat::Text => render_text(
-            delta,
-            sigma,
-            result.from_lambda,
-            result.to_lambda,
-            units,
-            result.overlap.as_ref(),
-        ),
-        OutputFormat::Json => render_json(
-            delta,
-            sigma,
-            result.from_lambda,
-            result.to_lambda,
-            units,
-            result.overlap.as_ref(),
-        ),
-        OutputFormat::Csv => render_csv(
-            delta,
-            sigma,
-            result.from_lambda,
-            result.to_lambda,
-            units,
-            result.overlap.as_ref(),
-        ),
+        OutputFormat::Text => render_text(&rendered),
+        OutputFormat::Json => render_json(&rendered),
+        OutputFormat::Csv => render_csv(&rendered),
     }
 }
 
-fn render_text(
-    delta: f64,
-    sigma: Option<f64>,
-    from_lambda: f64,
-    to_lambda: f64,
-    units: &'static str,
-    overlap: Option<&OverlapSummary>,
-) -> String {
-    let sigma = sigma
-        .map(|value| format!("{value} {units}"))
+fn render_text(result: &RenderedScalarResult<'_>) -> String {
+    let sigma = result
+        .sigma
+        .map(|value| format!("{value} {}", result.units))
         .unwrap_or_else(|| "none".to_string());
     let mut output = format!(
-        "delta_f: {delta} {units}\nuncertainty: {sigma}\nfrom_lambda: {from_lambda}\nto_lambda: {to_lambda}\n"
+        "delta_f: {} {}\nuncertainty: {sigma}\nfrom_lambda: {}\nto_lambda: {}\n",
+        result.delta, result.units, result.from_lambda, result.to_lambda
     );
-    if let Some(overlap) = overlap {
+    if let Some(overlap) = result.overlap {
         output.push_str(&format!("overlap_scalar: {}\n", overlap.scalar));
         output.push_str("overlap_eigenvalues: ");
         output.push_str(
@@ -100,19 +103,14 @@ fn render_text(
     output
 }
 
-fn render_json(
-    delta: f64,
-    sigma: Option<f64>,
-    from_lambda: f64,
-    to_lambda: f64,
-    units: &'static str,
-    overlap: Option<&OverlapSummary>,
-) -> String {
-    let sigma = sigma
+fn render_json(result: &RenderedScalarResult<'_>) -> String {
+    let sigma = result
+        .sigma
         .filter(|value| value.is_finite())
         .map(|value| value.to_string())
         .unwrap_or_else(|| "null".to_string());
-    let overlap = overlap
+    let overlap = result
+        .overlap
         .map(|overlap| {
             let eigenvalues = overlap
                 .eigenvalues
@@ -126,24 +124,34 @@ fn render_json(
             )
         })
         .unwrap_or_else(|| "null".to_string());
+    let provenance = format!(
+        "{{\"estimator\":\"{}\",\"temperature_k\":{},\"decorrelate\":{},\"remove_burnin\":{},\"auto_equilibrate\":{},\"fast\":{},\"conservative\":{},\"nskip\":{}}}",
+        result.provenance.estimator,
+        result.temperature,
+        result.provenance.decorrelate,
+        result.provenance.remove_burnin,
+        result.provenance.auto_equilibrate,
+        result.provenance.fast,
+        result.provenance.conservative,
+        result.provenance.nskip
+    );
     format!(
-        "{{\"delta_f\":{delta},\"uncertainty\":{sigma},\"from_lambda\":{from_lambda},\"to_lambda\":{to_lambda},\"units\":\"{units}\",\"overlap\":{overlap}}}\n"
+        "{{\"delta_f\":{},\"uncertainty\":{sigma},\"from_lambda\":{},\"to_lambda\":{},\"units\":\"{}\",\"overlap\":{overlap},\"provenance\":{provenance}}}\n",
+        result.delta, result.from_lambda, result.to_lambda, result.units
     )
 }
 
-fn render_csv(
-    delta: f64,
-    sigma: Option<f64>,
-    from_lambda: f64,
-    to_lambda: f64,
-    units: &'static str,
-    overlap: Option<&OverlapSummary>,
-) -> String {
-    let sigma = sigma.map(|value| value.to_string()).unwrap_or_default();
-    let overlap_scalar = overlap
+fn render_csv(result: &RenderedScalarResult<'_>) -> String {
+    let sigma = result
+        .sigma
+        .map(|value| value.to_string())
+        .unwrap_or_default();
+    let overlap_scalar = result
+        .overlap
         .map(|summary| summary.scalar.to_string())
         .unwrap_or_default();
-    let overlap_eigenvalues = overlap
+    let overlap_eigenvalues = result
+        .overlap
         .map(|summary| {
             summary
                 .eigenvalues
@@ -154,7 +162,19 @@ fn render_csv(
         })
         .unwrap_or_default();
     format!(
-        "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues}\n"
+        "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues},{},{temperature},{},{},{},{},{},{}\n",
+        result.provenance.estimator,
+        result.provenance.decorrelate,
+        result.provenance.remove_burnin,
+        result.provenance.auto_equilibrate,
+        result.provenance.fast,
+        result.provenance.conservative,
+        result.provenance.nskip,
+        delta = result.delta,
+        from_lambda = result.from_lambda,
+        to_lambda = result.to_lambda,
+        units = result.units,
+        temperature = result.temperature
     )
 }
 
@@ -176,7 +196,7 @@ fn format_units(units: OutputUnits) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{render_scalar_result, OverlapSummary, ScalarResult};
+    use super::{render_scalar_result, OutputProvenance, OverlapSummary, ScalarResult};
     use crate::cli::{OutputFormat, OutputUnits};
 
     #[test]
@@ -190,13 +210,22 @@ mod tests {
                 units: OutputUnits::KT,
                 temperature: 300.0,
                 overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "mbar",
+                    decorrelate: true,
+                    remove_burnin: 5,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                },
             },
             OutputFormat::Json,
         );
 
         assert_eq!(
             output,
-            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":0,\"to_lambda\":1,\"units\":\"kT\",\"overlap\":null}\n"
+            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":0,\"to_lambda\":1,\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":true,\"remove_burnin\":5,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1}}\n"
         );
     }
 
@@ -211,13 +240,22 @@ mod tests {
                 units: OutputUnits::KT,
                 temperature: 300.0,
                 overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "ti",
+                    decorrelate: false,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                },
             },
             OutputFormat::Csv,
         );
 
         assert_eq!(
             output,
-            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues\n1.5,,0,1,kT,,\n"
+            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1\n"
         );
     }
 
@@ -235,6 +273,15 @@ mod tests {
                     scalar: 0.125,
                     eigenvalues: vec![1.0, 0.875, 0.5],
                 }),
+                provenance: OutputProvenance {
+                    estimator: "bar",
+                    decorrelate: true,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                },
             },
             OutputFormat::Text,
         );
