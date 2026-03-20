@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::OnceLock;
 
 use alchemrs_core::{CoreError, DhdlSeries, Result, StatePoint};
 
@@ -13,7 +14,7 @@ pub mod amber {
     pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSeries> {
         let file = File::open(path.as_ref())
             .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
-        let reader = BufReader::new(file);
+        let mut reader = BufReader::new(file);
 
         let mut temp0: Option<f64> = None;
         let mut clambda: Option<f64> = None;
@@ -24,39 +25,47 @@ pub mod amber {
         let mut gradients: Vec<f64> = Vec::new();
         let mut last_nstep: Option<i64> = None;
         let mut pending_block: Option<String> = None;
+        let mut line = String::new();
 
-        for line in reader.lines() {
-            let line = line.map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+        loop {
+            line.clear();
+            let bytes = reader
+                .read_line(&mut line)
+                .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+            if bytes == 0 {
+                break;
+            }
+            let line = line.trim_end_matches(&['\r', '\n'][..]);
 
             if temp0.is_none() {
-                if let Some(value) = capture_field(&line, "temp0")? {
+                if let Some(value) = capture_field(line, "temp0")? {
                     temp0 = Some(value);
                 }
             }
             if clambda.is_none() {
-                if let Some(value) = capture_field(&line, "clambda")? {
+                if let Some(value) = capture_field(line, "clambda")? {
                     clambda = Some(value);
                 }
             }
             if dt.is_none() {
-                if let Some(value) = capture_field(&line, "dt")? {
+                if let Some(value) = capture_field(line, "dt")? {
                     dt = Some(value);
                 }
             }
             if ntpr.is_none() {
-                if let Some(value) = capture_field(&line, "ntpr")? {
+                if let Some(value) = capture_field(line, "ntpr")? {
                     ntpr = Some(value);
                 }
             }
             if t0.is_none() && line.contains("begin time") {
-                if let Some(value) = capture_field(&line, "coords")? {
+                if let Some(value) = capture_field(line, "coords")? {
                     t0 = Some(value);
                 }
             }
 
             if let Some(mut block) = pending_block.take() {
                 block.push(' ');
-                block.push_str(&line);
+                block.push_str(line);
                 if line.trim_start().starts_with("---") {
                     handle_gradient_block(&block, &mut last_nstep, &mut gradients)?;
                 } else {
@@ -66,7 +75,7 @@ pub mod amber {
             }
 
             if line.starts_with(" NSTEP") || line.starts_with("NSTEP") {
-                let block = line.clone();
+                let block = line.to_string();
                 if line.trim_start().starts_with("---") {
                     handle_gradient_block(&block, &mut last_nstep, &mut gradients)?;
                 } else {
@@ -91,8 +100,7 @@ pub mod amber {
             CoreError::Parse("failed to locate clambda in AMBER output".to_string())
         })?;
         let dt = dt.ok_or_else(|| CoreError::Parse("failed to locate dt".to_string()))?;
-        let ntpr =
-            ntpr.ok_or_else(|| CoreError::Parse("failed to locate ntpr".to_string()))?;
+        let ntpr = ntpr.ok_or_else(|| CoreError::Parse("failed to locate ntpr".to_string()))?;
         let t0 = t0.ok_or_else(|| CoreError::Parse("failed to locate t0".to_string()))?;
 
         if gradients.is_empty() {
@@ -114,43 +122,28 @@ pub mod amber {
         DhdlSeries::new(state, time_ps, gradients)
     }
 
-    pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<alchemrs_core::UNkMatrix> {
-        let file = File::open(path.as_ref())
-            .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
-        let reader = BufReader::new(file);
-        let lines: Vec<String> = reader
-            .lines()
-            .collect::<std::result::Result<_, _>>()
-            .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
-
-        let temp0 = find_first_field(&lines, "temp0")?
-            .ok_or_else(|| CoreError::Parse("failed to locate temp0 in AMBER output".to_string()))?;
-        if (temperature_k - temp0).abs() > 1e-2 {
+    pub fn extract_u_nk(
+        path: impl AsRef<Path>,
+        temperature_k: f64,
+    ) -> Result<alchemrs_core::UNkMatrix> {
+        let header = read_u_nk_header(path.as_ref())?;
+        if (temperature_k - header.temp0).abs() > 1e-2 {
             return Err(CoreError::Parse(format!(
-                "temperature mismatch: file {temp0:.2} K vs input {temperature_k:.2} K"
+                "temperature mismatch: file {:.2} K vs input {temperature_k:.2} K",
+                header.temp0
             )));
         }
 
-        let clambda = find_first_field(&lines, "clambda")?
-            .ok_or_else(|| CoreError::Parse("failed to locate clambda in AMBER output".to_string()))?;
-        let dt = find_first_field(&lines, "dt")?
-            .ok_or_else(|| CoreError::Parse("failed to locate dt".to_string()))?;
-        let bar_intervall = find_first_field(&lines, "bar_intervall")?
-            .ok_or_else(|| CoreError::Parse("failed to locate bar_intervall".to_string()))?;
-        let t0 = find_begin_time(&lines)?
-            .ok_or_else(|| CoreError::Parse("failed to locate t0".to_string()))?;
-
-        let mbar_lambdas = extract_mbar_lambdas(&lines)?;
-        if mbar_lambdas.is_empty() {
+        if header.mbar_lambdas.is_empty() {
             return Err(CoreError::Parse(
                 "no MBAR lambda values found in AMBER output".to_string(),
             ));
         }
 
-        let clambda_key = format!("{clambda:.4}");
-        let reference_idx = mbar_lambdas
-            .iter()
-            .position(|value| value == &clambda_key)
+        let lambda_index = build_lambda_index(&header.mbar_lambdas);
+        let reference_idx = lambda_index
+            .get(&lambda_key(header.clambda))
+            .copied()
             .ok_or_else(|| {
                 CoreError::Parse(
                     "clambda not found in MBAR lambda list; cannot build u_nk".to_string(),
@@ -158,106 +151,106 @@ pub mod amber {
             })?;
 
         let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
-        let mut mbar_energies: Vec<Vec<f64>> = vec![Vec::new(); mbar_lambdas.len()];
+        let file = File::open(path.as_ref())
+            .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
+        let mut reader = BufReader::new(file);
+        let mut line = String::new();
+        let mut in_mbar_block = false;
+        let mut encountered_blocks = 0usize;
+        let n_states = header.mbar_lambdas.len();
+        let mut block_energies = vec![None; n_states];
+        let mut reduced_row = Vec::with_capacity(n_states);
+        let mut time_ps = Vec::new();
+        let mut data = Vec::new();
 
-        let mut idx = 0;
-        while idx < lines.len() {
-            let line = &lines[idx];
-            if is_mbar_energy_start(line) {
-                let mut block_lines = Vec::new();
-                idx += 1;
-                while idx < lines.len() {
-                    let next = &lines[idx];
-                    if next.trim_start().starts_with("---") {
-                        break;
-                    }
-                    block_lines.push(next.clone());
-                    idx += 1;
-                }
-                let energies = parse_mbar_block(&block_lines, &mbar_lambdas)?;
-                let reference = energies[reference_idx];
-                for (state_idx, energy) in energies.into_iter().enumerate() {
-                    mbar_energies[state_idx].push(beta * (energy - reference));
-                }
+        loop {
+            line.clear();
+            let bytes = reader
+                .read_line(&mut line)
+                .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+            if bytes == 0 {
+                break;
             }
-            idx += 1;
+            let line = line.trim_end_matches(&['\r', '\n'][..]);
+            if is_mbar_energy_start(line) {
+                in_mbar_block = true;
+                block_energies.fill(None);
+                continue;
+            }
+            if !in_mbar_block {
+                continue;
+            }
+            if line.trim_start().starts_with("---") {
+                finalize_mbar_block(
+                    &block_energies,
+                    reference_idx,
+                    beta,
+                    encountered_blocks,
+                    header.t0,
+                    header.dt,
+                    header.bar_intervall,
+                    &mut reduced_row,
+                    &mut time_ps,
+                    &mut data,
+                )?;
+                encountered_blocks += 1;
+                in_mbar_block = false;
+                continue;
+            }
+            parse_mbar_energy_line(line, &lambda_index, &mut block_energies)?;
         }
 
-        if mbar_energies.iter().all(|values| values.is_empty()) {
+        if in_mbar_block {
+            finalize_mbar_block(
+                &block_energies,
+                reference_idx,
+                beta,
+                encountered_blocks,
+                header.t0,
+                header.dt,
+                header.bar_intervall,
+                &mut reduced_row,
+                &mut time_ps,
+                &mut data,
+            )?;
+            encountered_blocks += 1;
+        }
+
+        if encountered_blocks == 0 {
             return Err(CoreError::Parse(
                 "no MBAR energy samples found in AMBER output".to_string(),
             ));
         }
-
-        let n_states = mbar_lambdas.len();
-        let n_samples = mbar_energies[0].len();
-        for (idx, values) in mbar_energies.iter().enumerate() {
-            if values.len() != n_samples {
-                return Err(CoreError::InvalidShape {
-                    expected: n_samples,
-                    found: values.len(),
-                });
-            }
-            if values.is_empty() {
-                return Err(CoreError::Parse(format!(
-                    "no MBAR samples collected for state {idx}"
-                )));
-            }
-        }
-
-        let mut valid_indices = Vec::new();
-        for sample_idx in 0..n_samples {
-            let mut ok = true;
-            for state_idx in 0..n_states {
-                if !mbar_energies[state_idx][sample_idx].is_finite() {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok {
-                valid_indices.push(sample_idx);
-            }
-        }
-
-        if valid_indices.is_empty() {
+        if time_ps.is_empty() {
             return Err(CoreError::Parse(
                 "all MBAR samples contained non-finite values".to_string(),
             ));
         }
 
-        let n_samples = valid_indices.len();
-        let time_ps: Vec<f64> = valid_indices
+        let sampled_state = Some(StatePoint::new(vec![header.clambda], temperature_k)?);
+        let evaluated_states = header
+            .mbar_lambdas
             .iter()
-            .map(|idx| t0 + ((*idx + 1) as f64) * dt * bar_intervall)
-            .collect();
-
-        let mut data = Vec::with_capacity(valid_indices.len() * n_states);
-        for &sample_idx in &valid_indices {
-            for state_idx in 0..n_states {
-                data.push(mbar_energies[state_idx][sample_idx]);
-            }
-        }
-
-        let sampled_state = Some(StatePoint::new(vec![clambda], temperature_k)?);
-        let evaluated_states = mbar_lambdas
-            .iter()
-            .map(|value| {
-                let lambda = value
-                    .trim()
-                    .parse::<f64>()
-                    .map_err(|err| CoreError::Parse(format!("invalid MBAR lambda: {err}")))?;
-                StatePoint::new(vec![lambda], temperature_k)
-            })
+            .map(|value| StatePoint::new(vec![*value], temperature_k))
             .collect::<Result<Vec<_>>>()?;
 
         alchemrs_core::UNkMatrix::new(
-            n_samples,
+            time_ps.len(),
             n_states,
             data,
             time_ps,
             sampled_state,
             evaluated_states,
         )
+    }
+
+    struct UNkHeader {
+        temp0: f64,
+        clambda: f64,
+        dt: f64,
+        bar_intervall: f64,
+        t0: f64,
+        mbar_lambdas: Vec<f64>,
     }
 
     fn capture_field(line: &str, field: &str) -> Result<Option<f64>> {
@@ -267,11 +260,18 @@ pub mod amber {
                 if let Some(next) = iter.next() {
                     let value = if next == "=" {
                         iter.next()
-                            .ok_or_else(|| CoreError::Parse(format!("missing {field} value")))? 
+                            .ok_or_else(|| CoreError::Parse(format!("missing {field} value")))?
                     } else {
                         next
                     };
-                    let value = value.trim_matches(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E');
+                    let value = value.trim_matches(|c: char| {
+                        !c.is_ascii_digit()
+                            && c != '.'
+                            && c != '-'
+                            && c != '+'
+                            && c != 'e'
+                            && c != 'E'
+                    });
                     let parsed = value
                         .parse::<f64>()
                         .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
@@ -281,7 +281,14 @@ pub mod amber {
                 if let Some(eq_idx) = token.find('=') {
                     let value = &token[(eq_idx + 1)..];
                     if !value.is_empty() {
-                        let value = value.trim_matches(|c: char| !c.is_ascii_digit() && c != '.' && c != '-' && c != '+' && c != 'e' && c != 'E');
+                        let value = value.trim_matches(|c: char| {
+                            !c.is_ascii_digit()
+                                && c != '.'
+                                && c != '-'
+                                && c != '+'
+                                && c != 'e'
+                                && c != 'E'
+                        });
                         let parsed = value
                             .parse::<f64>()
                             .map_err(|err| CoreError::Parse(format!("invalid {field}: {err}")))?;
@@ -293,92 +300,172 @@ pub mod amber {
         Ok(None)
     }
 
-    fn find_first_field(lines: &[String], field: &str) -> Result<Option<f64>> {
-        for line in lines {
-            if let Some(value) = capture_field(line, field)? {
-                return Ok(Some(value));
-            }
-        }
-        Ok(None)
-    }
-
-    fn find_begin_time(lines: &[String]) -> Result<Option<f64>> {
-        for line in lines {
-            if line.contains("begin time") {
-                if let Some(value) = capture_field(line, "coords")? {
-                    return Ok(Some(value));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    fn extract_mbar_lambdas(lines: &[String]) -> Result<Vec<String>> {
+    fn read_u_nk_header(path: &Path) -> Result<UNkHeader> {
+        let file = File::open(path)
+            .map_err(|err| CoreError::Parse(format!("failed to open file: {err}")))?;
+        let mut reader = BufReader::new(file);
+        let mut line = String::new();
+        let mut temp0: Option<f64> = None;
+        let mut clambda: Option<f64> = None;
+        let mut dt: Option<f64> = None;
+        let mut bar_intervall: Option<f64> = None;
+        let mut t0: Option<f64> = None;
         let mut in_mbar = false;
-        let mut lambdas = Vec::new();
-        for line in lines {
+        let mut mbar_lambdas = Vec::new();
+
+        loop {
+            line.clear();
+            let bytes = reader
+                .read_line(&mut line)
+                .map_err(|err| CoreError::Parse(format!("read error: {err}")))?;
+            if bytes == 0 {
+                break;
+            }
+            let line = line.trim_end_matches(&['\r', '\n'][..]);
+
+            if temp0.is_none() {
+                temp0 = capture_field(line, "temp0")?;
+            }
+            if clambda.is_none() {
+                clambda = capture_field(line, "clambda")?;
+            }
+            if dt.is_none() {
+                dt = capture_field(line, "dt")?;
+            }
+            if bar_intervall.is_none() {
+                bar_intervall = capture_field(line, "bar_intervall")?;
+            }
+            if t0.is_none() && line.contains("begin time") {
+                t0 = capture_field(line, "coords")?;
+            }
+
             if line.starts_with("    MBAR - lambda values considered:") {
                 in_mbar = true;
                 continue;
             }
             if in_mbar {
                 if line.starts_with("    Extra") {
-                    break;
+                    in_mbar = false;
+                    continue;
                 }
-                for token in line.split_whitespace() {
-                    if token.contains('.') && token.parse::<f64>().is_ok() {
-                        lambdas.push(token.to_string());
-                    }
-                }
+                parse_mbar_lambda_line(line, &mut mbar_lambdas)?;
             }
         }
-        Ok(lambdas)
+
+        Ok(UNkHeader {
+            temp0: temp0.ok_or_else(|| {
+                CoreError::Parse("failed to locate temp0 in AMBER output".to_string())
+            })?,
+            clambda: clambda.ok_or_else(|| {
+                CoreError::Parse("failed to locate clambda in AMBER output".to_string())
+            })?,
+            dt: dt.ok_or_else(|| CoreError::Parse("failed to locate dt".to_string()))?,
+            bar_intervall: bar_intervall
+                .ok_or_else(|| CoreError::Parse("failed to locate bar_intervall".to_string()))?,
+            t0: t0.ok_or_else(|| CoreError::Parse("failed to locate t0".to_string()))?,
+            mbar_lambdas,
+        })
     }
 
     fn is_mbar_energy_start(line: &str) -> bool {
         line.trim_start().starts_with("MBAR Energy analysis:")
     }
 
-    fn parse_mbar_block(lines: &[String], mbar_lambdas: &[String]) -> Result<Vec<f64>> {
-        let mut energies: Vec<Option<f64>> = vec![None; mbar_lambdas.len()];
-        let mbar_regex = regex::Regex::new(FP_RE)
-            .map_err(|err| CoreError::Parse(format!("regex error: {err}")))?;
-
-        for line in lines {
-            if !line.contains("Energy at") {
-                continue;
-            }
-            let mut numbers = Vec::new();
-            for caps in mbar_regex.find_iter(line) {
-                numbers.push(
-                    caps.as_str()
-                        .parse::<f64>()
-                        .map_err(|err| CoreError::Parse(format!("invalid MBAR energy: {err}")))?,
-                );
-            }
-            if numbers.is_empty() {
-                continue;
-            }
-            let lambda = numbers[0];
-            let energy = if numbers.len() >= 2 {
-                numbers[1]
-            } else if line.contains('*') {
-                f64::INFINITY
-            } else {
-                continue;
-            };
-            let lambda_key = format!("{lambda:.4}");
-            if let Some(idx) = mbar_lambdas.iter().position(|val| val == &lambda_key) {
-                energies[idx] = Some(energy);
+    fn parse_mbar_lambda_line(line: &str, mbar_lambdas: &mut Vec<f64>) -> Result<()> {
+        for token in line.split_whitespace() {
+            if token.contains('.') {
+                if let Ok(value) = token.parse::<f64>() {
+                    mbar_lambdas.push(value);
+                }
             }
         }
+        Ok(())
+    }
 
+    fn float_regex() -> &'static regex::Regex {
+        static FLOAT_REGEX: OnceLock<regex::Regex> = OnceLock::new();
+        FLOAT_REGEX.get_or_init(|| regex::Regex::new(FP_RE).expect("valid float regex"))
+    }
+
+    fn lambda_key(value: f64) -> i64 {
+        (value * 10_000.0).round() as i64
+    }
+
+    fn build_lambda_index(mbar_lambdas: &[f64]) -> std::collections::HashMap<i64, usize> {
+        let mut index = std::collections::HashMap::with_capacity(mbar_lambdas.len());
+        for (idx, lambda) in mbar_lambdas.iter().enumerate() {
+            index.insert(lambda_key(*lambda), idx);
+        }
+        index
+    }
+
+    fn parse_mbar_energy_line(
+        line: &str,
+        lambda_index: &std::collections::HashMap<i64, usize>,
+        energies: &mut [Option<f64>],
+    ) -> Result<()> {
+        if !line.contains("Energy at") {
+            return Ok(());
+        }
+
+        let mut numbers = float_regex().find_iter(line);
+        let Some(lambda_match) = numbers.next() else {
+            return Ok(());
+        };
+        let lambda = lambda_match
+            .as_str()
+            .parse::<f64>()
+            .map_err(|err| CoreError::Parse(format!("invalid MBAR energy: {err}")))?;
+        let energy = if let Some(energy_match) = numbers.next() {
+            energy_match
+                .as_str()
+                .parse::<f64>()
+                .map_err(|err| CoreError::Parse(format!("invalid MBAR energy: {err}")))?
+        } else if line.contains('*') {
+            f64::INFINITY
+        } else {
+            return Ok(());
+        };
+
+        if let Some(&idx) = lambda_index.get(&lambda_key(lambda)) {
+            energies[idx] = Some(energy);
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_mbar_block(
+        energies: &[Option<f64>],
+        reference_idx: usize,
+        beta: f64,
+        sample_idx: usize,
+        t0: f64,
+        dt: f64,
+        bar_intervall: f64,
+        reduced_row: &mut Vec<f64>,
+        time_ps: &mut Vec<f64>,
+        data: &mut Vec<f64>,
+    ) -> Result<()> {
         if energies.iter().any(|value| value.is_none()) {
             return Err(CoreError::Parse(
                 "missing MBAR energy entries in block".to_string(),
             ));
         }
-        Ok(energies.into_iter().map(|value| value.unwrap()).collect())
+
+        let reference = energies[reference_idx].unwrap();
+        reduced_row.clear();
+        reduced_row.reserve(energies.len());
+        for energy in energies.iter().map(|value| value.unwrap()) {
+            let reduced = beta * (energy - reference);
+            if !reduced.is_finite() {
+                return Ok(());
+            }
+            reduced_row.push(reduced);
+        }
+
+        time_ps.push(t0 + ((sample_idx + 1) as f64) * dt * bar_intervall);
+        data.extend(reduced_row.iter().copied());
+        Ok(())
     }
 
     fn handle_gradient_block(
@@ -394,9 +481,8 @@ pub mod amber {
                 return Ok(());
             }
         }
-        let dvdl = capture_field(block, "DV/DL")?.ok_or_else(|| {
-            CoreError::Parse("missing DV/DL in NSTEP block".to_string())
-        })?;
+        let dvdl = capture_field(block, "DV/DL")?
+            .ok_or_else(|| CoreError::Parse("missing DV/DL in NSTEP block".to_string()))?;
         gradients.push(dvdl);
         *last_nstep = Some(nstep);
         Ok(())
@@ -474,5 +560,70 @@ Energy at 0.1000 =     -8.0
         assert_eq!(u_nk.n_states(), 2);
         assert_eq!(u_nk.n_samples(), 2);
         assert_eq!(u_nk.data().len(), 4);
+    }
+
+    #[test]
+    fn parse_amber_u_nk_skips_nonfinite_samples_without_reindexing_time() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.0000
+FEP MBAR options:
+    bar_intervall = 10
+    MBAR - lambda values considered:
+      total   0.0000 0.1000
+    Extra
+   3.  ATOMIC
+ begin time coords = 0.0
+   4.  RESULTS
+MBAR Energy analysis:
+Energy at 0.0000 =    -10.0
+Energy at 0.1000 = **********
+ ---
+MBAR Energy analysis:
+Energy at 0.0000 =    -11.0
+Energy at 0.1000 =     -8.0
+ ---
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+
+        let u_nk = extract_u_nk(file.path(), 300.0).unwrap();
+        assert_eq!(u_nk.n_samples(), 1);
+        assert_eq!(u_nk.time_ps(), &[0.04]);
+    }
+
+    #[test]
+    fn parse_amber_u_nk_handles_final_block_at_eof() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.0000
+FEP MBAR options:
+    bar_intervall = 10
+    MBAR - lambda values considered:
+      total   0.0000 0.1000
+    Extra
+   3.  ATOMIC
+ begin time coords = 0.0
+   4.  RESULTS
+MBAR Energy analysis:
+Energy at 0.0000 =    -10.0
+Energy at 0.1000 =     -9.0
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+
+        let u_nk = extract_u_nk(file.path(), 300.0).unwrap();
+        assert_eq!(u_nk.n_samples(), 1);
+        assert_eq!(u_nk.data().len(), 2);
     }
 }
