@@ -1,4 +1,3 @@
-Design Document: Rust-First Reimplementation of alchemlyb
 # Overview
 This project aims to create a Rust-native library for alchemical free energy analysis that can be used directly by Rust crates, while later supporting Python through thin bindings.
 
