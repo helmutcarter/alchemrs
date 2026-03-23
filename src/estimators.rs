@@ -976,6 +976,7 @@ fn bar_estimate(
         ));
     }
 
+    let mut converged = false;
     for _ in 0..=maximum_iterations {
         let old = delta_f;
         match method {
@@ -994,9 +995,14 @@ fn bar_estimate(
             }
         }
         let f_new = bar_zero(w_f, w_r, delta_f);
+        if f_new.abs() < relative_tolerance {
+            converged = true;
+            break;
+        }
         if delta_f != 0.0 {
             let relative_change = ((delta_f - old) / delta_f).abs();
             if relative_change < relative_tolerance {
+                converged = true;
                 break;
             }
         }
@@ -1012,6 +1018,10 @@ fn bar_estimate(
                 return Err(CoreError::ConvergenceFailure);
             }
         }
+    }
+
+    if !converged {
+        return Err(CoreError::ConvergenceFailure);
     }
 
     let d_delta_f = bar_uncertainty(w_f, w_r, delta_f)?;
@@ -1535,6 +1545,20 @@ mod tests {
         let err = bar_estimate(
             &[5.0, 5.0],
             &[-10.0, 5.0],
+            BarMethod::FalsePosition,
+            0,
+            1.0e-7,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, CoreError::ConvergenceFailure));
+    }
+
+    #[test]
+    fn bar_returns_error_when_iteration_budget_is_exhausted() {
+        let err = bar_estimate(
+            &[-5.0, -5.0],
+            &[-5.0, -2.0],
             BarMethod::FalsePosition,
             0,
             1.0e-7,
