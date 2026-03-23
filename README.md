@@ -22,6 +22,15 @@ The repo also includes runnable top-level examples:
 - `cargo run --example amber_ti -- 300 path\\to\\lambda0.out path\\to\\lambda1.out`
 - `cargo run --example amber_mbar -- 300 path\\to\\lambda0.out path\\to\\lambda1.out path\\to\\lambda2.out`
 
+## Documentation
+
+An `mdBook` lives in [`docs/`](docs/). To preview it locally:
+
+```bash
+cargo install mdbook
+mdbook serve docs
+```
+
 ## CLI
 
 `alchemrs-cli` provides a command-line workflow for AMBER output files.

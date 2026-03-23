@@ -1,0 +1,11 @@
+[book]
+title = "alchemrs"
+authors = ["alchemrs contributors"]
+language = "en"
+multilingual = false
+src = "src"
+description = "Rust-first alchemical free energy analysis toolkit"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "ayu"
