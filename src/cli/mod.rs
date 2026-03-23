@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use alchemrs::{BarMethod, IntegrationMethod};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 
 pub mod commands;
 pub mod input;
@@ -53,7 +53,14 @@ pub enum Command {
         #[arg(long)]
         fast: bool,
         /// Use conservative subsampling
-        #[arg(long, default_value_t = true)]
+        #[arg(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            require_equals = true,
+            num_args = 0..=1
+        )]
         conservative: bool,
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
@@ -100,7 +107,14 @@ pub enum Command {
         #[arg(long)]
         fast: bool,
         /// Use conservative subsampling
-        #[arg(long, default_value_t = true)]
+        #[arg(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            require_equals = true,
+            num_args = 0..=1
+        )]
         conservative: bool,
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
@@ -129,7 +143,14 @@ pub enum Command {
         #[arg(long)]
         fast: bool,
         /// Use conservative subsampling
-        #[arg(long, default_value_t = true)]
+        #[arg(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            require_equals = true,
+            num_args = 0..=1
+        )]
         conservative: bool,
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
@@ -176,7 +197,14 @@ pub enum Command {
         #[arg(long)]
         fast: bool,
         /// Use conservative subsampling
-        #[arg(long, default_value_t = true)]
+        #[arg(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            require_equals = true,
+            num_args = 0..=1
+        )]
         conservative: bool,
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
@@ -223,7 +251,14 @@ pub enum Command {
         #[arg(long)]
         fast: bool,
         /// Use conservative subsampling
-        #[arg(long, default_value_t = true)]
+        #[arg(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            require_equals = true,
+            num_args = 0..=1
+        )]
         conservative: bool,
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
@@ -317,6 +352,51 @@ impl From<BarMethodArg> for BarMethod {
             BarMethodArg::FalsePosition => BarMethod::FalsePosition,
             BarMethodArg::SelfConsistentIteration => BarMethod::SelfConsistentIteration,
             BarMethodArg::Bisection => BarMethod::Bisection,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::{Cli, Command};
+
+    #[test]
+    fn commands_default_to_conservative_subsampling() {
+        for args in [
+            ["alchemrs", "ti", "window.out"].as_slice(),
+            ["alchemrs", "bar", "window.out"].as_slice(),
+            ["alchemrs", "exp", "window.out"].as_slice(),
+            ["alchemrs", "dexp", "window.out"].as_slice(),
+            ["alchemrs", "mbar", "window.out"].as_slice(),
+        ] {
+            let cli = Cli::parse_from(args);
+            assert!(command_conservative(cli.command));
+        }
+    }
+
+    #[test]
+    fn commands_accept_explicit_false_for_conservative_subsampling() {
+        for args in [
+            ["alchemrs", "ti", "--conservative=false", "window.out"].as_slice(),
+            ["alchemrs", "bar", "--conservative=false", "window.out"].as_slice(),
+            ["alchemrs", "exp", "--conservative=false", "window.out"].as_slice(),
+            ["alchemrs", "dexp", "--conservative=false", "window.out"].as_slice(),
+            ["alchemrs", "mbar", "--conservative=false", "window.out"].as_slice(),
+        ] {
+            let cli = Cli::parse_from(args);
+            assert!(!command_conservative(cli.command));
+        }
+    }
+
+    fn command_conservative(command: Command) -> bool {
+        match command {
+            Command::Ti { conservative, .. }
+            | Command::Bar { conservative, .. }
+            | Command::Exp { conservative, .. }
+            | Command::Dexp { conservative, .. }
+            | Command::Mbar { conservative, .. } => conservative,
         }
     }
 }

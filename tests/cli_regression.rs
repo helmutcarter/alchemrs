@@ -156,6 +156,49 @@ fn mbar_cli_outputs_expected_json_when_auto_equilibrating() {
 }
 
 #[test]
+fn mbar_cli_accepts_nonconservative_decorrelation() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--decorrelate",
+            "--conservative=false",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let windows = load_decorrelated_windows_nonconservative(&inputs);
+    let estimator = MbarEstimator::new(MbarOptions {
+        max_iterations: 10_000,
+        tolerance: 1.0e-7,
+        compute_uncertainty: true,
+        parallel: false,
+        ..MbarOptions::default()
+    });
+    let result = estimator.fit(&windows).expect("fit MBAR");
+    let delta_index = result.n_states() - 1;
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
+
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        result.values()[delta_index],
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        result.uncertainties().expect("uncertainties")[delta_index],
+    );
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(false));
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
+}
+
+#[test]
 fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let inputs = acetamide_inputs();
     let output = run_cli(
@@ -762,6 +805,13 @@ fn load_decorrelated_windows(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
         .collect()
 }
 
+fn load_decorrelated_windows_nonconservative(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
+    inputs
+        .iter()
+        .map(|path| load_decorrelated_window_nonconservative(path))
+        .collect()
+}
+
 fn load_decorrelated_windows_epot(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
@@ -815,6 +865,12 @@ fn load_auto_equilibrated_dhdl_series(inputs: &[PathBuf]) -> Vec<DhdlSeries> {
 fn load_decorrelated_window(path: &Path) -> UNkMatrix {
     let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
     decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
+        .expect("decorrelate u_nk")
+}
+
+fn load_decorrelated_window_nonconservative(path: &Path) -> UNkMatrix {
+    let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
+    decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &nonconservative_decorrelation_options())
         .expect("decorrelate u_nk")
 }
 
@@ -965,6 +1021,13 @@ fn expected_dhdl_counts_after_auto_equilibration(
 fn auto_equilibrate_options() -> DecorrelationOptions {
     DecorrelationOptions {
         fast: true,
+        conservative: false,
+        ..DecorrelationOptions::default()
+    }
+}
+
+fn nonconservative_decorrelation_options() -> DecorrelationOptions {
+    DecorrelationOptions {
         conservative: false,
         ..DecorrelationOptions::default()
     }

@@ -34,7 +34,7 @@ Typical CLI usage is:
 - `--auto-equilibrate`
 - `--decorrelate`
 - `--fast`
-- `--conservative`
+- `--conservative[=true|false]`
 - `--nskip <N>`
 - `--output-units <kt|kcal|kj>`
 - `--output-format <text|json|csv>`
