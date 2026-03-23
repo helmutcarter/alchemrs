@@ -96,6 +96,9 @@ fn render_text(result: &RenderedScalarResult<'_>) -> String {
         ,result.sample_counts.samples_after_burnin
         ,result.sample_counts.samples_kept
     );
+    if let Some(u_nk_observable) = result.provenance.u_nk_observable {
+        output.push_str(&format!("u_nk_observable: {u_nk_observable}\n"));
+    }
     if let Some(overlap) = result.overlap {
         output.push_str(&format!("overlap_scalar: {}\n", overlap.scalar));
         output.push_str("overlap_eigenvalues: ");
@@ -334,7 +337,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "delta_f: 1.5 kT\nuncertainty: 0.25 kT\nfrom_lambda: 0\nto_lambda: 1\nwindows: 15\nsamples_in: 300\nsamples_after_burnin: 300\nsamples_kept: 120\noverlap_scalar: 0.125\noverlap_eigenvalues: 1, 0.875, 0.5\n"
+            "delta_f: 1.5 kT\nuncertainty: 0.25 kT\nfrom_lambda: 0\nto_lambda: 1\nwindows: 15\nsamples_in: 300\nsamples_after_burnin: 300\nsamples_kept: 120\nu_nk_observable: de\noverlap_scalar: 0.125\noverlap_eigenvalues: 1, 0.875, 0.5\n"
         );
     }
 }
