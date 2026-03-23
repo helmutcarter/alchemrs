@@ -3,7 +3,8 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use crate::core::{CoreError, DhdlSeries, StatePoint, UNkMatrix};
+use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
+use crate::error::CoreError;
 use thiserror::Error;
 
 pub mod amber {

@@ -11,7 +11,8 @@ That package contains:
 
 The `alchemrs` crate is organized into modules rather than separate library crates:
 
-- `core`: domain types and shared error model
+- `data`: domain types and scientific data-model structures
+- `error`: shared crate-level error handling
 - `parse`: engine-specific parsers; today this means AMBER parsing
 - `prep`: time-series preparation such as duplicate cleanup, sorting, equilibration detection, and decorrelation
 - `estimators`: TI, BAR, MBAR, EXP, and DEXP implementations
@@ -28,10 +29,10 @@ The `alchemrs` binary wraps parsing, preprocessing, estimation, and output forma
 The intended dependency direction inside the library is:
 
 ```text
-parse -> core
-prep -> core
-estimators -> core
-analysis -> core + estimators
+parse -> data + error
+prep -> data + error
+estimators -> data + error
+analysis -> data + error + estimators
 ```
 
 The binary depends on the library through the same package source tree.

@@ -1,4 +1,5 @@
-use crate::core::{CoreError, DhdlSeries, Result, StatePoint, UNkMatrix};
+use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
+use crate::error::{CoreError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UNkSeriesMethod {

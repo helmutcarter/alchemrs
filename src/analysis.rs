@@ -1,4 +1,5 @@
-use crate::core::{CoreError, OverlapMatrix, Result, UNkMatrix};
+use crate::data::{OverlapMatrix, UNkMatrix};
+use crate::error::{CoreError, Result};
 use crate::estimators::{mbar_log_weights_from_windows, MbarOptions};
 use nalgebra::{DMatrix, Schur};
 

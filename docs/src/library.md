@@ -77,7 +77,8 @@ fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
 The root crate re-exports:
 
 - `analysis`
-- `core`
+- `data`
+- `error`
 - `estimators`
 - `parse`
 - `prep`

@@ -1,5 +1,5 @@
-use crate::core::{CoreError, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, Result};
-use crate::core::{StatePoint, UNkMatrix};
+use crate::data::{DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, StatePoint, UNkMatrix};
+use crate::error::{CoreError, Result};
 
 type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>);
 type PairEstimate = (f64, f64);
@@ -1250,7 +1250,7 @@ fn trapezoidal_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::StatePoint;
+    use crate::data::StatePoint;
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
         let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
