@@ -171,3 +171,9 @@ EXP reports FEP results in the forward direction, DEXP reports FEP results in th
 ## Performance 
 Initial results demonstrate 6x performance improvement over `alchemlyb`. 
 TODO: Table of performance comparisons, include vs. `alchemlyb`, `pymbar`, `gmx bar` 
+
+## License Information
+This project is licensed under either of
+  - MIT license ([LICENSE-MIT](LICENSE-MIT))
+  - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+Copyright © 2026 Helmut Carter
