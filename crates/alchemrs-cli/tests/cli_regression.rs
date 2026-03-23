@@ -697,7 +697,7 @@ fn mbar_cli_reports_nonfinite_de_observable_error() {
             "--output-format",
             "json",
         ],
-        &[input_path.clone()],
+        std::slice::from_ref(&input_path),
     );
 
     assert!(!output.status.success(), "expected command to fail");
