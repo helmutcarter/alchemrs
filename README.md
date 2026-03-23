@@ -24,7 +24,7 @@ The repo also includes runnable top-level examples:
 
 ## Documentation
 
-An `mdBook` lives in [`docs/`](docs/). To preview it locally:
+Documentation is online at https://helmutcarter.github.io/alchemrs/. The source files are in [`docs/`](docs/) and can be viewed locally:
 
 ```bash
 cargo install mdbook
