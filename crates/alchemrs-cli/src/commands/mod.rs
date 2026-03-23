@@ -33,7 +33,7 @@ pub fn run(command: Command) -> CliResult<()> {
             }
             ti::run(
                 inputs,
-                input_options(
+                AnalysisInputOptions {
                     temperature,
                     decorrelate,
                     remove_burnin,
@@ -41,8 +41,8 @@ pub fn run(command: Command) -> CliResult<()> {
                     fast,
                     conservative,
                     nskip,
-                    None,
-                ),
+                    u_nk_observable: None,
+                },
                 method,
                 output_units,
                 output_format,
@@ -68,7 +68,7 @@ pub fn run(command: Command) -> CliResult<()> {
             u_nk_observable,
         } => bar::run(
             inputs,
-            input_options(
+            AnalysisInputOptions {
                 temperature,
                 decorrelate,
                 remove_burnin,
@@ -76,8 +76,8 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
-                Some(u_nk_observable),
-            ),
+                u_nk_observable: Some(u_nk_observable),
+            },
             bar::BarRunOptions {
                 method,
                 output_units,
@@ -105,7 +105,7 @@ pub fn run(command: Command) -> CliResult<()> {
             parallel,
         } => exp::run_forward(
             inputs,
-            input_options(
+            AnalysisInputOptions {
                 temperature,
                 decorrelate,
                 remove_burnin,
@@ -113,8 +113,8 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
-                Some(u_nk_observable),
-            ),
+                u_nk_observable: Some(u_nk_observable),
+            },
             exp::ExpRunOptions {
                 no_uncertainty,
                 output_units,
@@ -142,7 +142,7 @@ pub fn run(command: Command) -> CliResult<()> {
             parallel,
         } => exp::run_reverse(
             inputs,
-            input_options(
+            AnalysisInputOptions {
                 temperature,
                 decorrelate,
                 remove_burnin,
@@ -150,8 +150,8 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
-                Some(u_nk_observable),
-            ),
+                u_nk_observable: Some(u_nk_observable),
+            },
             exp::ExpRunOptions {
                 no_uncertainty,
                 output_units,
@@ -181,7 +181,7 @@ pub fn run(command: Command) -> CliResult<()> {
             parallel,
         } => mbar::run(
             inputs,
-            input_options(
+            AnalysisInputOptions {
                 temperature,
                 decorrelate,
                 remove_burnin,
@@ -189,8 +189,8 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
-                Some(u_nk_observable),
-            ),
+                u_nk_observable: Some(u_nk_observable),
+            },
             mbar::MbarRunOptions {
                 max_iterations,
                 tolerance,
@@ -202,27 +202,5 @@ pub fn run(command: Command) -> CliResult<()> {
                 parallel,
             },
         ),
-    }
-}
-
-fn input_options(
-    temperature: f64,
-    decorrelate: bool,
-    remove_burnin: usize,
-    auto_equilibrate: bool,
-    fast: bool,
-    conservative: bool,
-    nskip: usize,
-    u_nk_observable: Option<crate::cli::UNkObservable>,
-) -> AnalysisInputOptions {
-    AnalysisInputOptions {
-        temperature,
-        decorrelate,
-        remove_burnin,
-        auto_equilibrate,
-        fast,
-        conservative,
-        nskip,
-        u_nk_observable,
     }
 }
