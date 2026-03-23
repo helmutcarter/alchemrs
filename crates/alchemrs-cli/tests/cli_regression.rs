@@ -639,6 +639,77 @@ fn mbar_cli_supports_epot_observable_for_u_nk_preprocessing() {
     );
 }
 
+#[test]
+fn mbar_cli_supports_all_observable_for_u_nk_preprocessing() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--decorrelate",
+            "--u-nk-observable",
+            "all",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let windows = load_decorrelated_windows_all(&inputs);
+    let estimator = MbarEstimator::new(MbarOptions {
+        max_iterations: 10_000,
+        tolerance: 1.0e-7,
+        compute_uncertainty: true,
+        parallel: false,
+        ..MbarOptions::default()
+    });
+    let result = estimator.fit(&windows).expect("fit MBAR");
+    let delta_index = result.n_states() - 1;
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
+
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        result.values()[delta_index],
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        result.uncertainties().expect("uncertainties")[delta_index],
+    );
+    assert_eq!(
+        payload["provenance"]["u_nk_observable"].as_str(),
+        Some("all")
+    );
+    assert_eq!(
+        payload["provenance"]["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
+}
+
+#[test]
+fn mbar_cli_reports_nonfinite_de_observable_error() {
+    let input_path = write_nonfinite_u_nk_input();
+    let output = run_cli_failure(
+        &[
+            "mbar",
+            "--decorrelate",
+            "--u-nk-observable",
+            "de",
+            "--output-format",
+            "json",
+        ],
+        &[input_path.clone()],
+    );
+
+    assert!(!output.status.success(), "expected command to fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("decorrelation is unsupported for +inf reduced energies"),
+        "unexpected stderr:\n{stderr}"
+    );
+
+    fs::remove_file(&input_path).expect("remove temporary AMBER input");
+}
+
 fn workspace_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
@@ -705,6 +776,13 @@ fn load_decorrelated_windows_epot(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkM
         .collect()
 }
 
+fn load_decorrelated_windows_all(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix> {
+    inputs
+        .iter()
+        .map(|path| load_decorrelated_window_all(path))
+        .collect()
+}
+
 fn load_auto_equilibrated_windows(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix> {
     inputs
         .iter()
@@ -754,6 +832,16 @@ fn load_decorrelated_window_epot(path: &Path) -> alchemrs_core::UNkMatrix {
         extract_u_nk_with_potential(path, TEMPERATURE_K).expect("parse u_nk with potential");
     decorrelate_u_nk_with_observable(&u_nk, &potential, &DecorrelationOptions::default())
         .expect("decorrelate u_nk with EPtot")
+}
+
+fn load_decorrelated_window_all(path: &Path) -> alchemrs_core::UNkMatrix {
+    let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
+    decorrelate_u_nk(
+        &u_nk,
+        UNkSeriesMethod::All,
+        &DecorrelationOptions::default(),
+    )
+    .expect("decorrelate u_nk with all")
 }
 
 fn load_auto_equilibrated_window(path: &Path) -> alchemrs_core::UNkMatrix {
@@ -949,6 +1037,37 @@ fn unique_output_path(file_name: &str) -> PathBuf {
         .expect("system clock before unix epoch")
         .as_nanos();
     std::env::temp_dir().join(format!("alchemrs-cli-{suffix}-{file_name}"))
+}
+
+fn write_nonfinite_u_nk_input() -> PathBuf {
+    let path = unique_output_path("nonfinite-u-nk.out");
+    let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.0000
+FEP MBAR options:
+    bar_intervall = 10
+    MBAR - lambda values considered:
+      total   0.0000 0.1000
+    Extra
+   3.  ATOMIC
+ begin time coords = 0.0
+   4.  RESULTS
+MBAR Energy analysis:
+Energy at 0.0000 =    -10.0
+Energy at 0.1000 = **********
+ ---
+MBAR Energy analysis:
+Energy at 0.0000 =    -11.0
+Energy at 0.1000 =     -8.0
+ ---
+"#;
+    fs::write(&path, content).expect("write temporary AMBER input");
+    path
 }
 
 fn assert_close(actual: f64, expected: f64) {
