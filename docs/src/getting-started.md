@@ -29,9 +29,9 @@ cargo build -p alchemrs-cli --release
 ## Run the top-level examples
 
 ```bash
-cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/1.0/acetamide.prod.out
+cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out
 
-cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/1.0/acetamide.prod.out
+cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out
 ```
 
 ## Build this book
