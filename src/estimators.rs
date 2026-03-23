@@ -181,7 +181,7 @@ impl BarEstimator {
                         self.options.maximum_iterations,
                         self.options.relative_tolerance,
                     )?;
-                    Ok((df, ddf * ddf))
+                    Ok((df, ddf))
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -207,7 +207,7 @@ impl BarEstimator {
                     self.options.maximum_iterations,
                     self.options.relative_tolerance,
                 )?;
-                out.push(Ok((df, ddf * ddf)));
+                out.push(Ok((df, ddf)));
             }
             out
         };
@@ -1566,6 +1566,31 @@ mod tests {
         .unwrap_err();
 
         assert!(matches!(err, CoreError::ConvergenceFailure));
+    }
+
+    #[test]
+    fn bar_adjacent_uncertainty_matches_solver_sigma() {
+        let windows = make_two_state_windows();
+        let result = BarEstimator::default().fit(&windows).unwrap();
+
+        let w_f = work_values(&windows[0], 0, 1).unwrap();
+        let w_r = work_values(&windows[1], 0, 1)
+            .unwrap()
+            .into_iter()
+            .map(|w| -w)
+            .collect::<Vec<_>>();
+        let (_, expected_sigma) = bar_estimate(
+            &w_f,
+            &w_r,
+            BarMethod::FalsePosition,
+            BarOptions::default().maximum_iterations,
+            BarOptions::default().relative_tolerance,
+        )
+        .unwrap();
+
+        let sigma = result.uncertainties().expect("uncertainties")[1];
+        assert!((sigma - expected_sigma).abs() < 1e-12);
+        assert!((result.uncertainties().expect("uncertainties")[2] - expected_sigma).abs() < 1e-12);
     }
 
     #[test]
