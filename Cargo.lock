@@ -15,69 +15,13 @@ dependencies = [
 name = "alchemrs"
 version = "0.1.0"
 dependencies = [
- "alchemrs-analysis",
- "alchemrs-core",
- "alchemrs-estimators",
- "alchemrs-parse",
- "alchemrs-prep",
-]
-
-[[package]]
-name = "alchemrs-analysis"
-version = "0.1.0"
-dependencies = [
- "alchemrs-core",
- "alchemrs-estimators",
- "alchemrs-parse",
- "nalgebra",
-]
-
-[[package]]
-name = "alchemrs-cli"
-version = "0.1.0"
-dependencies = [
- "alchemrs-analysis",
- "alchemrs-core",
- "alchemrs-estimators",
- "alchemrs-parse",
- "alchemrs-prep",
  "clap",
- "serde_json",
-]
-
-[[package]]
-name = "alchemrs-core"
-version = "0.1.0"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "alchemrs-estimators"
-version = "0.1.0"
-dependencies = [
- "alchemrs-core",
- "alchemrs-parse",
  "nalgebra",
  "rayon",
-]
-
-[[package]]
-name = "alchemrs-parse"
-version = "0.1.0"
-dependencies = [
- "alchemrs-core",
  "regex",
+ "serde_json",
  "tempfile",
  "thiserror",
-]
-
-[[package]]
-name = "alchemrs-prep"
-version = "0.1.0"
-dependencies = [
- "alchemrs-core",
- "alchemrs-parse",
 ]
 
 [[package]]

@@ -24,7 +24,7 @@ The architecture leaves room for other engines later, but the documented and tes
 
 ## One-dimensional lambda assumption
 
-The core types can store more general state metadata, but the estimator layer currently assumes one-dimensional lambda states.
+The data-model types can store more general state metadata, but the estimator layer currently assumes one-dimensional lambda states.
 
 If you need multidimensional alchemical states, the current estimators are not yet the right abstraction surface.
 
@@ -49,9 +49,9 @@ This book documents the current implementation, not a frozen public-stability pr
 
 This repository does not currently provide:
 
-- plotting in the Rust core
+- plotting in the Rust library
 - production-grade multi-engine parser support
-- Python bindings in the current workspace
+- Python bindings in the current package
 - versioned public API guarantees
 
 Those may come later, but they are not part of the implemented surface documented in this book.

@@ -1,6 +1,6 @@
 # Preprocessing
 
-Preprocessing lives in `alchemrs-prep` and is where most of the scientifically important workflow details live.
+Preprocessing lives in the `alchemrs::prep` module and is where most of the scientifically important workflow details live.
 
 ## Core concepts
 

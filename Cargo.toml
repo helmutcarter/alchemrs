@@ -1,28 +1,24 @@
 [package]
 name = "alchemrs"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-
-[dependencies]
-alchemrs-core = { path = "crates/alchemrs-core" }
-alchemrs-analysis = { path = "crates/alchemrs-analysis" }
-alchemrs-estimators = { path = "crates/alchemrs-estimators" }
-alchemrs-parse = { path = "crates/alchemrs-parse" }
-alchemrs-prep = { path = "crates/alchemrs-prep" }
-
-[workspace]
-resolver = "2"
-members = [
-  "crates/alchemrs-cli",
-  "crates/alchemrs-analysis",
-  "crates/alchemrs-core",
-  "crates/alchemrs-estimators",
-  "crates/alchemrs-parse",
-  "crates/alchemrs-prep",
-]
-
-[workspace.package]
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
+description = "Rust toolkit for alchemical free energy analysis of AMBER outputs"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/helmutcarter/alchemrs"
+homepage = "https://github.com/helmutcarter/alchemrs"
+documentation = "https://docs.rs/alchemrs"
+keywords = ["alchemy", "free-energy", "mbar", "bar", "amber"]
+categories = ["science", "command-line-utilities"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+nalgebra = "0.33"
+rayon = "1.10"
+regex = "1"
+thiserror = "1"
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"

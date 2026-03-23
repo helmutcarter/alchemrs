@@ -1,0 +1,206 @@
+mod bar;
+mod exp;
+mod mbar;
+mod ti;
+
+use crate::cli::input::AnalysisInputOptions;
+use crate::cli::Command;
+use crate::CliResult;
+
+pub fn run(command: Command) -> CliResult<()> {
+    match command {
+        Command::Ti {
+            inputs,
+            temperature,
+            method,
+            output_units,
+            output_format,
+            output,
+            parallel,
+            decorrelate,
+            remove_burnin,
+            auto_equilibrate,
+            fast,
+            conservative,
+            nskip,
+            u_nk_observable,
+        } => {
+            if u_nk_observable.is_some() {
+                return Err(
+                    "--u-nk-observable is only valid for bar, mbar, exp, and dexp; ti uses dH/dlambda for preprocessing."
+                        .into(),
+                );
+            }
+            ti::run(
+                inputs,
+                AnalysisInputOptions {
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    u_nk_observable: None,
+                },
+                method,
+                output_units,
+                output_format,
+                output,
+                parallel,
+            )
+        }
+        Command::Bar {
+            inputs,
+            temperature,
+            method,
+            output_units,
+            output_format,
+            output,
+            overlap_summary,
+            parallel,
+            decorrelate,
+            remove_burnin,
+            auto_equilibrate,
+            fast,
+            conservative,
+            nskip,
+            u_nk_observable,
+        } => bar::run(
+            inputs,
+            AnalysisInputOptions {
+                temperature,
+                decorrelate,
+                remove_burnin,
+                auto_equilibrate,
+                fast,
+                conservative,
+                nskip,
+                u_nk_observable: Some(u_nk_observable),
+            },
+            bar::BarRunOptions {
+                method,
+                output_units,
+                output_format,
+                output_path: output,
+                overlap_summary,
+                parallel,
+            },
+        ),
+        Command::Exp {
+            inputs,
+            temperature,
+            decorrelate,
+            remove_burnin,
+            auto_equilibrate,
+            fast,
+            conservative,
+            nskip,
+            u_nk_observable,
+            no_uncertainty,
+            output_units,
+            output_format,
+            output,
+            overlap_summary,
+            parallel,
+        } => exp::run_forward(
+            inputs,
+            AnalysisInputOptions {
+                temperature,
+                decorrelate,
+                remove_burnin,
+                auto_equilibrate,
+                fast,
+                conservative,
+                nskip,
+                u_nk_observable: Some(u_nk_observable),
+            },
+            exp::ExpRunOptions {
+                no_uncertainty,
+                output_units,
+                output_format,
+                output_path: output,
+                overlap_summary,
+                parallel,
+            },
+        ),
+        Command::Dexp {
+            inputs,
+            temperature,
+            decorrelate,
+            remove_burnin,
+            auto_equilibrate,
+            fast,
+            conservative,
+            nskip,
+            u_nk_observable,
+            no_uncertainty,
+            output_units,
+            output_format,
+            output,
+            overlap_summary,
+            parallel,
+        } => exp::run_reverse(
+            inputs,
+            AnalysisInputOptions {
+                temperature,
+                decorrelate,
+                remove_burnin,
+                auto_equilibrate,
+                fast,
+                conservative,
+                nskip,
+                u_nk_observable: Some(u_nk_observable),
+            },
+            exp::ExpRunOptions {
+                no_uncertainty,
+                output_units,
+                output_format,
+                output_path: output,
+                overlap_summary,
+                parallel,
+            },
+        ),
+        Command::Mbar {
+            inputs,
+            temperature,
+            decorrelate,
+            remove_burnin,
+            auto_equilibrate,
+            fast,
+            conservative,
+            nskip,
+            u_nk_observable,
+            max_iterations,
+            tolerance,
+            no_uncertainty,
+            output_units,
+            output_format,
+            output,
+            overlap_summary,
+            parallel,
+        } => mbar::run(
+            inputs,
+            AnalysisInputOptions {
+                temperature,
+                decorrelate,
+                remove_burnin,
+                auto_equilibrate,
+                fast,
+                conservative,
+                nskip,
+                u_nk_observable: Some(u_nk_observable),
+            },
+            mbar::MbarRunOptions {
+                max_iterations,
+                tolerance,
+                no_uncertainty,
+                output_units,
+                output_format,
+                output_path: output,
+                overlap_summary,
+                parallel,
+            },
+        ),
+    }
+}

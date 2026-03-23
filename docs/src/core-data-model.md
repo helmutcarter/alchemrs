@@ -1,6 +1,6 @@
 # Core Data Model
 
-The core crate defines a small set of typed structures that all other crates operate on.
+The `alchemrs::data` module defines the typed structures that the rest of the library operates on.
 
 ## `StatePoint`
 
@@ -88,13 +88,13 @@ Represents the overlap matrix between states and is used by the diagnostics laye
 
 ## Error model
 
-Most crates use the shared `CoreError` type for:
+The crate uses the shared `CoreError` type from `alchemrs::error` for:
 
 - shape mismatches
 - invalid state metadata
 - invalid time ordering
 - non-finite numerical values
-- parse failures converted into the core error model
+- parse failures converted into the shared error model
 - convergence failures
 - unsupported inputs
 

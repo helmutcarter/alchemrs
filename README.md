@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. It provides a layered workspace of crates for parsing AMBER outputs, preprocessing time series (equilibration trimming and decorrelation), and running common estimators (TI, BAR, MBAR, EXP/DEXP) plus diagnostics like overlap analysis. A CLI (`alchemrs-cli`) offers a simple command-line workflow, and the top-level `alchemrs` crate re-exports a clean public API for library use. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
+`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
 
 ## Library API
 
@@ -33,12 +33,12 @@ mdbook serve docs
 
 ## CLI
 
-`alchemrs-cli` provides a command-line workflow for AMBER output files.
+The `alchemrs` binary provides a command-line workflow for AMBER output files.
 
 ### Build
 
 ```bash
-cargo build -p alchemrs-cli --release
+cargo build --release
 ```
 
 ### Common flags
@@ -60,7 +60,7 @@ cargo build -p alchemrs-cli --release
 JSON output is useful for shell pipelines and downstream tools:
 
 ```bash
-cargo run -p alchemrs-cli --release -- mbar \
+cargo run --release -- mbar \
   --temperature 300 \
   --decorrelate \
   --overlap-summary \
@@ -105,7 +105,7 @@ Example JSON payload:
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
 ```bash
-cargo run -p alchemrs-cli --release -- bar \
+cargo run --release -- bar \
   --temperature 300 \
   --output-format csv \
   /path/to/*/prod.out
@@ -120,7 +120,7 @@ delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalu
 ### TI (trapezoidal)
 
 ```bash
-cargo run -p alchemrs-cli --release -- ti \
+cargo run --release -- ti \
   --temperature 300 \
   --method trapezoidal \
   --remove-burnin 125 \
@@ -130,7 +130,7 @@ cargo run -p alchemrs-cli --release -- ti \
 ### BAR
 
 ```bash
-cargo run -p alchemrs-cli --release -- bar \
+cargo run --release -- bar \
   --temperature 300 \
   --method false-position \
   --decorrelate \
@@ -142,7 +142,7 @@ Note: BAR uncertainties are only computed for adjacent windows; non-adjacent sta
 ### MBAR
 
 ```bash
-cargo run -p alchemrs-cli --release -- mbar \
+cargo run --release -- mbar \
   --temperature 300 \
   --decorrelate \
   --max-iterations 10000 \
@@ -153,11 +153,11 @@ cargo run -p alchemrs-cli --release -- mbar \
 ### EXP / DEXP
 
 ```bash
-cargo run -p alchemrs-cli --release -- exp \
+cargo run --release -- exp \
   --temperature 300 \
   /path/to/*/prod.out
 
-cargo run -p alchemrs-cli --release -- dexp \
+cargo run --release -- dexp \
   --temperature 300 \
   /path/to/*/prod.out
 ```
