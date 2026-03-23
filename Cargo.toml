@@ -4,13 +4,13 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Rust toolkit for alchemical free energy analysis of AMBER outputs"
+license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/helmutcarter/alchemrs"
 homepage = "https://github.com/helmutcarter/alchemrs"
 documentation = "https://docs.rs/alchemrs"
 keywords = ["alchemy", "free-energy", "mbar", "bar", "amber"]
 categories = ["science", "command-line-utilities"]
-license = "MIT OR Apache-2.0"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
