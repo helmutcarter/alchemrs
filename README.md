@@ -24,7 +24,7 @@ The repo also includes runnable top-level examples:
 
 ## Documentation
 
-An `mdBook` lives in [`docs/`](docs/). To preview it locally:
+Documentation is online at https://helmutcarter.github.io/alchemrs/. The source files are in [`docs/`](docs/) and can be viewed locally:
 
 ```bash
 cargo install mdbook
@@ -36,9 +36,14 @@ mdbook serve docs
 The `alchemrs` binary provides a command-line workflow for AMBER output files.
 
 ### Build
-
+It can either be invoked through cargo:
 ```bash
+cargo run --release [arguments]
+```
+or compiled using cargo and called from the binary:
+```base
 cargo build --release
+./target/release/alchemrs [arguments]
 ```
 
 ### Common flags
@@ -59,7 +64,7 @@ cargo build --release
 JSON output is useful for shell pipelines and downstream tools:
 
 ```bash
-cargo run --release -- mbar \
+alchemrs mbar \
   --temperature 300 \
   --decorrelate \
   --overlap-summary \
@@ -104,7 +109,7 @@ Example JSON output:
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
 ```bash
-cargo run --release -- bar \
+alchemrs bar \
   --temperature 300 \
   --output-format csv \
   /path/to/*/prod.out
@@ -119,7 +124,7 @@ delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalu
 ### TI (trapezoidal)
 
 ```bash
-cargo run --release -- ti \
+alchemrs ti \
   --temperature 300 \
   --method trapezoidal \
   --remove-burnin 125 \
@@ -129,7 +134,7 @@ cargo run --release -- ti \
 ### BAR
 
 ```bash
-cargo run --release -- bar \
+alchemrs bar \
   --temperature 300 \
   --method false-position \
   --decorrelate \
@@ -141,7 +146,7 @@ Note: BAR uncertainties are only computed for adjacent windows; non-adjacent sta
 ### MBAR
 
 ```bash
-cargo run --release -- mbar \
+alchemrs mbar \
   --temperature 300 \
   --decorrelate \
   --max-iterations 10000 \
@@ -152,11 +157,11 @@ cargo run --release -- mbar \
 ### EXP / DEXP
 
 ```bash
-cargo run --release -- exp \
+alchemrs exp \
   --temperature 300 \
   /path/to/*/prod.out
 
-cargo run --release -- dexp \
+alchemrs dexp \
   --temperature 300 \
   /path/to/*/prod.out
 ```
@@ -166,3 +171,10 @@ EXP reports FEP results in the forward direction, DEXP reports FEP results in th
 ## Performance 
 Initial results demonstrate 6x performance improvement over `alchemlyb`. 
 TODO: Table of performance comparisons, include vs. `alchemlyb`, `pymbar`, `gmx bar` 
+
+## License Information
+This project is licensed under either of
+  - MIT license ([LICENSE-MIT](LICENSE-MIT))
+  - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+
+Copyright © 2026 Helmut Carter
