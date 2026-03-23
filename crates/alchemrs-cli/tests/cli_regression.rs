@@ -383,6 +383,29 @@ fn mbar_cli_writes_json_to_output_file() {
     fs::remove_file(&output_path).expect("remove CLI output file");
 }
 
+#[test]
+fn mbar_cli_reports_effective_auto_equilibrate_settings() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--decorrelate",
+            "--auto-equilibrate",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    assert_eq!(
+        payload["provenance"]["auto_equilibrate"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(payload["provenance"]["fast"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(false));
+}
+
 fn workspace_root() -> PathBuf {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest_dir

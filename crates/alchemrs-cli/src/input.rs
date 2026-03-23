@@ -54,6 +54,14 @@ impl AnalysisInputOptions {
             ..DecorrelationOptions::default()
         }
     }
+
+    pub fn effective_fast(self) -> bool {
+        self.normalized_equilibration_flags().0
+    }
+
+    pub fn effective_conservative(self) -> bool {
+        self.normalized_equilibration_flags().1
+    }
 }
 
 pub fn load_windows(
@@ -176,4 +184,28 @@ fn trim_values(values: Vec<f64>, remove_burnin: usize) -> CliResult<Vec<f64>> {
     }
 
     Ok(values[remove_burnin..].to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AnalysisInputOptions;
+
+    #[test]
+    fn auto_equilibrate_overrides_decorrelation_flags() {
+        let options = AnalysisInputOptions {
+            temperature: 300.0,
+            decorrelate: true,
+            remove_burnin: 0,
+            auto_equilibrate: true,
+            fast: false,
+            conservative: true,
+            nskip: 7,
+        }
+        .decorrelation_options();
+
+        assert!(options.remove_burnin);
+        assert!(options.fast);
+        assert!(!options.conservative);
+        assert_eq!(options.nskip, 7);
+    }
 }
