@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - Rust 1.85 or newer
-- AMBER output files for the current parsing workflow
+- AMBER output files 
+    - Currently, the parser only support AMBER output files. More are coming. 
 
 The workspace uses Cargo workspaces and is intended to be built and tested with standard Rust tooling.
 
@@ -28,9 +29,9 @@ cargo build -p alchemrs-cli --release
 ## Run the top-level examples
 
 ```bash
-cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out
+cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/1.0/acetamide.prod.out
 
-cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out
+cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/1.0/acetamide.prod.out
 ```
 
 ## Build this book
