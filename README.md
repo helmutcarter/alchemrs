@@ -176,4 +176,5 @@ TODO: Table of performance comparisons, include vs. `alchemlyb`, `pymbar`, `gmx 
 This project is licensed under either of
   - MIT license ([LICENSE-MIT](LICENSE-MIT))
   - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+
 Copyright © 2026 Helmut Carter
