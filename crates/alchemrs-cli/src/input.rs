@@ -2,7 +2,10 @@ use std::path::PathBuf;
 
 use alchemrs_core::{DhdlSeries, UNkMatrix};
 use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
-use alchemrs_prep::{decorrelate_dhdl, decorrelate_u_nk_with_observable, DecorrelationOptions};
+use alchemrs_prep::{
+    decorrelate_dhdl, decorrelate_u_nk_with_observable, detect_equilibration_dhdl,
+    detect_equilibration_observable, DecorrelationOptions,
+};
 
 use crate::CliResult;
 
@@ -47,7 +50,18 @@ impl AnalysisInputOptions {
     fn decorrelation_options(self) -> DecorrelationOptions {
         let (fast, conservative) = self.normalized_equilibration_flags();
         DecorrelationOptions {
-            remove_burnin: self.auto_equilibrate,
+            remove_burnin: false,
+            fast,
+            conservative,
+            nskip: self.nskip,
+            ..DecorrelationOptions::default()
+        }
+    }
+
+    fn equilibration_options(self) -> DecorrelationOptions {
+        let (fast, conservative) = self.normalized_equilibration_flags();
+        DecorrelationOptions {
+            remove_burnin: false,
             fast,
             conservative,
             nskip: self.nskip,
@@ -73,17 +87,29 @@ pub fn load_windows(
     let mut samples_after_burnin = 0;
     let mut samples_kept = 0;
     for path in inputs {
-        if options.decorrelate {
+        if options.decorrelate || options.auto_equilibrate {
             let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)?;
+            let mut potential = potential;
             samples_in += u_nk.n_samples();
             u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
+            potential = trim_values(potential, options.remove_burnin)?;
+            if options.auto_equilibrate {
+                let equilibration = detect_equilibration_observable(
+                    &potential,
+                    options.effective_fast(),
+                    options.nskip,
+                )?;
+                u_nk = trim_u_nk(u_nk, equilibration.t0)?;
+                potential = trim_values(potential, equilibration.t0)?;
+            }
             samples_after_burnin += u_nk.n_samples();
-            let potential = trim_values(potential, options.remove_burnin)?;
-            u_nk = decorrelate_u_nk_with_observable(
-                &u_nk,
-                &potential,
-                &options.decorrelation_options(),
-            )?;
+            if options.decorrelate {
+                u_nk = decorrelate_u_nk_with_observable(
+                    &u_nk,
+                    &potential,
+                    &options.decorrelation_options(),
+                )?;
+            }
             samples_kept += u_nk.n_samples();
             windows.push(u_nk);
             continue;
@@ -118,6 +144,11 @@ pub fn load_dhdl_series(
         let mut dhdl = extract_dhdl(path, options.temperature)?;
         samples_in += dhdl.values().len();
         dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
+        if options.auto_equilibrate {
+            let equilibration =
+                detect_equilibration_dhdl(&dhdl, &options.equilibration_options())?;
+            dhdl = trim_dhdl(dhdl, equilibration.t0)?;
+        }
         samples_after_burnin += dhdl.values().len();
         if options.decorrelate {
             dhdl = decorrelate_dhdl(&dhdl, &options.decorrelation_options())?;
@@ -192,7 +223,7 @@ mod tests {
 
     #[test]
     fn auto_equilibrate_overrides_decorrelation_flags() {
-        let options = AnalysisInputOptions {
+        let decorrelation = AnalysisInputOptions {
             temperature: 300.0,
             decorrelate: true,
             remove_burnin: 0,
@@ -203,9 +234,28 @@ mod tests {
         }
         .decorrelation_options();
 
-        assert!(options.remove_burnin);
-        assert!(options.fast);
-        assert!(!options.conservative);
-        assert_eq!(options.nskip, 7);
+        assert!(!decorrelation.remove_burnin);
+        assert!(decorrelation.fast);
+        assert!(!decorrelation.conservative);
+        assert_eq!(decorrelation.nskip, 7);
+    }
+
+    #[test]
+    fn auto_equilibrate_uses_effective_flags_for_equilibration() {
+        let equilibration = AnalysisInputOptions {
+            temperature: 300.0,
+            decorrelate: false,
+            remove_burnin: 0,
+            auto_equilibrate: true,
+            fast: false,
+            conservative: true,
+            nskip: 7,
+        }
+        .equilibration_options();
+
+        assert!(!equilibration.remove_burnin);
+        assert!(equilibration.fast);
+        assert!(!equilibration.conservative);
+        assert_eq!(equilibration.nskip, 7);
     }
 }

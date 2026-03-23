@@ -146,6 +146,19 @@ pub fn detect_equilibration_u_nk(
     detect_equilibration(&series, options.fast, options.nskip)
 }
 
+pub fn detect_equilibration_observable(
+    observable: &[f64],
+    fast: bool,
+    nskip: usize,
+) -> Result<EquilibrationResult> {
+    if observable.iter().any(|value| !value.is_finite()) {
+        return Err(CoreError::NonFiniteValue(
+            "equilibration observable must be finite".to_string(),
+        ));
+    }
+    detect_equilibration(observable, fast, nskip)
+}
+
 fn prepare_series(
     time: &[f64],
     values: &[f64],
@@ -658,6 +671,12 @@ mod tests {
         assert_eq!(result.t0, 0);
         assert_eq!(result.g, 1.0);
         assert_eq!(result.neff_max, 1.0);
+    }
+
+    #[test]
+    fn detect_equilibration_observable_rejects_nonfinite_values() {
+        let err = detect_equilibration_observable(&[1.0, f64::INFINITY], false, 1).unwrap_err();
+        assert!(matches!(err, CoreError::NonFiniteValue(_)));
     }
 
     #[test]
