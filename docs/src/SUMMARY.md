@@ -2,8 +2,8 @@
 
 - [Introduction](introduction.md)
 - [Getting Started](getting-started.md)
-- [Repository Layout](workspace.md)
-- [Core Data Model](core-data-model.md)
+- [Repository Layout](repository-layout.md)
+- [Data Model](data-model.md)
 - [Parsing AMBER Outputs](parsing.md)
 - [Preprocessing](preprocessing.md)
 - [Estimators](estimators.md)

@@ -1,4 +1,4 @@
-# Core Data Model
+# Data Model
 
 The `alchemrs::data` module defines the typed structures that the rest of the library operates on.
 
