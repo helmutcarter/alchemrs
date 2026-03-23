@@ -963,22 +963,20 @@ fn bar_estimate(
         ));
     }
     let mut delta_f = 0.0;
-    let mut upper = exp_delta(w_f)?;
-    let mut lower = -exp_delta(w_r)?;
-    let mut f_upper = bar_zero(w_f, w_r, upper);
-    let mut f_lower = bar_zero(w_f, w_r, lower);
+    let initial_upper = exp_delta(w_f)?;
+    let initial_lower = -exp_delta(w_r)?;
+    let (mut lower, mut upper, mut f_lower, mut f_upper) = bracket_bar_root(
+        w_f,
+        w_r,
+        initial_lower,
+        initial_upper,
+        maximum_iterations,
+    )?;
 
     if !f_upper.is_finite() || !f_lower.is_finite() {
         return Err(CoreError::NonFiniteValue(
             "BAR overlap function became non-finite while bracketing the solution".to_string(),
         ));
-    }
-    while f_upper * f_lower > 0.0 {
-        let ave = (upper + lower) / 2.0;
-        upper -= (upper - ave).abs().max(0.1);
-        lower += (lower - ave).abs().max(0.1);
-        f_upper = bar_zero(w_f, w_r, upper);
-        f_lower = bar_zero(w_f, w_r, lower);
     }
 
     for _ in 0..=maximum_iterations {
@@ -1021,6 +1019,47 @@ fn bar_estimate(
 
     let d_delta_f = bar_uncertainty(w_f, w_r, delta_f)?;
     Ok((delta_f, d_delta_f))
+}
+
+fn bracket_bar_root(
+    w_f: &[f64],
+    w_r: &[f64],
+    initial_lower: f64,
+    initial_upper: f64,
+    maximum_iterations: usize,
+) -> Result<(f64, f64, f64, f64)> {
+    let mut lower = initial_lower.min(initial_upper);
+    let mut upper = initial_lower.max(initial_upper);
+    let mut f_lower = bar_zero(w_f, w_r, lower);
+    let mut f_upper = bar_zero(w_f, w_r, upper);
+
+    if !f_lower.is_finite() || !f_upper.is_finite() {
+        return Err(CoreError::NonFiniteValue(
+            "BAR overlap function became non-finite while bracketing the solution".to_string(),
+        ));
+    }
+    if f_lower == 0.0 || f_upper == 0.0 || f_lower * f_upper < 0.0 {
+        return Ok((lower, upper, f_lower, f_upper));
+    }
+
+    let mut expansion = (upper - lower).abs().max(0.1);
+    for _ in 0..maximum_iterations {
+        lower -= expansion;
+        upper += expansion;
+        f_lower = bar_zero(w_f, w_r, lower);
+        f_upper = bar_zero(w_f, w_r, upper);
+        if !f_lower.is_finite() || !f_upper.is_finite() {
+            return Err(CoreError::NonFiniteValue(
+                "BAR overlap function became non-finite while bracketing the solution".to_string(),
+            ));
+        }
+        if f_lower == 0.0 || f_upper == 0.0 || f_lower * f_upper < 0.0 {
+            return Ok((lower, upper, f_lower, f_upper));
+        }
+        expansion *= 2.0;
+    }
+
+    Err(CoreError::ConvergenceFailure)
 }
 
 fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<f64> {
@@ -1492,6 +1531,20 @@ mod tests {
             .expect("uncertainties")
             .iter()
             .any(|value| value.is_nan()));
+    }
+
+    #[test]
+    fn bar_bracketing_respects_iteration_limit() {
+        let err = bar_estimate(
+            &[5.0, 5.0],
+            &[-10.0, 5.0],
+            BarMethod::FalsePosition,
+            0,
+            1.0e-7,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, CoreError::ConvergenceFailure));
     }
 
     #[test]
