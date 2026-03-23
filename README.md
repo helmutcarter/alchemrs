@@ -49,7 +49,6 @@ cargo build --release
   - `ti` uses the parsed `dH/dlambda` series.
   - `bar`, `exp`, `dexp`, and `mbar` use the observable selected by `--u-nk-observable <de|all|epot>`.
 - `--u-nk-observable <de|all|epot>`: choose the scalar observable used for `u_nk` auto-equilibration and decorrelation on `bar`, `exp`, `dexp`, and `mbar` runs. The default is `de`.
-- When multiple preprocessing flags are provided, they are applied in this order: `--remove-burnin`, then `--auto-equilibrate`, then `--decorrelate`.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
 - `--output <PATH>`: write the formatted result to a file instead of stdout.
@@ -71,7 +70,7 @@ cargo run --release -- mbar \
 
 For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses `EPtot` parsed from the AMBER output.
 
-Example JSON payload:
+Example JSON output:
 
 ```json
 {
@@ -111,7 +110,7 @@ cargo run --release -- bar \
   /path/to/*/prod.out
 ```
 
-CSV columns now include estimator provenance after the result fields:
+CSV columns include estimator parameters after the result fields:
 
 ```text
 delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,windows,samples_in,samples_after_burnin,samples_kept
@@ -137,7 +136,7 @@ cargo run --release -- bar \
   /path/to/*/prod.out
 ```
 
-Note: BAR uncertainties are only computed for adjacent windows; non-adjacent state pairs (for example, `0->1`) are reported as `NaN`, matching alchemlyb.
+Note: BAR uncertainties are only computed for adjacent windows; non-adjacent state pairs (for example, `0->1`) are reported as `NaN`, matching `alchemlyb`.
 
 ### MBAR
 
