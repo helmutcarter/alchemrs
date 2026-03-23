@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 
-use alchemrs::{ExpEstimator, ExpOptions, MbarOptions};
+use alchemrs::{BarEstimator, BarOptions, MbarOptions};
 
-use crate::cli::{OutputFormat, OutputUnits};
-use crate::input::{load_windows, AnalysisInputOptions};
-use crate::output::{print_scalar_result, OutputProvenance, ScalarResult};
-use crate::overlap::summarize_overlap;
+use crate::cli::input::{load_windows, AnalysisInputOptions};
+use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
+use crate::cli::overlap::summarize_overlap;
+use crate::cli::{BarMethodArg, OutputFormat, OutputUnits};
 use crate::CliResult;
 
-pub struct ExpRunOptions {
-    pub no_uncertainty: bool,
+pub struct BarRunOptions {
+    pub method: BarMethodArg,
     pub output_units: OutputUnits,
     pub output_format: OutputFormat,
     pub output_path: Option<PathBuf>,
@@ -17,27 +17,10 @@ pub struct ExpRunOptions {
     pub parallel: bool,
 }
 
-pub fn run_forward(
+pub fn run(
     inputs: Vec<PathBuf>,
     input_options: AnalysisInputOptions,
-    run_options: ExpRunOptions,
-) -> CliResult<()> {
-    run(inputs, input_options, run_options, false)
-}
-
-pub fn run_reverse(
-    inputs: Vec<PathBuf>,
-    input_options: AnalysisInputOptions,
-    run_options: ExpRunOptions,
-) -> CliResult<()> {
-    run(inputs, input_options, run_options, true)
-}
-
-fn run(
-    inputs: Vec<PathBuf>,
-    input_options: AnalysisInputOptions,
-    run_options: ExpRunOptions,
-    reverse: bool,
+    run_options: BarRunOptions,
 ) -> CliResult<()> {
     let loaded = load_windows(inputs, input_options)?;
     let windows = loaded.windows;
@@ -52,40 +35,25 @@ fn run(
     } else {
         None
     };
-    let estimator = ExpEstimator::new(ExpOptions {
-        compute_uncertainty: !run_options.no_uncertainty,
+    let estimator = BarEstimator::new(BarOptions {
+        method: run_options.method.into(),
         parallel: run_options.parallel,
+        ..BarOptions::default()
     });
     let result = estimator.fit(&windows)?;
-    let n_states = result.n_states();
-    let delta_index = if reverse {
-        (n_states - 1) * n_states
-    } else {
-        n_states - 1
-    };
-    let (from_lambda, to_lambda) = if reverse {
-        (
-            result.states().last().unwrap().lambdas()[0],
-            result.states().first().unwrap().lambdas()[0],
-        )
-    } else {
-        (
-            result.states().first().unwrap().lambdas()[0],
-            result.states().last().unwrap().lambdas()[0],
-        )
-    };
+    let delta_index = result.n_states() - 1;
 
     print_scalar_result(
         &ScalarResult {
             delta: result.values()[delta_index],
             sigma: result.uncertainties().map(|u| u[delta_index]),
-            from_lambda,
-            to_lambda,
+            from_lambda: result.states().first().unwrap().lambdas()[0],
+            to_lambda: result.states().last().unwrap().lambdas()[0],
             units: run_options.output_units,
             temperature: input_options.temperature,
             overlap,
             provenance: OutputProvenance {
-                estimator: if reverse { "dexp" } else { "exp" },
+                estimator: "bar",
                 decorrelate: input_options.decorrelate,
                 remove_burnin: input_options.remove_burnin,
                 auto_equilibrate: input_options.auto_equilibrate,

@@ -1,23 +1,16 @@
 [package]
 name = "alchemrs"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
 
 [dependencies]
+clap = { version = "4.5", features = ["derive"] }
 nalgebra = "0.33"
 rayon = "1.10"
 regex = "1"
 thiserror = "1"
 
 [dev-dependencies]
+serde_json = "1"
 tempfile = "3"
-
-[workspace]
-resolver = "2"
-members = ["crates/alchemrs-cli"]
-
-[workspace.package]
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.85"

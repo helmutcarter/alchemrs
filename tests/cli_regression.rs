@@ -709,18 +709,12 @@ fn mbar_cli_reports_nonfinite_de_observable_error() {
     fs::remove_file(&input_path).expect("remove temporary AMBER input");
 }
 
-fn workspace_root() -> PathBuf {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir
-        .parent()
-        .expect("crates dir")
-        .parent()
-        .expect("workspace root")
-        .to_path_buf()
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn acetamide_inputs() -> Vec<PathBuf> {
-    let base = workspace_root()
+    let base = repo_root()
         .join("fixtures")
         .join("amber")
         .join("acetamide_tiny");
@@ -734,12 +728,12 @@ fn acetamide_inputs() -> Vec<PathBuf> {
 }
 
 fn run_cli(args: &[&str], inputs: &[PathBuf]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_alchemrs-cli"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alchemrs"));
     command.args(args);
     for input in inputs {
         command.arg(input);
     }
-    let output = command.output().expect("run alchemrs-cli");
+    let output = command.output().expect("run alchemrs");
     assert!(
         output.status.success(),
         "command failed with stderr:\n{}",
@@ -749,12 +743,12 @@ fn run_cli(args: &[&str], inputs: &[PathBuf]) -> Output {
 }
 
 fn run_cli_failure(args: &[&str], inputs: &[PathBuf]) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_alchemrs-cli"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alchemrs"));
     command.args(args);
     for input in inputs {
         command.arg(input);
     }
-    command.output().expect("run alchemrs-cli")
+    command.output().expect("run alchemrs")
 }
 
 fn parse_json_output(output: &Output) -> Value {
@@ -1027,7 +1021,7 @@ fn unique_output_path(file_name: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("system clock before unix epoch")
         .as_nanos();
-    std::env::temp_dir().join(format!("alchemrs-cli-{suffix}-{file_name}"))
+    std::env::temp_dir().join(format!("alchemrs-{suffix}-{file_name}"))
 }
 
 fn write_nonfinite_u_nk_input() -> PathBuf {

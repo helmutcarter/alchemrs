@@ -1,9 +1,11 @@
-# Workspace Layout
+# Repository Layout
 
-The workspace currently has two packages:
+The repository is centered on a single Cargo package, `alchemrs`.
 
-- `alchemrs`: the main library crate
-- `alchemrs-cli`: the command-line interface built on top of `alchemrs`
+That package contains:
+
+- the `alchemrs` library crate
+- the `alchemrs` command-line binary
 
 ## `alchemrs` library layout
 
@@ -17,9 +19,9 @@ The `alchemrs` crate is organized into modules rather than separate library crat
 
 The crate root also re-exports the most common types and functions directly for a flatter API.
 
-## `alchemrs-cli`
+## CLI binary
 
-The CLI package wraps parsing, preprocessing, estimation, and output formatting into a command-line workflow. The scientific logic lives in the library; the CLI is a thin consumer of that API.
+The `alchemrs` binary wraps parsing, preprocessing, estimation, and output formatting into a command-line workflow. The scientific logic lives in the library; the CLI is a thin consumer of that API.
 
 ## Layering
 
@@ -32,8 +34,4 @@ estimators -> core
 analysis -> core + estimators
 ```
 
-And at the package level:
-
-```text
-alchemrs-cli -> alchemrs
-```
+The binary depends on the library through the same package source tree.

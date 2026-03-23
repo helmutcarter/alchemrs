@@ -2,7 +2,7 @@
 
 `alchemrs` is a Rust-first toolkit for alchemical free energy analysis.
 
-The project is organized as one main library crate plus a separate CLI package. Inside the library, the code is split into focused modules for:
+The project is organized as one package containing a library crate and a single CLI binary. Inside the library, the code is split into focused modules for:
 
 - parsing AMBER output into typed Rust data structures
 - preprocessing time series by trimming and decorrelation

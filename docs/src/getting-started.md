@@ -6,24 +6,24 @@
 - AMBER output files 
     - Currently, the parser only support AMBER output files. More are coming. 
 
-The workspace uses Cargo workspaces and is intended to be built and tested with standard Rust tooling.
+The repository is a normal Cargo package and can be built and tested with standard Rust tooling.
 
-## Build the workspace
+## Build the package
 
 ```bash
-cargo build --workspace
+cargo build
 ```
 
 ## Run tests
 
 ```bash
-cargo test --workspace
+cargo test
 ```
 
-## Build the CLI
+## Build the CLI binary
 
 ```bash
-cargo build -p alchemrs-cli --release
+cargo build --release
 ```
 
 ## Run the top-level examples

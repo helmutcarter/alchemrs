@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::cli::input::AnalysisSampleCounts;
 use crate::cli::{OutputFormat, OutputUnits};
-use crate::input::AnalysisSampleCounts;
 
 const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
 const K_B_KJ_PER_MOL_K: f64 = 0.00831446261815324;
@@ -224,8 +224,8 @@ fn format_units(units: OutputUnits) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{render_scalar_result, OutputProvenance, OverlapSummary, ScalarResult};
+    use crate::cli::input::AnalysisSampleCounts;
     use crate::cli::{OutputFormat, OutputUnits};
-    use crate::input::AnalysisSampleCounts;
 
     #[test]
     fn renders_scalar_result_as_json() {

@@ -1,6 +1,6 @@
 use alchemrs::{overlap_eigenvalues, overlap_matrix, CoreError, MbarOptions, UNkMatrix};
 
-use crate::output::OverlapSummary;
+use crate::cli::output::OverlapSummary;
 use crate::CliResult;
 
 pub fn summarize_overlap(

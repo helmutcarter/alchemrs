@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use alchemrs::{TiEstimator, TiOptions};
 
+use crate::cli::input::{load_dhdl_series, AnalysisInputOptions};
+use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
 use crate::cli::{OutputFormat, OutputUnits, TiMethod};
-use crate::input::{load_dhdl_series, AnalysisInputOptions};
-use crate::output::{print_scalar_result, OutputProvenance, ScalarResult};
 use crate::CliResult;
 
 pub fn run(

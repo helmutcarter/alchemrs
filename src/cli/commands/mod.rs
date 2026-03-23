@@ -3,8 +3,8 @@ mod exp;
 mod mbar;
 mod ti;
 
+use crate::cli::input::AnalysisInputOptions;
 use crate::cli::Command;
-use crate::input::AnalysisInputOptions;
 use crate::CliResult;
 
 pub fn run(command: Command) -> CliResult<()> {

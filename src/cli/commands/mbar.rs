@@ -1,15 +1,17 @@
 use std::path::PathBuf;
 
-use alchemrs::{BarEstimator, BarOptions, MbarOptions};
+use alchemrs::{MbarEstimator, MbarOptions};
 
-use crate::cli::{BarMethodArg, OutputFormat, OutputUnits};
-use crate::input::{load_windows, AnalysisInputOptions};
-use crate::output::{print_scalar_result, OutputProvenance, ScalarResult};
-use crate::overlap::summarize_overlap;
+use crate::cli::input::{load_windows, AnalysisInputOptions};
+use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
+use crate::cli::overlap::summarize_overlap;
+use crate::cli::{OutputFormat, OutputUnits};
 use crate::CliResult;
 
-pub struct BarRunOptions {
-    pub method: BarMethodArg,
+pub struct MbarRunOptions {
+    pub max_iterations: usize,
+    pub tolerance: f64,
+    pub no_uncertainty: bool,
     pub output_units: OutputUnits,
     pub output_format: OutputFormat,
     pub output_path: Option<PathBuf>,
@@ -20,7 +22,7 @@ pub struct BarRunOptions {
 pub fn run(
     inputs: Vec<PathBuf>,
     input_options: AnalysisInputOptions,
-    run_options: BarRunOptions,
+    run_options: MbarRunOptions,
 ) -> CliResult<()> {
     let loaded = load_windows(inputs, input_options)?;
     let windows = loaded.windows;
@@ -28,6 +30,9 @@ pub fn run(
         Some(summarize_overlap(
             &windows,
             Some(MbarOptions {
+                max_iterations: run_options.max_iterations,
+                tolerance: run_options.tolerance,
+                compute_uncertainty: false,
                 parallel: run_options.parallel,
                 ..MbarOptions::default()
             }),
@@ -35,10 +40,12 @@ pub fn run(
     } else {
         None
     };
-    let estimator = BarEstimator::new(BarOptions {
-        method: run_options.method.into(),
+    let estimator = MbarEstimator::new(MbarOptions {
+        max_iterations: run_options.max_iterations,
+        tolerance: run_options.tolerance,
+        compute_uncertainty: !run_options.no_uncertainty,
         parallel: run_options.parallel,
-        ..BarOptions::default()
+        ..MbarOptions::default()
     });
     let result = estimator.fit(&windows)?;
     let delta_index = result.n_states() - 1;
@@ -53,7 +60,7 @@ pub fn run(
             temperature: input_options.temperature,
             overlap,
             provenance: OutputProvenance {
-                estimator: "bar",
+                estimator: "mbar",
                 decorrelate: input_options.decorrelate,
                 remove_burnin: input_options.remove_burnin,
                 auto_equilibrate: input_options.auto_equilibrate,

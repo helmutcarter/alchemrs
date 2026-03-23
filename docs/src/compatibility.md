@@ -51,7 +51,7 @@ This repository does not currently provide:
 
 - plotting in the Rust core
 - production-grade multi-engine parser support
-- Python bindings in the current workspace
+- Python bindings in the current package
 - versioned public API guarantees
 
 Those may come later, but they are not part of the implemented surface documented in this book.

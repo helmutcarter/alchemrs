@@ -1,6 +1,6 @@
 # CLI Guide
 
-The CLI package is `alchemrs-cli`, and it is built on top of the `alchemrs` library crate.
+The CLI is the `alchemrs` binary in the same package as the `alchemrs` library crate.
 
 Commands:
 
@@ -13,7 +13,7 @@ Commands:
 ## Build
 
 ```bash
-cargo build -p alchemrs-cli --release
+cargo build --release
 ```
 
 ## Common workflow
@@ -59,7 +59,7 @@ For `u_nk`-based estimators:
 
 Use `epot` when:
 
-- you want the CLI’s external-observable path
+- you want the CLI's external-observable path
 - the `u_nk` matrix contains positive infinity values that make `de` invalid
 
 ## TI-specific behavior
@@ -73,7 +73,7 @@ The CLI accepts `--u-nk-observable` on `ti` only to provide a more helpful error
 ### TI
 
 ```bash
-cargo run -p alchemrs-cli --release -- ti \
+cargo run --release -- ti \
   --temperature 300 \
   --method trapezoidal \
   --decorrelate \
@@ -83,7 +83,7 @@ cargo run -p alchemrs-cli --release -- ti \
 ### BAR
 
 ```bash
-cargo run -p alchemrs-cli --release -- bar \
+cargo run --release -- bar \
   --temperature 300 \
   --decorrelate \
   --u-nk-observable de \
@@ -94,7 +94,7 @@ cargo run -p alchemrs-cli --release -- bar \
 ### MBAR with EPtot fallback
 
 ```bash
-cargo run -p alchemrs-cli --release -- mbar \
+cargo run --release -- mbar \
   --temperature 300 \
   --auto-equilibrate \
   --decorrelate \
@@ -106,9 +106,9 @@ cargo run -p alchemrs-cli --release -- mbar \
 ### EXP / DEXP
 
 ```bash
-cargo run -p alchemrs-cli --release -- exp --temperature 300 path/to/*/prod.out
+cargo run --release -- exp --temperature 300 path/to/*/prod.out
 
-cargo run -p alchemrs-cli --release -- dexp --temperature 300 path/to/*/prod.out
+cargo run --release -- dexp --temperature 300 path/to/*/prod.out
 ```
 
 ## Effective settings

@@ -3,8 +3,13 @@ use std::path::PathBuf;
 use alchemrs::{BarMethod, IntegrationMethod};
 use clap::{Parser, Subcommand, ValueEnum};
 
+pub mod commands;
+pub mod input;
+pub mod output;
+pub mod overlap;
+
 #[derive(Debug, Parser)]
-#[command(name = "alchemrs-cli")]
+#[command(name = "alchemrs")]
 #[command(about = "Alchemical free energy analysis CLI")]
 pub struct Cli {
     #[command(subcommand)]

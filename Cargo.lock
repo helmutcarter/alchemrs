@@ -15,20 +15,13 @@ dependencies = [
 name = "alchemrs"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "nalgebra",
  "rayon",
  "regex",
+ "serde_json",
  "tempfile",
  "thiserror",
-]
-
-[[package]]
-name = "alchemrs-cli"
-version = "0.1.0"
-dependencies = [
- "alchemrs",
- "clap",
- "serde_json",
 ]
 
 [[package]]
