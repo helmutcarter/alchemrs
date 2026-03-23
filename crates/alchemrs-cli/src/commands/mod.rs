@@ -23,23 +23,33 @@ pub fn run(command: Command) -> CliResult<()> {
             fast,
             conservative,
             nskip,
-        } => ti::run(
-            inputs,
-            input_options(
-                temperature,
-                decorrelate,
-                remove_burnin,
-                auto_equilibrate,
-                fast,
-                conservative,
-                nskip,
-            ),
-            method,
-            output_units,
-            output_format,
-            output,
-            parallel,
-        ),
+            u_nk_observable,
+        } => {
+            if u_nk_observable.is_some() {
+                return Err(
+                    "--u-nk-observable is only valid for bar, mbar, exp, and dexp; ti uses dH/dlambda for preprocessing."
+                        .into(),
+                );
+            }
+            ti::run(
+                inputs,
+                input_options(
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    None,
+                ),
+                method,
+                output_units,
+                output_format,
+                output,
+                parallel,
+            )
+        }
         Command::Bar {
             inputs,
             temperature,
@@ -55,6 +65,7 @@ pub fn run(command: Command) -> CliResult<()> {
             fast,
             conservative,
             nskip,
+            u_nk_observable,
         } => bar::run(
             inputs,
             input_options(
@@ -65,6 +76,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
+                Some(u_nk_observable),
             ),
             bar::BarRunOptions {
                 method,
@@ -84,6 +96,7 @@ pub fn run(command: Command) -> CliResult<()> {
             fast,
             conservative,
             nskip,
+            u_nk_observable,
             no_uncertainty,
             output_units,
             output_format,
@@ -100,6 +113,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
+                Some(u_nk_observable),
             ),
             exp::ExpRunOptions {
                 no_uncertainty,
@@ -119,6 +133,7 @@ pub fn run(command: Command) -> CliResult<()> {
             fast,
             conservative,
             nskip,
+            u_nk_observable,
             no_uncertainty,
             output_units,
             output_format,
@@ -135,6 +150,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
+                Some(u_nk_observable),
             ),
             exp::ExpRunOptions {
                 no_uncertainty,
@@ -154,6 +170,7 @@ pub fn run(command: Command) -> CliResult<()> {
             fast,
             conservative,
             nskip,
+            u_nk_observable,
             max_iterations,
             tolerance,
             no_uncertainty,
@@ -172,6 +189,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 fast,
                 conservative,
                 nskip,
+                Some(u_nk_observable),
             ),
             mbar::MbarRunOptions {
                 max_iterations,
@@ -195,6 +213,7 @@ fn input_options(
     fast: bool,
     conservative: bool,
     nskip: usize,
+    u_nk_observable: Option<crate::cli::UNkObservable>,
 ) -> AnalysisInputOptions {
     AnalysisInputOptions {
         temperature,
@@ -204,5 +223,6 @@ fn input_options(
         fast,
         conservative,
         nskip,
+        u_nk_observable,
     }
 }

@@ -38,7 +38,8 @@ cargo build -p alchemrs-cli --release
 - `--auto-equilibrate`: use `pymbar`-style equilibration detection as described [here](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 - `--decorrelate`: subsample to reduce correlation before estimating.
   - `ti` uses the parsed `dH/dlambda` series.
-  - `bar`, `exp`, `dexp`, and `mbar` use `EPtot` parsed from the AMBER output when decorrelation is requested.
+  - `bar`, `exp`, `dexp`, and `mbar` use the observable selected by `--u-nk-observable <de|all|epot>`.
+- `--u-nk-observable <de|all|epot>`: choose the scalar observable used for `u_nk` auto-equilibration and decorrelation on `bar`, `exp`, `dexp`, and `mbar` runs. The default is `de`.
 - When multiple preprocessing flags are provided, they are applied in this order: `--remove-burnin`, then `--auto-equilibrate`, then `--decorrelate`.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
@@ -59,7 +60,7 @@ cargo run -p alchemrs-cli --release -- mbar \
   /path/to/*/prod.out
 ```
 
-For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), `EPtot` is used as the finite observable for `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples.
+For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses `EPtot` parsed from the AMBER output.
 
 Example JSON payload:
 
@@ -83,6 +84,7 @@ Example JSON payload:
     "fast": false,
     "conservative": true,
     "nskip": 1,
+    "u_nk_observable": "de",
     "windows": 15,
     "samples_in": 300,
     "samples_after_burnin": 300,
@@ -103,7 +105,7 @@ cargo run -p alchemrs-cli --release -- bar \
 CSV columns now include estimator provenance after the result fields:
 
 ```text
-delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,windows,samples_in,samples_after_burnin,samples_kept
+delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,windows,samples_in,samples_after_burnin,samples_kept
 ```
 
 ### TI (trapezoidal)

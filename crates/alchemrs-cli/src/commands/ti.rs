@@ -41,6 +41,7 @@ pub fn run(
                 fast: input_options.effective_fast(),
                 conservative: input_options.effective_conservative(),
                 nskip: input_options.nskip,
+                u_nk_observable: input_options.u_nk_observable_name(),
             },
             sample_counts: loaded.sample_counts,
         },

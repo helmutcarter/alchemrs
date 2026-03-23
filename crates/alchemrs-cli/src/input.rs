@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use alchemrs_core::{DhdlSeries, UNkMatrix};
 use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 use alchemrs_prep::{
-    decorrelate_dhdl, decorrelate_u_nk_with_observable, detect_equilibration_dhdl,
-    detect_equilibration_observable, DecorrelationOptions,
+    decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
+    detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
+    DecorrelationOptions, UNkSeriesMethod,
 };
 
+use crate::cli::UNkObservable;
 use crate::CliResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +38,7 @@ pub struct AnalysisInputOptions {
     pub fast: bool,
     pub conservative: bool,
     pub nskip: usize,
+    pub u_nk_observable: Option<UNkObservable>,
 }
 
 impl AnalysisInputOptions {
@@ -76,6 +79,10 @@ impl AnalysisInputOptions {
     pub fn effective_conservative(self) -> bool {
         self.normalized_equilibration_flags().1
     }
+
+    pub fn u_nk_observable_name(self) -> Option<&'static str> {
+        self.u_nk_observable.map(UNkObservable::as_str)
+    }
 }
 
 pub fn load_windows(
@@ -88,28 +95,60 @@ pub fn load_windows(
     let mut samples_kept = 0;
     for path in inputs {
         if options.decorrelate || options.auto_equilibrate {
-            let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)?;
-            let mut potential = potential;
-            samples_in += u_nk.n_samples();
-            u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
-            potential = trim_values(potential, options.remove_burnin)?;
-            if options.auto_equilibrate {
-                let equilibration = detect_equilibration_observable(
-                    &potential,
-                    options.effective_fast(),
-                    options.nskip,
-                )?;
-                u_nk = trim_u_nk(u_nk, equilibration.t0)?;
-                potential = trim_values(potential, equilibration.t0)?;
-            }
-            samples_after_burnin += u_nk.n_samples();
-            if options.decorrelate {
-                u_nk = decorrelate_u_nk_with_observable(
-                    &u_nk,
-                    &potential,
-                    &options.decorrelation_options(),
-                )?;
-            }
+            let observable = options
+                .u_nk_observable
+                .ok_or("u_nk observable is required for u_nk estimators")?;
+            let u_nk = match observable {
+                UNkObservable::Epot => {
+                    let (mut u_nk, potential) =
+                        extract_u_nk_with_potential(&path, options.temperature)?;
+                    let mut potential = potential;
+                    samples_in += u_nk.n_samples();
+                    u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
+                    potential = trim_values(potential, options.remove_burnin)?;
+                    if options.auto_equilibrate {
+                        let equilibration = detect_equilibration_observable(
+                            &potential,
+                            options.effective_fast(),
+                            options.nskip,
+                        )?;
+                        u_nk = trim_u_nk(u_nk, equilibration.t0)?;
+                        potential = trim_values(potential, equilibration.t0)?;
+                    }
+                    samples_after_burnin += u_nk.n_samples();
+                    if options.decorrelate {
+                        u_nk = decorrelate_u_nk_with_observable(
+                            &u_nk,
+                            &potential,
+                            &options.decorrelation_options(),
+                        )?;
+                    }
+                    u_nk
+                }
+                UNkObservable::De | UNkObservable::All => {
+                    let method = match observable {
+                        UNkObservable::De => UNkSeriesMethod::DE,
+                        UNkObservable::All => UNkSeriesMethod::All,
+                        UNkObservable::Epot => unreachable!(),
+                    };
+                    let mut u_nk = extract_u_nk(&path, options.temperature)?;
+                    samples_in += u_nk.n_samples();
+                    u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
+                    if options.auto_equilibrate {
+                        let equilibration = detect_equilibration_u_nk(
+                            &u_nk,
+                            method,
+                            &options.equilibration_options(),
+                        )?;
+                        u_nk = trim_u_nk(u_nk, equilibration.t0)?;
+                    }
+                    samples_after_burnin += u_nk.n_samples();
+                    if options.decorrelate {
+                        u_nk = decorrelate_u_nk(&u_nk, method, &options.decorrelation_options())?;
+                    }
+                    u_nk
+                }
+            };
             samples_kept += u_nk.n_samples();
             windows.push(u_nk);
             continue;
@@ -145,8 +184,7 @@ pub fn load_dhdl_series(
         samples_in += dhdl.values().len();
         dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
         if options.auto_equilibrate {
-            let equilibration =
-                detect_equilibration_dhdl(&dhdl, &options.equilibration_options())?;
+            let equilibration = detect_equilibration_dhdl(&dhdl, &options.equilibration_options())?;
             dhdl = trim_dhdl(dhdl, equilibration.t0)?;
         }
         samples_after_burnin += dhdl.values().len();
@@ -219,6 +257,8 @@ fn trim_values(values: Vec<f64>, remove_burnin: usize) -> CliResult<Vec<f64>> {
 
 #[cfg(test)]
 mod tests {
+    use crate::cli::UNkObservable;
+
     use super::AnalysisInputOptions;
 
     #[test]
@@ -231,6 +271,7 @@ mod tests {
             fast: false,
             conservative: true,
             nskip: 7,
+            u_nk_observable: Some(UNkObservable::De),
         }
         .decorrelation_options();
 
@@ -250,6 +291,7 @@ mod tests {
             fast: false,
             conservative: true,
             nskip: 7,
+            u_nk_observable: Some(UNkObservable::De),
         }
         .equilibration_options();
 

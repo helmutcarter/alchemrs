@@ -53,6 +53,9 @@ pub enum Command {
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
         nskip: usize,
+        /// Accepted only to provide a clearer error; TI uses dH/dlambda, not u_nk
+        #[arg(long = "u-nk-observable", value_enum, hide = true)]
+        u_nk_observable: Option<UNkObservable>,
     },
     Bar {
         /// AMBER output files (one per lambda window)
@@ -79,7 +82,7 @@ pub enum Command {
         /// Enable parallel processing
         #[arg(long)]
         parallel: bool,
-        /// Apply decorrelation to each window using EPtot from the AMBER output
+        /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -97,6 +100,9 @@ pub enum Command {
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
         nskip: usize,
+        /// Observable to use for u_nk auto-equilibration and decorrelation
+        #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
+        u_nk_observable: UNkObservable,
     },
     Exp {
         /// AMBER output files (one per lambda window)
@@ -105,7 +111,7 @@ pub enum Command {
         /// Temperature in K
         #[arg(long, default_value_t = 300.0)]
         temperature: f64,
-        /// Apply decorrelation to each window using EPtot from the AMBER output
+        /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -123,6 +129,9 @@ pub enum Command {
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
         nskip: usize,
+        /// Observable to use for u_nk auto-equilibration and decorrelation
+        #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
+        u_nk_observable: UNkObservable,
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
@@ -149,7 +158,7 @@ pub enum Command {
         /// Temperature in K
         #[arg(long, default_value_t = 300.0)]
         temperature: f64,
-        /// Apply decorrelation to each window using EPtot from the AMBER output
+        /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -167,6 +176,9 @@ pub enum Command {
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
         nskip: usize,
+        /// Observable to use for u_nk auto-equilibration and decorrelation
+        #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
+        u_nk_observable: UNkObservable,
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
@@ -193,7 +205,7 @@ pub enum Command {
         /// Temperature in K
         #[arg(long, default_value_t = 300.0)]
         temperature: f64,
-        /// Apply decorrelation to each window using EPtot from the AMBER output
+        /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,
         /// Skip this many initial samples before any analysis
@@ -211,6 +223,9 @@ pub enum Command {
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
         nskip: usize,
+        /// Observable to use for u_nk auto-equilibration and decorrelation
+        #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
+        u_nk_observable: UNkObservable,
         /// Maximum MBAR iterations
         #[arg(long, default_value_t = 10_000)]
         max_iterations: usize,
@@ -265,6 +280,23 @@ pub enum OutputFormat {
     Text,
     Json,
     Csv,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UNkObservable {
+    Epot,
+    De,
+    All,
+}
+
+impl UNkObservable {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Epot => "epot",
+            Self::De => "de",
+            Self::All => "all",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
