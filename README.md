@@ -19,8 +19,8 @@ let result = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
 
 The repo also includes runnable top-level examples:
 
-- `cargo run --example amber_ti -- 300 path\\to\\lambda0.out path\\to\\lambda1.out`
-- `cargo run --example amber_mbar -- 300 path\\to\\lambda0.out path\\to\\lambda1.out path\\to\\lambda2.out`
+- `cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out`
+- `cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out`
 
 ## Documentation
 
