@@ -94,7 +94,7 @@ The heuristic scans possible start positions and chooses the one that maximizes:
 Neff = (N - t0 + 1) / g
 ```
 
-This is the same style of automated equilibration detection used by `pymbar`.
+This is the same style of automated equilibration detection used by `pymbar`. For further reading on the topic, see [Chodera 2016](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 
 ## `remove_burnin`
 
@@ -143,8 +143,7 @@ The observable determines which sample indices are retained, and those retained 
 
 This is useful when:
 
-- you want CLI-style `EPtot` preprocessing
-- the matrix contains positive infinity values that make `DE` invalid
+- the matrix contains infinite energy values that make `DE` invalid
 
 ## Non-finite `u_nk` behavior
 
