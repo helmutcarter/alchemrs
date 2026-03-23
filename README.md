@@ -39,6 +39,7 @@ cargo build -p alchemrs-cli --release
 - `--decorrelate`: subsample to reduce correlation before estimating.
   - `ti` uses the parsed `dH/dlambda` series.
   - `bar`, `exp`, `dexp`, and `mbar` use `EPtot` parsed from the AMBER output when decorrelation is requested.
+- When multiple preprocessing flags are provided, they are applied in this order: `--remove-burnin`, then `--auto-equilibrate`, then `--decorrelate`.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
 - `--output <PATH>`: write the formatted result to a file instead of stdout.
@@ -58,7 +59,7 @@ cargo run -p alchemrs-cli --release -- mbar \
   /path/to/*/prod.out
 ```
 
-For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), `--decorrelate` uses `EPtot` as the finite decorrelation observable and then applies those retained indices back to the parsed `u_nk` samples.
+For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), `EPtot` is used as the finite observable for `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples.
 
 Example JSON payload:
 
