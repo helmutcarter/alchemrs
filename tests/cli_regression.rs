@@ -870,8 +870,12 @@ fn load_decorrelated_window(path: &Path) -> UNkMatrix {
 
 fn load_decorrelated_window_nonconservative(path: &Path) -> UNkMatrix {
     let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
-    decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &nonconservative_decorrelation_options())
-        .expect("decorrelate u_nk")
+    decorrelate_u_nk(
+        &u_nk,
+        UNkSeriesMethod::DE,
+        &nonconservative_decorrelation_options(),
+    )
+    .expect("decorrelate u_nk")
 }
 
 fn load_decorrelated_window_epot(path: &Path) -> UNkMatrix {

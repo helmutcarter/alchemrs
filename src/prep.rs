@@ -606,31 +606,42 @@ fn detect_equilibration(values: &[f64], fast: bool, nskip: usize) -> Result<Equi
         });
     }
 
-    let mut g_t = vec![1.0; values.len().saturating_sub(1)];
-    let mut neff_t = vec![1.0; values.len().saturating_sub(1)];
     let step = nskip.max(1);
+    let mut best_result = None;
     for t in (0..values.len().saturating_sub(1)).step_by(step) {
         let slice = &values[t..];
         let g = statistical_inefficiency(slice, fast).unwrap_or(values.len() as f64);
-        g_t[t] = g;
         // Use the actual retained sample count for the suffix `values[t..]`.
         // This intentionally differs from pymbar/alchemlyb, which use `T - t + 1`;
         // on the bundled equilibration fixture that changes `neff_max` from 21 to 20.
-        neff_t[t] = (values.len() - t) as f64 / g;
+        let neff = (values.len() - t) as f64 / g;
+        let candidate = EquilibrationResult {
+            t0: t,
+            g,
+            neff_max: neff,
+        };
+        // When `nskip > 1`, only the sampled time origins are valid candidates.
+        // This intentionally deviates from pymbar's current implementation, which
+        // pre-fills arrays for all indices and then takes `argmax()` over those
+        // placeholders as well. The documented meaning of `nskip` is to try every
+        // `nskip`-th sample as a potential time origin, so skipped indices are
+        // treated as ineligible here.
+        best_result = Some(best_equilibration_result(best_result, candidate));
     }
-    let mut max_idx = 0usize;
-    let mut max_value = neff_t[0];
-    for (idx, &value) in neff_t.iter().enumerate() {
-        if value > max_value {
-            max_value = value;
-            max_idx = idx;
-        }
-    }
-    Ok(EquilibrationResult {
-        t0: max_idx,
-        g: g_t[max_idx],
-        neff_max: max_value,
+    best_result.ok_or(CoreError::InvalidShape {
+        expected: 2,
+        found: values.len(),
     })
+}
+
+fn best_equilibration_result(
+    best: Option<EquilibrationResult>,
+    candidate: EquilibrationResult,
+) -> EquilibrationResult {
+    match best {
+        Some(current) if current.neff_max >= candidate.neff_max => current,
+        _ => candidate,
+    }
 }
 
 #[cfg(test)]
@@ -681,6 +692,26 @@ mod tests {
     fn detect_equilibration_observable_rejects_nonfinite_values() {
         let err = detect_equilibration_observable(&[1.0, f64::INFINITY], false, 1).unwrap_err();
         assert!(matches!(err, CoreError::NonFiniteValue(_)));
+    }
+
+    #[test]
+    fn best_equilibration_result_uses_only_explicit_candidates() {
+        let best = best_equilibration_result(
+            Some(EquilibrationResult {
+                t0: 0,
+                g: 3.0,
+                neff_max: 2.0,
+            }),
+            EquilibrationResult {
+                t0: 4,
+                g: 2.0,
+                neff_max: 3.0,
+            },
+        );
+
+        assert_eq!(best.t0, 4);
+        assert_eq!(best.g, 2.0);
+        assert_eq!(best.neff_max, 3.0);
     }
 
     #[test]

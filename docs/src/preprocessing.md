@@ -96,6 +96,8 @@ Neff = (N - t0) / g
 
 This is the same style of automated equilibration detection used by `pymbar`, but `alchemrs` counts the actual retained suffix length `N - t0` when reporting `Neff_max`. That means `Neff_max` can differ by 1 from `pymbar`/`alchemlyb`, while the broader workflow remains the same. For further reading on the topic, see [Chodera 2016](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 
+Note: when `nskip > 1`, `alchemrs` maximizes `Neff` only over the sampled candidate time origins (`0, nskip, 2*nskip, ...`). This intentionally differs from pymbar's current implementation, which pre-fills arrays for all indices before taking the maximum, because the documented meaning of `nskip` is to try only every `nskip`-th sample as a potential origin.
+
 ## `remove_burnin`
 
 In the prep crate, `remove_burnin = true` means:
