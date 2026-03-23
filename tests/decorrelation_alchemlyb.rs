@@ -1,7 +1,6 @@
 use std::fs;
 
-use alchemrs_parse::amber::extract_dhdl;
-use alchemrs_prep::{decorrelate_dhdl, DecorrelationOptions};
+use alchemrs::{decorrelate_dhdl, extract_dhdl, DecorrelationOptions};
 
 fn load_expected(path: &str) -> Vec<(f64, f64)> {
     let content = fs::read_to_string(path).expect("read expected decorrelation file");
@@ -33,9 +32,8 @@ fn load_expected(path: &str) -> Vec<(f64, f64)> {
 #[test]
 fn decorrelate_dhdl_matches_alchemlyb() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let input = format!("{base}/../../fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
-    let expected_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/0.1/dhdl.decorrelated.csv");
+    let input = format!("{base}/fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
+    let expected_path = format!("{base}/fixtures/amber/acetamide_tiny/0.1/dhdl.decorrelated.csv");
 
     let series = extract_dhdl(input, 300.0).expect("parse AMBER output");
     let result =

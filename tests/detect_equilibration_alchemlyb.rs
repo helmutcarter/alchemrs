@@ -1,7 +1,6 @@
 use std::fs;
 
-use alchemrs_parse::amber::extract_dhdl;
-use alchemrs_prep::{detect_equilibration_dhdl, DecorrelationOptions};
+use alchemrs::{detect_equilibration_dhdl, extract_dhdl, DecorrelationOptions};
 
 fn read_expected(path: &str) -> (usize, f64, f64) {
     let content = fs::read_to_string(path).expect("read expected equilibration");
@@ -15,10 +14,10 @@ fn read_expected(path: &str) -> (usize, f64, f64) {
 #[test]
 fn detect_equilibration_matches_pymbar() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let path = format!("{base}/../../fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
+    let path = format!("{base}/fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
     let series = extract_dhdl(path, 300.0).expect("parse AMBER output");
     let expected_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/detect_equilibration_0.1.txt");
+        format!("{base}/fixtures/amber/acetamide_tiny/detect_equilibration_0.1.txt");
     let (t0, g, neff) = read_expected(&expected_path);
 
     let options = DecorrelationOptions::default();

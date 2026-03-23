@@ -1,5 +1,4 @@
-use alchemrs_analysis::overlap_matrix;
-use alchemrs_core::{StatePoint, UNkMatrix};
+use alchemrs::{overlap_matrix, StatePoint, UNkMatrix};
 
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint]) -> UNkMatrix {
     let data = vec![0.0, 0.0];

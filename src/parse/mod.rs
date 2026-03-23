@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use alchemrs_core::{CoreError, DhdlSeries, StatePoint};
+use crate::core::{CoreError, DhdlSeries, StatePoint, UNkMatrix};
 use thiserror::Error;
 
 pub mod amber {
@@ -199,10 +199,7 @@ pub mod amber {
         DhdlSeries::new(state, time_ps, gradients).map_err(Into::into)
     }
 
-    pub fn extract_u_nk(
-        path: impl AsRef<Path>,
-        temperature_k: f64,
-    ) -> Result<alchemrs_core::UNkMatrix> {
+    pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {
         let (u_nk, _potential) = extract_u_nk_internal(path.as_ref(), temperature_k, false)?;
         Ok(u_nk)
     }
@@ -210,7 +207,7 @@ pub mod amber {
     pub fn extract_u_nk_with_potential(
         path: impl AsRef<Path>,
         temperature_k: f64,
-    ) -> Result<(alchemrs_core::UNkMatrix, Vec<f64>)> {
+    ) -> Result<(UNkMatrix, Vec<f64>)> {
         let (u_nk, potential) = extract_u_nk_internal(path.as_ref(), temperature_k, true)?;
         Ok((u_nk, potential.expect("potential samples requested")))
     }
@@ -219,7 +216,7 @@ pub mod amber {
         path: &Path,
         temperature_k: f64,
         include_potential: bool,
-    ) -> Result<(alchemrs_core::UNkMatrix, Option<Vec<f64>>)> {
+    ) -> Result<(UNkMatrix, Option<Vec<f64>>)> {
         let header = read_u_nk_header(path)?;
         if (temperature_k - header.temp0).abs() > 1e-2 {
             return Err(AmberParseError::TemperatureMismatch {
@@ -360,7 +357,7 @@ pub mod amber {
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(AmberParseError::from)?;
 
-        let u_nk = alchemrs_core::UNkMatrix::new(
+        let u_nk = UNkMatrix::new(
             time_ps.len(),
             n_states,
             data,

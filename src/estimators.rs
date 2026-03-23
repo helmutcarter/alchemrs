@@ -1,7 +1,9 @@
-use alchemrs_core::{CoreError, DhdlSeries, FreeEnergyEstimate, Result};
-use alchemrs_core::{DeltaFMatrix, StatePoint, UNkMatrix};
+use crate::core::{CoreError, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, Result};
+use crate::core::{StatePoint, UNkMatrix};
 
 type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>);
+type PairEstimate = (f64, f64);
+type ExpRow = (usize, Vec<f64>, Vec<f64>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegrationMethod {
@@ -154,7 +156,7 @@ impl BarEstimator {
             window_by_index[idx] = Some(window);
         }
 
-        let pair_results = if self.options.parallel {
+        let pair_results: Vec<Result<PairEstimate>> = if self.options.parallel {
             use rayon::prelude::*;
             (0..(lambdas.len() - 1))
                 .into_par_iter()
@@ -542,7 +544,7 @@ impl ExpEstimator {
 
         if self.options.parallel {
             use rayon::prelude::*;
-            let rows = (0..n_states)
+            let rows: Vec<Result<ExpRow>> = (0..n_states)
                 .into_par_iter()
                 .map(|i| {
                     let window = window_map[i].expect("window present");
@@ -965,13 +967,8 @@ fn bar_estimate(
     let mut delta_f = 0.0;
     let initial_upper = exp_delta(w_f)?;
     let initial_lower = -exp_delta(w_r)?;
-    let (mut lower, mut upper, mut f_lower, mut f_upper) = bracket_bar_root(
-        w_f,
-        w_r,
-        initial_lower,
-        initial_upper,
-        maximum_iterations,
-    )?;
+    let (mut lower, mut upper, mut f_lower, mut f_upper) =
+        bracket_bar_root(w_f, w_r, initial_lower, initial_upper, maximum_iterations)?;
 
     if !f_upper.is_finite() || !f_lower.is_finite() {
         return Err(CoreError::NonFiniteValue(
@@ -1137,7 +1134,7 @@ fn validate_mbar_input(u_kn: &[Vec<f64>]) -> Result<()> {
     Ok(())
 }
 
-fn extract_lambda(state: &alchemrs_core::StatePoint) -> Result<f64> {
+fn extract_lambda(state: &StatePoint) -> Result<f64> {
     let lambdas = state.lambdas();
     if lambdas.len() != 1 {
         return Err(CoreError::InvalidState(
@@ -1253,7 +1250,7 @@ fn trapezoidal_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alchemrs_core::StatePoint;
+    use crate::core::StatePoint;
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
         let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();

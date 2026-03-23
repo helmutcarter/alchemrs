@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, AmberParseError};
+use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, AmberParseError};
 
 fn write_temp_amber(content: &str) -> tempfile::NamedTempFile {
     let mut file = tempfile::NamedTempFile::new().expect("create temp file");

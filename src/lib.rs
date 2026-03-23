@@ -1,19 +1,20 @@
-pub use alchemrs_analysis as analysis;
-pub use alchemrs_core as core;
-pub use alchemrs_estimators as estimators;
-pub use alchemrs_parse as parse;
-pub use alchemrs_prep as prep;
+pub mod analysis;
+pub mod core;
+pub mod estimators;
+pub mod parse;
+pub mod prep;
 
-pub use alchemrs_analysis::{overlap_eigenvalues, overlap_matrix, overlap_scalar};
-pub use alchemrs_core::{
-    DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
+pub use analysis::{overlap_eigenvalues, overlap_matrix, overlap_scalar};
+pub use core::{
+    CoreError, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, Result, StatePoint,
+    UNkMatrix,
 };
-pub use alchemrs_estimators::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
-pub use alchemrs_estimators::{ExpEstimator, ExpOptions, MbarEstimator, MbarOptions};
-pub use alchemrs_estimators::{IntegrationMethod, TiEstimator, TiOptions};
-pub use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
-pub use alchemrs_prep::{
+pub use estimators::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
+pub use estimators::{ExpEstimator, ExpOptions, MbarEstimator, MbarOptions};
+pub use estimators::{IntegrationMethod, TiEstimator, TiOptions};
+pub use parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+pub use prep::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
-    detect_equilibration_dhdl, detect_equilibration_u_nk, DecorrelationOptions,
-    EquilibrationResult, UNkSeriesMethod,
+    detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
+    DecorrelationOptions, EquilibrationResult, UNkSeriesMethod,
 };

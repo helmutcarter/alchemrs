@@ -1,6 +1,6 @@
 # Parsing AMBER Outputs
 
-The current parser implementation is AMBER-specific and lives in `alchemrs-parse::amber`.
+The current parser implementation is AMBER-specific and lives in `alchemrs::parse::amber`.
 
 ## Available entry points
 

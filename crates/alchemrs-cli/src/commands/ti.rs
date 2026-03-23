@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs_estimators::{TiEstimator, TiOptions};
+use alchemrs::{TiEstimator, TiOptions};
 
 use crate::cli::{OutputFormat, OutputUnits, TiMethod};
 use crate::input::{load_dhdl_series, AnalysisInputOptions};

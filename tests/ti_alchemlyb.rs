@@ -1,7 +1,7 @@
-use alchemrs_estimators::TiEstimator;
-use alchemrs_parse::amber::extract_dhdl;
 use std::fs;
 use std::path::PathBuf;
+
+use alchemrs::{extract_dhdl, TiEstimator};
 
 fn read_expected(path: &str) -> (f64, f64) {
     let content = fs::read_to_string(path).expect("read expected delta_f");
@@ -24,19 +24,18 @@ fn read_expected(path: &str) -> (f64, f64) {
 #[test]
 fn ti_matches_alchemlyb_all_windows() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let mut paths: Vec<PathBuf> =
-        fs::read_dir(format!("{base}/../../fixtures/amber/acetamide_tiny"))
-            .expect("read fixture directory")
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.is_dir() {
-                    Some(path.join("acetamide.prod.out"))
-                } else {
-                    None
-                }
-            })
-            .collect();
+    let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/fixtures/amber/acetamide_tiny"))
+        .expect("read fixture directory")
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_dir() {
+                Some(path.join("acetamide.prod.out"))
+            } else {
+                None
+            }
+        })
+        .collect();
     paths.sort_by(|a, b| {
         let la = a
             .parent()
@@ -63,7 +62,7 @@ fn ti_matches_alchemlyb_all_windows() {
     let result = estimator.fit(&series).expect("TI fit");
 
     let expected_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/ti_0.0_1.0.delta_f_sigma.txt");
+        format!("{base}/fixtures/amber/acetamide_tiny/ti_0.0_1.0.delta_f_sigma.txt");
     let (expected_delta, expected_sigma) = read_expected(&expected_path);
     assert!(
         (result.delta_f() - expected_delta).abs() < 1e-6,

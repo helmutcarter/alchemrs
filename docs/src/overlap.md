@@ -1,6 +1,6 @@
 # Overlap Diagnostics
 
-Overlap diagnostics live in `alchemrs-analysis`.
+Overlap diagnostics live in the `alchemrs::analysis` module.
 
 Available functions:
 

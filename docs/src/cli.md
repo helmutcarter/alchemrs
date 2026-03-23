@@ -1,6 +1,6 @@
 # CLI Guide
 
-The CLI crate is `alchemrs-cli`.
+The CLI package is `alchemrs-cli`, and it is built on top of the `alchemrs` library crate.
 
 Commands:
 

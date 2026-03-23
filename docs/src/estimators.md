@@ -1,6 +1,6 @@
 # Estimators
 
-Estimator implementations live in `alchemrs-estimators`.
+Estimator implementations live in the `alchemrs::estimators` module.
 
 ## Shared assumptions
 

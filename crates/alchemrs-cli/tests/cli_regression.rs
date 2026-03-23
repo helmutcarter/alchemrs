@@ -3,15 +3,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use alchemrs_analysis::{overlap_eigenvalues, overlap_matrix};
-use alchemrs_estimators::{
-    BarEstimator, BarMethod, BarOptions, ExpEstimator, ExpOptions, MbarEstimator, MbarOptions,
-    TiEstimator, TiOptions,
-};
-use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
-use alchemrs_prep::{
+use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+use alchemrs::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_u_nk, DecorrelationOptions, UNkSeriesMethod,
+};
+use alchemrs::{
+    overlap_eigenvalues, overlap_matrix, BarEstimator, BarMethod, BarOptions, DhdlSeries,
+    ExpEstimator, ExpOptions, MbarEstimator, MbarOptions, TiEstimator, TiOptions, UNkMatrix,
 };
 use serde_json::Value;
 
@@ -762,44 +761,42 @@ fn parse_json_output(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("parse CLI JSON output")
 }
 
-fn load_decorrelated_windows(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix> {
+fn load_decorrelated_windows(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
         .map(|path| load_decorrelated_window(path))
         .collect()
 }
 
-fn load_decorrelated_windows_epot(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix> {
+fn load_decorrelated_windows_epot(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
         .map(|path| load_decorrelated_window_epot(path))
         .collect()
 }
 
-fn load_decorrelated_windows_all(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix> {
+fn load_decorrelated_windows_all(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
         .map(|path| load_decorrelated_window_all(path))
         .collect()
 }
 
-fn load_auto_equilibrated_windows(inputs: &[PathBuf]) -> Vec<alchemrs_core::UNkMatrix> {
+fn load_auto_equilibrated_windows(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
         .map(|path| load_auto_equilibrated_window(path))
         .collect()
 }
 
-fn load_auto_equilibrated_decorrelated_windows(
-    inputs: &[PathBuf],
-) -> Vec<alchemrs_core::UNkMatrix> {
+fn load_auto_equilibrated_decorrelated_windows(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
         .map(|path| load_auto_equilibrated_decorrelated_window(path))
         .collect()
 }
 
-fn load_decorrelated_dhdl_series(inputs: &[PathBuf]) -> Vec<alchemrs_core::DhdlSeries> {
+fn load_decorrelated_dhdl_series(inputs: &[PathBuf]) -> Vec<DhdlSeries> {
     inputs
         .iter()
         .map(|path| {
@@ -809,7 +806,7 @@ fn load_decorrelated_dhdl_series(inputs: &[PathBuf]) -> Vec<alchemrs_core::DhdlS
         .collect()
 }
 
-fn load_auto_equilibrated_dhdl_series(inputs: &[PathBuf]) -> Vec<alchemrs_core::DhdlSeries> {
+fn load_auto_equilibrated_dhdl_series(inputs: &[PathBuf]) -> Vec<DhdlSeries> {
     inputs
         .iter()
         .map(|path| {
@@ -821,20 +818,20 @@ fn load_auto_equilibrated_dhdl_series(inputs: &[PathBuf]) -> Vec<alchemrs_core::
         .collect()
 }
 
-fn load_decorrelated_window(path: &Path) -> alchemrs_core::UNkMatrix {
+fn load_decorrelated_window(path: &Path) -> UNkMatrix {
     let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
     decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
         .expect("decorrelate u_nk")
 }
 
-fn load_decorrelated_window_epot(path: &Path) -> alchemrs_core::UNkMatrix {
+fn load_decorrelated_window_epot(path: &Path) -> UNkMatrix {
     let (u_nk, potential) =
         extract_u_nk_with_potential(path, TEMPERATURE_K).expect("parse u_nk with potential");
     decorrelate_u_nk_with_observable(&u_nk, &potential, &DecorrelationOptions::default())
         .expect("decorrelate u_nk with EPtot")
 }
 
-fn load_decorrelated_window_all(path: &Path) -> alchemrs_core::UNkMatrix {
+fn load_decorrelated_window_all(path: &Path) -> UNkMatrix {
     let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
     decorrelate_u_nk(
         &u_nk,
@@ -844,7 +841,7 @@ fn load_decorrelated_window_all(path: &Path) -> alchemrs_core::UNkMatrix {
     .expect("decorrelate u_nk with all")
 }
 
-fn load_auto_equilibrated_window(path: &Path) -> alchemrs_core::UNkMatrix {
+fn load_auto_equilibrated_window(path: &Path) -> UNkMatrix {
     let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
     let equilibration =
         detect_equilibration_u_nk(&u_nk, UNkSeriesMethod::DE, &auto_equilibrate_options())
@@ -852,7 +849,7 @@ fn load_auto_equilibrated_window(path: &Path) -> alchemrs_core::UNkMatrix {
     trim_u_nk_matrix(u_nk, equilibration.t0)
 }
 
-fn load_auto_equilibrated_decorrelated_window(path: &Path) -> alchemrs_core::UNkMatrix {
+fn load_auto_equilibrated_decorrelated_window(path: &Path) -> UNkMatrix {
     let u_nk = extract_u_nk(path, TEMPERATURE_K).expect("parse u_nk");
     let equilibration =
         detect_equilibration_u_nk(&u_nk, UNkSeriesMethod::DE, &auto_equilibrate_options())
@@ -864,7 +861,7 @@ fn load_auto_equilibrated_decorrelated_window(path: &Path) -> alchemrs_core::UNk
 
 fn expected_u_nk_counts(
     inputs: &[PathBuf],
-    windows: &[alchemrs_core::UNkMatrix],
+    windows: &[UNkMatrix],
 ) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
     let samples_in = inputs
         .iter()
@@ -885,7 +882,7 @@ fn expected_u_nk_counts(
 
 fn expected_u_nk_counts_after_auto_equilibration(
     inputs: &[PathBuf],
-    windows: &[alchemrs_core::UNkMatrix],
+    windows: &[UNkMatrix],
 ) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
     let samples_in = inputs
         .iter()
@@ -906,8 +903,8 @@ fn expected_u_nk_counts_after_auto_equilibration(
 
 fn expected_u_nk_counts_after_auto_equilibration_and_decorrelation(
     inputs: &[PathBuf],
-    auto_windows: &[alchemrs_core::UNkMatrix],
-    windows: &[alchemrs_core::UNkMatrix],
+    auto_windows: &[UNkMatrix],
+    windows: &[UNkMatrix],
 ) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
     let samples_in = inputs
         .iter()
@@ -929,7 +926,7 @@ fn expected_u_nk_counts_after_auto_equilibration_and_decorrelation(
 
 fn expected_dhdl_counts(
     inputs: &[PathBuf],
-    series: &[alchemrs_core::DhdlSeries],
+    series: &[DhdlSeries],
 ) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
     let samples_in = inputs
         .iter()
@@ -951,7 +948,7 @@ fn expected_dhdl_counts(
 
 fn expected_dhdl_counts_after_auto_equilibration(
     inputs: &[PathBuf],
-    series: &[alchemrs_core::DhdlSeries],
+    series: &[DhdlSeries],
 ) -> alchemrs_cli_input_like::AnalysisSampleCountsLike {
     let samples_in = inputs
         .iter()
@@ -979,10 +976,7 @@ fn auto_equilibrate_options() -> DecorrelationOptions {
     }
 }
 
-fn trim_u_nk_matrix(
-    u_nk: alchemrs_core::UNkMatrix,
-    remove_burnin: usize,
-) -> alchemrs_core::UNkMatrix {
+fn trim_u_nk_matrix(u_nk: UNkMatrix, remove_burnin: usize) -> UNkMatrix {
     if remove_burnin == 0 {
         return u_nk;
     }
@@ -991,7 +985,7 @@ fn trim_u_nk_matrix(
     let n_states = u_nk.n_states();
     let data = u_nk.data()[(remove_burnin * n_states)..].to_vec();
     let time = u_nk.time_ps()[remove_burnin..].to_vec();
-    alchemrs_core::UNkMatrix::new(
+    UNkMatrix::new(
         n_samples - remove_burnin,
         n_states,
         data,
@@ -1002,15 +996,12 @@ fn trim_u_nk_matrix(
     .expect("trim u_nk")
 }
 
-fn trim_dhdl_series(
-    dhdl: alchemrs_core::DhdlSeries,
-    remove_burnin: usize,
-) -> alchemrs_core::DhdlSeries {
+fn trim_dhdl_series(dhdl: DhdlSeries, remove_burnin: usize) -> DhdlSeries {
     if remove_burnin == 0 {
         return dhdl;
     }
 
-    alchemrs_core::DhdlSeries::new(
+    DhdlSeries::new(
         dhdl.state().clone(),
         dhdl.time_ps()[remove_burnin..].to_vec(),
         dhdl.values()[remove_burnin..].to_vec(),
@@ -1018,7 +1009,7 @@ fn trim_dhdl_series(
     .expect("trim dhdl")
 }
 
-fn compute_overlap_summary(windows: &[alchemrs_core::UNkMatrix]) -> (f64, Vec<f64>) {
+fn compute_overlap_summary(windows: &[UNkMatrix]) -> (f64, Vec<f64>) {
     let overlap = overlap_matrix(
         windows,
         Some(MbarOptions {

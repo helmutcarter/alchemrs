@@ -1,25 +1,23 @@
 use std::fs;
 
-use alchemrs_parse::amber::extract_u_nk;
-use alchemrs_prep::{decorrelate_u_nk, DecorrelationOptions, UNkSeriesMethod};
+use alchemrs::{decorrelate_u_nk, extract_u_nk, DecorrelationOptions, UNkSeriesMethod};
 
 fn load_expected(path: &str) -> (Vec<f64>, Vec<f64>) {
     let content = fs::read_to_string(path).expect("read expected u_nk file");
     let mut lines = content.lines();
     let header = lines.next().expect("header");
     let cols: Vec<&str> = header.split(',').collect();
-    if cols.len() < 3 {
-        panic!("expected at least time, lambdas, and one state column");
-    }
+    assert!(
+        cols.len() >= 3,
+        "expected at least time, lambdas, and one state column"
+    );
     let n_states = cols.len() - 2;
 
     let mut times = Vec::new();
     let mut data = Vec::new();
     for line in lines {
         let parts: Vec<&str> = line.split(',').collect();
-        if parts.len() != cols.len() {
-            panic!("unexpected column count in row");
-        }
+        assert_eq!(parts.len(), cols.len(), "unexpected column count in row");
         let time = parts[0].parse::<f64>().expect("time parse");
         times.push(time);
         for value in &parts[2..] {
@@ -35,9 +33,8 @@ fn load_expected(path: &str) -> (Vec<f64>, Vec<f64>) {
 #[test]
 fn decorrelate_u_nk_matches_alchemlyb() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let input = format!("{base}/../../fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
-    let expected_path =
-        format!("{base}/../../fixtures/amber/acetamide_tiny/0.1/u_nk.decorrelated.csv");
+    let input = format!("{base}/fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
+    let expected_path = format!("{base}/fixtures/amber/acetamide_tiny/0.1/u_nk.decorrelated.csv");
 
     let u_nk = extract_u_nk(input, 300.0).expect("parse AMBER output");
     let result = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())

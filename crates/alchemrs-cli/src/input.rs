@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 
-use alchemrs_core::{DhdlSeries, UNkMatrix};
-use alchemrs_parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
-use alchemrs_prep::{
+use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+use alchemrs::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
-    DecorrelationOptions, UNkSeriesMethod,
+    DecorrelationOptions, DhdlSeries, UNkMatrix, UNkSeriesMethod,
 };
 
 use crate::cli::UNkObservable;

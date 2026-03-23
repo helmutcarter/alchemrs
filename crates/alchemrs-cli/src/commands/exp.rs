@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs_estimators::{ExpEstimator, ExpOptions, MbarOptions};
+use alchemrs::{ExpEstimator, ExpOptions, MbarOptions};
 
 use crate::cli::{OutputFormat, OutputUnits};
 use crate::input::{load_windows, AnalysisInputOptions};

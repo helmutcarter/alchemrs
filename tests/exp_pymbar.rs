@@ -1,8 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use alchemrs_estimators::ExpEstimator;
-use alchemrs_parse::amber::extract_u_nk;
+use alchemrs::{extract_u_nk, ExpEstimator};
 
 fn read_matrix(path: &str) -> Vec<f64> {
     let content = fs::read_to_string(path).expect("read expected matrix");
@@ -23,19 +22,18 @@ fn read_matrix(path: &str) -> Vec<f64> {
 #[test]
 fn exp_matches_pymbar_matrix() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let mut paths: Vec<PathBuf> =
-        fs::read_dir(format!("{base}/../../fixtures/amber/acetamide_tiny"))
-            .expect("read fixture directory")
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let path = entry.path();
-                if path.is_dir() {
-                    Some(path.join("acetamide.prod.out"))
-                } else {
-                    None
-                }
-            })
-            .collect();
+    let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/fixtures/amber/acetamide_tiny"))
+        .expect("read fixture directory")
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.is_dir() {
+                Some(path.join("acetamide.prod.out"))
+            } else {
+                None
+            }
+        })
+        .collect();
     paths.sort_by(|a, b| {
         let la = a
             .parent()
@@ -61,8 +59,8 @@ fn exp_matches_pymbar_matrix() {
     let estimator = ExpEstimator::default();
     let result = estimator.fit(&windows).expect("EXP fit");
 
-    let expected_delta_path = format!("{base}/../../fixtures/amber/acetamide_tiny/exp_matrix.txt");
-    let expected_sigma_path = format!("{base}/../../fixtures/amber/acetamide_tiny/exp_sigma.txt");
+    let expected_delta_path = format!("{base}/fixtures/amber/acetamide_tiny/exp_matrix.txt");
+    let expected_sigma_path = format!("{base}/fixtures/amber/acetamide_tiny/exp_sigma.txt");
     let expected_delta = read_matrix(&expected_delta_path);
     let expected_sigma = read_matrix(&expected_sigma_path);
 

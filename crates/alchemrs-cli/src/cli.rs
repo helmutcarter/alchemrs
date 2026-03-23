@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs_estimators::{BarMethod, IntegrationMethod};
+use alchemrs::{BarMethod, IntegrationMethod};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Parser)]

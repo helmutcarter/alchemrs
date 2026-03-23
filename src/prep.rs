@@ -1,4 +1,4 @@
-use alchemrs_core::{CoreError, DhdlSeries, Result, StatePoint, UNkMatrix};
+use crate::core::{CoreError, DhdlSeries, Result, StatePoint, UNkMatrix};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UNkSeriesMethod {

@@ -1,5 +1,5 @@
-use alchemrs_core::{CoreError, OverlapMatrix, Result, UNkMatrix};
-use alchemrs_estimators::{mbar_log_weights_from_windows, MbarOptions};
+use crate::core::{CoreError, OverlapMatrix, Result, UNkMatrix};
+use crate::estimators::{mbar_log_weights_from_windows, MbarOptions};
 use nalgebra::{DMatrix, Schur};
 
 pub fn overlap_matrix(
@@ -10,7 +10,7 @@ pub fn overlap_matrix(
     let (log_w, n_k, states) = mbar_log_weights_from_windows(windows, &options)?;
     let n_states = states.len();
     if log_w.len() % n_states != 0 {
-        return Err(alchemrs_core::CoreError::InvalidShape {
+        return Err(CoreError::InvalidShape {
             expected: n_states,
             found: log_w.len(),
         });

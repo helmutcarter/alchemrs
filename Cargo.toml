@@ -5,22 +5,17 @@ edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-alchemrs-core = { path = "crates/alchemrs-core" }
-alchemrs-analysis = { path = "crates/alchemrs-analysis" }
-alchemrs-estimators = { path = "crates/alchemrs-estimators" }
-alchemrs-parse = { path = "crates/alchemrs-parse" }
-alchemrs-prep = { path = "crates/alchemrs-prep" }
+nalgebra = "0.33"
+rayon = "1.10"
+regex = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
 
 [workspace]
 resolver = "2"
-members = [
-  "crates/alchemrs-cli",
-  "crates/alchemrs-analysis",
-  "crates/alchemrs-core",
-  "crates/alchemrs-estimators",
-  "crates/alchemrs-parse",
-  "crates/alchemrs-prep",
-]
+members = ["crates/alchemrs-cli"]
 
 [workspace.package]
 version = "0.1.0"
