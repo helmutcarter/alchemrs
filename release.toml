@@ -1,9 +1,8 @@
 allow-branch = ["main"]
 push-remote = "origin"
-disable-push = false
-disable-tag = false
-disable-publish = true
-no-dev-version = true
+push = true
+tag = true
+publish = false
 consolidate-commits = true
 pre-release-commit-message = "chore(release): bump version to {{version}}"
 tag-name = "v{{version}}"
