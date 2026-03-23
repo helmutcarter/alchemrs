@@ -16,6 +16,10 @@ Important matches include:
 - `pymbar`-style automated equilibration detection
 - BAR reporting `NaN` uncertainties for non-adjacent pairs
 
+Important intentional difference:
+
+- `alchemrs` reports equilibration `Neff_max` using the actual suffix length `N - t0`, so this scalar can differ by 1 from `pymbar` / `alchemlyb`
+
 ## AMBER-first scope
 
 The implemented parser surface today is AMBER-focused.

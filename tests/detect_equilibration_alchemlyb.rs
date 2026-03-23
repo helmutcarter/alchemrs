@@ -12,7 +12,7 @@ fn read_expected(path: &str) -> (usize, f64, f64) {
 }
 
 #[test]
-fn detect_equilibration_matches_pymbar() {
+fn detect_equilibration_matches_repository_reference() {
     let base = env!("CARGO_MANIFEST_DIR");
     let path = format!("{base}/fixtures/amber/acetamide_tiny/0.1/acetamide.prod.out");
     let series = extract_dhdl(path, 300.0).expect("parse AMBER output");

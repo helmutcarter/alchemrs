@@ -613,7 +613,10 @@ fn detect_equilibration(values: &[f64], fast: bool, nskip: usize) -> Result<Equi
         let slice = &values[t..];
         let g = statistical_inefficiency(slice, fast).unwrap_or(values.len() as f64);
         g_t[t] = g;
-        neff_t[t] = (values.len() - t + 1) as f64 / g;
+        // Use the actual retained sample count for the suffix `values[t..]`.
+        // This intentionally differs from pymbar/alchemlyb, which use `T - t + 1`;
+        // on the bundled equilibration fixture that changes `neff_max` from 21 to 20.
+        neff_t[t] = (values.len() - t) as f64 / g;
     }
     let mut max_idx = 0usize;
     let mut max_value = neff_t[0];

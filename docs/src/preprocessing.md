@@ -91,10 +91,10 @@ Equilibration detection returns:
 The heuristic scans possible start positions and chooses the one that maximizes:
 
 ```text
-Neff = (N - t0 + 1) / g
+Neff = (N - t0) / g
 ```
 
-This is the same style of automated equilibration detection used by `pymbar`. For further reading on the topic, see [Chodera 2016](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
+This is the same style of automated equilibration detection used by `pymbar`, but `alchemrs` counts the actual retained suffix length `N - t0` when reporting `Neff_max`. That means `Neff_max` can differ by 1 from `pymbar`/`alchemlyb`, while the broader workflow remains the same. For further reading on the topic, see [Chodera 2016](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 
 ## `remove_burnin`
 
