@@ -47,8 +47,8 @@ pub fn run(
         &ScalarResult {
             delta: result.values()[delta_index],
             sigma: result.uncertainties().map(|u| u[delta_index]),
-            from_lambda: result.states().first().unwrap().lambdas()[0],
-            to_lambda: result.states().last().unwrap().lambdas()[0],
+            from_state: result.states().first().unwrap().lambdas().to_vec(),
+            to_state: result.states().last().unwrap().lambdas().to_vec(),
             units: run_options.output_units,
             temperature: input_options.temperature,
             overlap,

@@ -173,7 +173,12 @@ TI uses `dH/dlambda` as the scalar series.
 
 `BAR`, `MBAR`, `EXP`, and `DEXP` use the observable chosen by `--u-nk-observable <de|all|epot>`.
 
-At present, multidimensional GROMACS states can be parsed into `u_nk`, but CLI estimator workflows still require one-dimensional lambda states.
+Multidimensional GROMACS states can be parsed into `u_nk` and passed through the CLI estimators.
+
+The remaining restriction is observable choice:
+
+- `de` is still one-dimensional only
+- `all` and `epot` remain valid for multidimensional schedules
 
 ## CLI auto-equilibrate overrides
 

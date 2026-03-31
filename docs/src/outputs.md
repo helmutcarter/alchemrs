@@ -24,7 +24,7 @@ It includes:
 
 - `delta_f`
 - uncertainty
-- lambda endpoints
+- lambda endpoints, which are scalars for one-dimensional schedules and vectors for multidimensional schedules
 - sample counts
 - `u_nk_observable` when relevant
 - overlap summary when requested
@@ -39,9 +39,16 @@ The payload contains:
 - optional overlap summary
 - a provenance object
 
+`from_lambda` and `to_lambda` are encoded as:
+
+- numbers for one-dimensional schedules
+- arrays for multidimensional schedules
+
 ## CSV output
 
 CSV output appends provenance fields after the result columns so the row remains self-describing.
+
+For multidimensional schedules, the endpoint columns are emitted as quoted bracketed vectors such as `"[0;0;0.8]"`.
 
 ## Provenance
 
@@ -71,8 +78,8 @@ This matters because preprocessing choices directly change the data used by the 
 {
   "delta_f": -113.58,
   "uncertainty": 1.17,
-  "from_lambda": 0.0,
-  "to_lambda": 1.0,
+  "from_lambda": [0.0, 0.0, 0.8],
+  "to_lambda": [0.0, 0.0, 0.9],
   "units": "kT",
   "overlap": {
     "scalar": 0.0183,

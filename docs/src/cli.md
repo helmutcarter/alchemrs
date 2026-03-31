@@ -63,6 +63,12 @@ Use `epot` when:
 - the `u_nk` matrix contains positive infinity values that make `de` invalid
 - you need a preprocessing observable that does not rely on one-dimensional adjacent-state `DE` semantics
 
+For multidimensional `u_nk` schedules:
+
+- `bar`, `mbar`, `exp`, and `dexp` accept them
+- CLI output renders `from_lambda` / `to_lambda` as JSON arrays or bracketed text/CSV values when the state has multiple lambda components
+- `de` remains one-dimensional, so use `all` or `epot` when preprocessing multidimensional schedules
+
 ## TI-specific behavior
 
 TI uses `dH/dlambda`, not `u_nk`.

@@ -10,8 +10,8 @@ const K_B_KJ_PER_MOL_K: f64 = 0.00831446261815324;
 pub struct ScalarResult {
     pub delta: f64,
     pub sigma: Option<f64>,
-    pub from_lambda: f64,
-    pub to_lambda: f64,
+    pub from_state: Vec<f64>,
+    pub to_state: Vec<f64>,
     pub units: OutputUnits,
     pub temperature: f64,
     pub overlap: Option<OverlapSummary>,
@@ -38,8 +38,8 @@ pub struct OutputProvenance {
 struct RenderedScalarResult<'a> {
     delta: f64,
     sigma: Option<f64>,
-    from_lambda: f64,
-    to_lambda: f64,
+    from_state: Vec<f64>,
+    to_state: Vec<f64>,
     units: &'static str,
     temperature: f64,
     overlap: Option<&'a OverlapSummary>,
@@ -67,8 +67,8 @@ fn render_scalar_result(result: &ScalarResult, format: OutputFormat) -> String {
         sigma: result
             .sigma
             .map(|value| convert_value(value, result.units, result.temperature)),
-        from_lambda: result.from_lambda,
-        to_lambda: result.to_lambda,
+        from_state: result.from_state.clone(),
+        to_state: result.to_state.clone(),
         units: format_units(result.units),
         temperature: result.temperature,
         overlap: result.overlap.as_ref(),
@@ -88,9 +88,11 @@ fn render_text(result: &RenderedScalarResult<'_>) -> String {
         .sigma
         .map(|value| format!("{value} {}", result.units))
         .unwrap_or_else(|| "none".to_string());
+    let from_state = format_state_text(&result.from_state);
+    let to_state = format_state_text(&result.to_state);
     let mut output = format!(
         "delta_f: {} {}\nuncertainty: {sigma}\nfrom_lambda: {}\nto_lambda: {}\nwindows: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\n",
-        result.delta, result.units, result.from_lambda, result.to_lambda
+        result.delta, result.units, from_state, to_state
         ,result.sample_counts.windows
         ,result.sample_counts.samples_in
         ,result.sample_counts.samples_after_burnin
@@ -121,6 +123,8 @@ fn render_json(result: &RenderedScalarResult<'_>) -> String {
         .filter(|value| value.is_finite())
         .map(|value| value.to_string())
         .unwrap_or_else(|| "null".to_string());
+    let from_state = render_state_json(&result.from_state);
+    let to_state = render_state_json(&result.to_state);
     let overlap = result
         .overlap
         .map(|overlap| {
@@ -158,7 +162,7 @@ fn render_json(result: &RenderedScalarResult<'_>) -> String {
     );
     format!(
         "{{\"delta_f\":{},\"uncertainty\":{sigma},\"from_lambda\":{},\"to_lambda\":{},\"units\":\"{}\",\"overlap\":{overlap},\"provenance\":{provenance}}}\n",
-        result.delta, result.from_lambda, result.to_lambda, result.units
+        result.delta, from_state, to_state, result.units
     )
 }
 
@@ -183,6 +187,8 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> String {
         })
         .unwrap_or_default();
     let u_nk_observable = result.provenance.u_nk_observable.unwrap_or_default();
+    let from_state = render_state_csv(&result.from_state);
+    let to_state = render_state_csv(&result.to_state);
     format!(
         "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,windows,samples_in,samples_after_burnin,samples_kept\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues},{},{temperature},{},{},{},{},{},{},{},{},{},{},{}\n",
         result.provenance.estimator,
@@ -198,11 +204,56 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> String {
         result.sample_counts.samples_after_burnin,
         result.sample_counts.samples_kept,
         delta = result.delta,
-        from_lambda = result.from_lambda,
-        to_lambda = result.to_lambda,
+        from_lambda = from_state,
+        to_lambda = to_state,
         units = result.units,
         temperature = result.temperature
     )
+}
+
+fn format_state_text(state: &[f64]) -> String {
+    if state.len() == 1 {
+        state[0].to_string()
+    } else {
+        format!(
+            "[{}]",
+            state
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+fn render_state_json(state: &[f64]) -> String {
+    if state.len() == 1 {
+        state[0].to_string()
+    } else {
+        format!(
+            "[{}]",
+            state
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+}
+
+fn render_state_csv(state: &[f64]) -> String {
+    if state.len() == 1 {
+        state[0].to_string()
+    } else {
+        format!(
+            "\"[{}]\"",
+            state
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+                .join(";")
+        )
+    }
 }
 
 fn convert_value(value: f64, units: OutputUnits, temperature: f64) -> f64 {
@@ -233,8 +284,8 @@ mod tests {
             &ScalarResult {
                 delta: 1.5,
                 sigma: Some(0.25),
-                from_lambda: 0.0,
-                to_lambda: 1.0,
+                from_state: vec![0.0],
+                to_state: vec![1.0],
                 units: OutputUnits::KT,
                 temperature: 300.0,
                 overlap: None,
@@ -270,8 +321,8 @@ mod tests {
             &ScalarResult {
                 delta: 1.5,
                 sigma: None,
-                from_lambda: 0.0,
-                to_lambda: 1.0,
+                from_state: vec![0.0],
+                to_state: vec![1.0],
                 units: OutputUnits::KT,
                 temperature: 300.0,
                 overlap: None,
@@ -307,8 +358,8 @@ mod tests {
             &ScalarResult {
                 delta: 1.5,
                 sigma: Some(0.25),
-                from_lambda: 0.0,
-                to_lambda: 1.0,
+                from_state: vec![0.0],
+                to_state: vec![1.0],
                 units: OutputUnits::KT,
                 temperature: 300.0,
                 overlap: Some(OverlapSummary {
@@ -338,6 +389,43 @@ mod tests {
         assert_eq!(
             output,
             "delta_f: 1.5 kT\nuncertainty: 0.25 kT\nfrom_lambda: 0\nto_lambda: 1\nwindows: 15\nsamples_in: 300\nsamples_after_burnin: 300\nsamples_kept: 120\nu_nk_observable: de\noverlap_scalar: 0.125\noverlap_eigenvalues: 1, 0.875, 0.5\n"
+        );
+    }
+
+    #[test]
+    fn renders_multidimensional_scalar_result_as_json() {
+        let output = render_scalar_result(
+            &ScalarResult {
+                delta: 1.5,
+                sigma: Some(0.25),
+                from_state: vec![0.0, 0.0, 0.8],
+                to_state: vec![0.0, 0.0, 0.9],
+                units: OutputUnits::KT,
+                temperature: 300.0,
+                overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "mbar",
+                    decorrelate: false,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                    u_nk_observable: Some("all"),
+                },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 3,
+                    samples_in: 30,
+                    samples_after_burnin: 30,
+                    samples_kept: 30,
+                },
+            },
+            OutputFormat::Json,
+        );
+
+        assert_eq!(
+            output,
+            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":[0,0,0.8],\"to_lambda\":[0,0,0.9],\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":false,\"remove_burnin\":0,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1,\"u_nk_observable\":\"all\",\"windows\":3,\"samples_in\":30,\"samples_after_burnin\":30,\"samples_kept\":30}}\n"
         );
     }
 }

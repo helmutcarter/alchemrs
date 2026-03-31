@@ -24,7 +24,7 @@ Important intentional difference:
 
 The implemented parser surface supports AMBER outputs and GROMACS `dhdl.xvg` outputs.
 
-AMBER still has the broader and more battle-tested estimator workflow coverage, but the documented and tested parsing workflow now includes both engines. Multidimensional GROMACS schedules are currently parser-supported only.
+AMBER still has the broader and more battle-tested workflow coverage, but the documented and tested parsing workflow now includes both engines. Multidimensional GROMACS schedules are supported for `u_nk`-based analysis; multidimensional TI is still unsupported.
 
 ## One-dimensional lambda assumption
 

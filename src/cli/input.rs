@@ -84,20 +84,6 @@ impl AnalysisInputOptions {
     }
 }
 
-fn ensure_cli_supported_window(u_nk: &UNkMatrix) -> CliResult<()> {
-    let multidimensional = u_nk
-        .evaluated_states()
-        .iter()
-        .any(|state| state.lambdas().len() != 1)
-        || u_nk
-            .sampled_state()
-            .is_some_and(|state| state.lambdas().len() != 1);
-    if multidimensional {
-        return Err("multidimensional lambda schedules are parsed for GROMACS u_nk inputs, but CLI estimators currently support only one-dimensional states".into());
-    }
-    Ok(())
-}
-
 fn map_cli_dhdl_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::Error> {
     let message = error.to_string();
     if message.contains("scalar dH/dlambda parsing is unsupported") {
@@ -110,9 +96,6 @@ fn map_cli_u_nk_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::
     let message = error.to_string();
     if message == "DE u_nk preprocessing requires one-dimensional lambda states" {
         return "the CLI `de` observable is only supported for one-dimensional lambda schedules; use `--u-nk-observable all` or `epot`, or analyze a one-dimensional schedule".into();
-    }
-    if message == "estimators require one-dimensional lambda states" {
-        return "multidimensional lambda schedules are parsed for GROMACS u_nk inputs, but CLI estimators currently support only one-dimensional states".into();
     }
     error
 }
@@ -134,7 +117,6 @@ pub fn load_windows(
                 UNkObservable::Epot => {
                     let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)
                         .map_err(|err| map_cli_u_nk_error(err.into()))?;
-                    ensure_cli_supported_window(&u_nk)?;
                     let mut potential = potential;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
@@ -168,7 +150,6 @@ pub fn load_windows(
                     };
                     let mut u_nk = extract_u_nk(&path, options.temperature)
                         .map_err(|err| map_cli_u_nk_error(err.into()))?;
-                    ensure_cli_supported_window(&u_nk)?;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
                     if options.auto_equilibrate {
@@ -194,7 +175,6 @@ pub fn load_windows(
         }
         let mut u_nk = extract_u_nk(path, options.temperature)
             .map_err(|err| map_cli_u_nk_error(err.into()))?;
-        ensure_cli_supported_window(&u_nk)?;
         samples_in += u_nk.n_samples();
         u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
         samples_after_burnin += u_nk.n_samples();
@@ -306,10 +286,10 @@ mod tests {
     use super::{load_dhdl_series, load_windows, AnalysisInputOptions};
 
     #[test]
-    fn load_windows_rejects_multidimensional_gromacs_states_for_cli_estimators() {
+    fn load_windows_accepts_multidimensional_gromacs_states_for_cli_estimators() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/osmo_lambda15.dhdl.xvg"));
-        let err = match load_windows(
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda15.dhdl.xvg"));
+        let loaded = load_windows(
             vec![path],
             AnalysisInputOptions {
                 temperature: 298.0,
@@ -321,21 +301,20 @@ mod tests {
                 nskip: 1,
                 u_nk_observable: Some(UNkObservable::All),
             },
-        ) {
-            Ok(_) => panic!("expected multidimensional CLI u_nk load to fail"),
-            Err(err) => err,
-        };
+        )
+        .expect("expected multidimensional CLI u_nk load to succeed");
 
+        assert_eq!(loaded.windows.len(), 1);
         assert_eq!(
-            err.to_string(),
-            "multidimensional lambda schedules are parsed for GROMACS u_nk inputs, but CLI estimators currently support only one-dimensional states"
+            loaded.windows[0].sampled_state().unwrap().lambdas(),
+            &[0.0, 0.0, 0.8, 0.0, 0.0]
         );
     }
 
     #[test]
     fn load_dhdl_series_reports_multidimensional_gromacs_ti_limit() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/osmo_lambda15.dhdl.xvg"));
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda15.dhdl.xvg"));
         let err = match load_dhdl_series(
             vec![path],
             AnalysisInputOptions {

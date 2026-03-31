@@ -1,7 +1,7 @@
 use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, extract_u_nk as extract_gromacs_u_nk};
 use alchemrs::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential, CoreError};
 
-const REAL_FIXTURE: &str = "/fixtures/gromacs/osmo_lambda15.dhdl.xvg";
+const REAL_FIXTURE: &str = "/fixtures/gromacs/lambda15.dhdl.xvg";
 
 #[test]
 fn gromacs_extract_u_nk_from_real_multidimensional_file() {
