@@ -1,8 +1,6 @@
 use alchemrs::{
     mbar_block_average, ti_block_average, CoreError, DhdlSeries, StatePoint, UNkMatrix,
 };
-use std::path::PathBuf;
-
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint], n_samples: usize) -> UNkMatrix {
     let mut data = Vec::with_capacity(n_samples * evaluated.len());
     let mut time_ps = Vec::with_capacity(n_samples);
@@ -141,17 +139,11 @@ fn mbar_block_average_requires_nonzero_blocks() {
 
 #[test]
 fn real_gromacs_windows_support_mbar_block_average_after_grid_intersection() {
-    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let w2 = alchemrs::extract_u_nk(
-        base.join("fixtures/gromacs/lambda_2_dhdl.xvg"),
-        298.0,
-    )
-    .expect("parse lambda_2");
-    let w3 = alchemrs::extract_u_nk(
-        base.join("fixtures/gromacs/lambda_3_dhdl.xvg"),
-        298.0,
-    )
-    .expect("parse lambda_3");
+    let base = env!("CARGO_MANIFEST_DIR");
+    let w2 = alchemrs::extract_u_nk(format!("{base}/fixtures/gromacs/lambda_2.xvg"), 298.0)
+        .expect("parse lambda_2");
+    let w3 = alchemrs::extract_u_nk(format!("{base}/fixtures/gromacs/lambda_3.xvg"), 298.0)
+        .expect("parse lambda_3");
 
     let w2 = trim_window_to_states(&w2, &[1, 2]);
     let w3 = trim_window_to_states(&w3, &[0, 1]);

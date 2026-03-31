@@ -1,13 +1,13 @@
 use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, extract_u_nk as extract_gromacs_u_nk};
 use alchemrs::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential, CoreError};
 
-const REAL_FIXTURE: &str = "/fixtures/gromacs/lambda15.dhdl.xvg";
+const REAL_FIXTURE: &str = "/fixtures/gromacs/lambda_15.xvg";
 const WINDOW_FIXTURES: &[(&str, f64, &[f64])] = &[
-    ("/fixtures/gromacs/lambda_0_dhdl.xvg", 0.0, &[0.0, 0.0, 0.0, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_1_dhdl.xvg", 0.05, &[0.0, 0.0, 0.05, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_2_dhdl.xvg", 0.1, &[0.0, 0.0, 0.1, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_3_dhdl.xvg", 0.15, &[0.0, 0.0, 0.15, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_15_dhdl.xvg", 0.8, &[0.0, 0.0, 0.8, 0.0, 0.0]),
+    ("/fixtures/gromacs/lambda_0.xvg", 0.0, &[0.0, 0.0, 0.0, 0.0, 0.0]),
+    ("/fixtures/gromacs/lambda_1.xvg", 0.05, &[0.0, 0.0, 0.05, 0.0, 0.0]),
+    ("/fixtures/gromacs/lambda_2.xvg", 0.1, &[0.0, 0.0, 0.1, 0.0, 0.0]),
+    ("/fixtures/gromacs/lambda_3.xvg", 0.15, &[0.0, 0.0, 0.15, 0.0, 0.0]),
+    ("/fixtures/gromacs/lambda_15.xvg", 0.8, &[0.0, 0.0, 0.8, 0.0, 0.0]),
 ];
 
 #[test]
@@ -28,7 +28,7 @@ fn gromacs_extract_u_nk_from_real_multidimensional_file() {
         ]
     );
     assert_eq!(u_nk.n_states(), 3);
-    assert!(u_nk.n_samples() > 10_000);
+    assert_eq!(u_nk.n_samples(), 200);
     assert_eq!(u_nk.evaluated_states().first().unwrap().lambdas(), &[0.0, 0.0, 0.7, 0.0, 0.0]);
     assert_eq!(u_nk.evaluated_states()[1].lambdas(), &[0.0, 0.0, 0.8, 0.0, 0.0]);
     assert_eq!(u_nk.evaluated_states().last().unwrap().lambdas(), &[0.0, 0.0, 0.9, 0.0, 0.0]);
@@ -45,7 +45,7 @@ fn top_level_dispatch_supports_real_gromacs_u_nk_fixture() {
 
     assert_eq!(u_nk.n_states(), 3);
     assert_eq!(potential.len(), u_nk.n_samples());
-    assert!((potential[0] - 25663.127).abs() < 1e-6);
+    assert!((potential[0] - 27391.348).abs() < 1e-6);
 }
 
 #[test]

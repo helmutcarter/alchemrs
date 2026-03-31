@@ -800,7 +800,7 @@ fn mbar_cli_outputs_multidimensional_gromacs_json_with_lambda_components() {
         Some("all")
     );
     assert_eq!(payload["provenance"]["windows"].as_u64(), Some(1));
-    assert_eq!(payload["provenance"]["samples_kept"].as_u64(), Some(50_001));
+    assert_eq!(payload["provenance"]["samples_kept"].as_u64(), Some(200));
 }
 
 #[test]
@@ -873,7 +873,7 @@ fn acetamide_inputs() -> Vec<PathBuf> {
 }
 
 fn gromacs_lambda15_input() -> Vec<PathBuf> {
-    vec![repo_root().join("fixtures").join("gromacs").join("lambda15.dhdl.xvg")]
+    vec![repo_root().join("fixtures").join("gromacs").join("lambda_15.xvg")]
 }
 
 fn run_cli(args: &[&str], inputs: &[PathBuf]) -> Output {

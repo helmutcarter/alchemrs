@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn load_windows_accepts_multidimensional_gromacs_states_for_cli_estimators() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda15.dhdl.xvg"));
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
         let loaded = load_windows(
             vec![path],
             AnalysisInputOptions {
@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn load_dhdl_series_reports_multidimensional_gromacs_ti_limit() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda15.dhdl.xvg"));
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
         let err = match load_dhdl_series(
             vec![path],
             AnalysisInputOptions {
