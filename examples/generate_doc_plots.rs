@@ -1,8 +1,8 @@
 use alchemrs::{
-    ConvergencePoint, ConvergencePlotOptions, DeltaFMatrix, DeltaFStatePlotOptions,
-    DhdlSeries, OverlapMatrix, OverlapPlotOptions, StatePoint, TiDhdlPlotOptions,
-    render_convergence_svg, render_delta_f_state_svg, render_overlap_matrix_svg,
-    render_ti_dhdl_svg,
+    BlockAveragePlotOptions, BlockEstimate, ConvergencePoint, ConvergencePlotOptions,
+    DeltaFMatrix, DeltaFStatePlotOptions, DhdlSeries, OverlapMatrix, OverlapPlotOptions,
+    StatePoint, TiDhdlPlotOptions, render_block_average_svg, render_convergence_svg,
+    render_delta_f_state_svg, render_overlap_matrix_svg, render_ti_dhdl_svg,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -43,6 +43,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     )?;
     std::fs::write("docs/src/assets/plots/ti-dhdl.svg", ti_svg)?;
+
+    let block_svg = render_block_average_svg(
+        &block_estimates()?,
+        Some(BlockAveragePlotOptions {
+            title: "MBAR Block Average Example".to_string(),
+            ..BlockAveragePlotOptions::default()
+        }),
+    )?;
+    std::fs::write("docs/src/assets/plots/block-average.svg", block_svg)?;
 
     Ok(())
 }
@@ -111,5 +120,16 @@ fn ti_dhdl_series() -> Result<Vec<DhdlSeries>, Box<dyn std::error::Error>> {
             vec![0.0, 1.0, 2.0, 3.0],
             vec![0.3, 0.2, 0.1, 0.2],
         )?,
+    ])
+}
+
+fn block_estimates() -> Result<Vec<BlockEstimate>, Box<dyn std::error::Error>> {
+    let from = StatePoint::new(vec![0.0], 300.0)?;
+    let to = StatePoint::new(vec![1.0], 300.0)?;
+    Ok(vec![
+        BlockEstimate::new(0, 4, -2.05, Some(0.18), from.clone(), to.clone(), None)?,
+        BlockEstimate::new(1, 4, -2.12, Some(0.12), from.clone(), to.clone(), None)?,
+        BlockEstimate::new(2, 4, -2.18, Some(0.09), from.clone(), to.clone(), None)?,
+        BlockEstimate::new(3, 4, -2.09, Some(0.11), from, to, None)?,
     ])
 }
