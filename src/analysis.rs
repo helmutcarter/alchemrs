@@ -16,6 +16,91 @@ pub struct ConvergencePoint {
     lambda_labels: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct BlockEstimate {
+    block_index: usize,
+    n_blocks: usize,
+    delta_f: f64,
+    uncertainty: Option<f64>,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    lambda_labels: Option<Vec<String>>,
+}
+
+impl BlockEstimate {
+    pub fn new(
+        block_index: usize,
+        n_blocks: usize,
+        delta_f: f64,
+        uncertainty: Option<f64>,
+        from_state: StatePoint,
+        to_state: StatePoint,
+        lambda_labels: Option<Vec<String>>,
+    ) -> Result<Self> {
+        if n_blocks == 0 {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        if block_index >= n_blocks {
+            return Err(CoreError::InvalidShape {
+                expected: n_blocks,
+                found: block_index + 1,
+            });
+        }
+        if !delta_f.is_finite() {
+            return Err(CoreError::NonFiniteValue(
+                "delta_f must be finite".to_string(),
+            ));
+        }
+        if let Some(value) = uncertainty {
+            if !value.is_finite() {
+                return Err(CoreError::NonFiniteValue(
+                    "uncertainty must be finite".to_string(),
+                ));
+            }
+        }
+        Ok(Self {
+            block_index,
+            n_blocks,
+            delta_f,
+            uncertainty,
+            from_state,
+            to_state,
+            lambda_labels,
+        })
+    }
+
+    pub fn block_index(&self) -> usize {
+        self.block_index
+    }
+
+    pub fn n_blocks(&self) -> usize {
+        self.n_blocks
+    }
+
+    pub fn delta_f(&self) -> f64 {
+        self.delta_f
+    }
+
+    pub fn uncertainty(&self) -> Option<f64> {
+        self.uncertainty
+    }
+
+    pub fn from_state(&self) -> &StatePoint {
+        &self.from_state
+    }
+
+    pub fn to_state(&self) -> &StatePoint {
+        &self.to_state
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.lambda_labels.as_deref()
+    }
+}
+
 impl ConvergencePoint {
     pub fn new(
         n_windows: usize,
@@ -213,6 +298,55 @@ pub fn dexp_convergence(
     )
 }
 
+pub fn ti_block_average(
+    series: &[DhdlSeries],
+    n_blocks: usize,
+    options: Option<TiOptions>,
+) -> Result<Vec<BlockEstimate>> {
+    if series.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: series.len(),
+        });
+    }
+    if n_blocks == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let estimator = TiEstimator::new(options.unwrap_or_default());
+    let blocked = series
+        .iter()
+        .map(|item| split_dhdl_series(item, n_blocks))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut points = Vec::with_capacity(n_blocks);
+    for block_index in 0..n_blocks {
+        let block = blocked
+            .iter()
+            .map(|chunks| chunks[block_index].clone())
+            .collect::<Vec<_>>();
+        let result = estimator.fit(&block)?;
+        points.push(block_estimate_from_scalar(block_index, n_blocks, &result)?);
+    }
+    Ok(points)
+}
+
+pub fn mbar_block_average(
+    windows: &[UNkMatrix],
+    n_blocks: usize,
+    options: Option<MbarOptions>,
+) -> Result<Vec<BlockEstimate>> {
+    block_average_from_windows(
+        windows,
+        n_blocks,
+        |subset| MbarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        1,
+    )
+}
+
 fn convergence_from_matrix_windows<F>(
     windows: &[UNkMatrix],
     fit: F,
@@ -238,6 +372,46 @@ where
         let trimmed = trim_windows_to_sampled_states(subset)?;
         let result = fit(&trimmed)?;
         points.push(convergence_point_from_matrix(count, &result, reverse)?);
+    }
+    Ok(points)
+}
+
+fn block_average_from_windows<F>(
+    windows: &[UNkMatrix],
+    n_blocks: usize,
+    fit: F,
+    minimum_windows: usize,
+) -> Result<Vec<BlockEstimate>>
+where
+    F: Fn(&[UNkMatrix]) -> Result<DeltaFMatrix>,
+{
+    if windows.len() < minimum_windows {
+        return Err(CoreError::InvalidShape {
+            expected: minimum_windows,
+            found: windows.len(),
+        });
+    }
+    if n_blocks == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let blocked = windows
+        .iter()
+        .map(|window| split_u_nk_window(window, n_blocks))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut points = Vec::with_capacity(n_blocks);
+    for block_index in 0..n_blocks {
+        let subset = blocked
+            .iter()
+            .map(|chunks| chunks[block_index].clone())
+            .collect::<Vec<_>>();
+        let trimmed = trim_windows_to_sampled_states(&subset)?;
+        let result = fit(&trimmed)?;
+        points.push(block_estimate_from_matrix(block_index, n_blocks, &result)?);
     }
     Ok(points)
 }
@@ -293,9 +467,82 @@ fn trim_windows_to_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix
     Ok(trimmed)
 }
 
+fn split_dhdl_series(series: &DhdlSeries, n_blocks: usize) -> Result<Vec<DhdlSeries>> {
+    let block_len = block_length(series.values().len(), n_blocks)?;
+    let mut out = Vec::with_capacity(n_blocks);
+    for block_index in 0..n_blocks {
+        let start = block_index * block_len;
+        let end = start + block_len;
+        out.push(DhdlSeries::new(
+            series.state().clone(),
+            series.time_ps()[start..end].to_vec(),
+            series.values()[start..end].to_vec(),
+        )?);
+    }
+    Ok(out)
+}
+
+fn split_u_nk_window(window: &UNkMatrix, n_blocks: usize) -> Result<Vec<UNkMatrix>> {
+    let block_len = block_length(window.n_samples(), n_blocks)?;
+    let row_width = window.n_states();
+    let mut out = Vec::with_capacity(n_blocks);
+    for block_index in 0..n_blocks {
+        let start = block_index * block_len;
+        let end = start + block_len;
+        let mut data = Vec::with_capacity(block_len * row_width);
+        for sample_idx in start..end {
+            let row_start = sample_idx * row_width;
+            data.extend_from_slice(&window.data()[row_start..row_start + row_width]);
+        }
+        out.push(UNkMatrix::new_with_labels(
+            block_len,
+            row_width,
+            data,
+            window.time_ps()[start..end].to_vec(),
+            window.sampled_state().cloned(),
+            window.evaluated_states().to_vec(),
+            window.lambda_labels().map(|labels| labels.to_vec()),
+        )?);
+    }
+    Ok(out)
+}
+
+fn block_length(n_samples: usize, n_blocks: usize) -> Result<usize> {
+    if n_blocks == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let block_len = n_samples / n_blocks;
+    if block_len == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: n_blocks,
+            found: n_samples,
+        });
+    }
+    Ok(block_len)
+}
+
 fn convergence_point_from_scalar(n_windows: usize, result: &FreeEnergyEstimate) -> Result<ConvergencePoint> {
     ConvergencePoint::new(
         n_windows,
+        result.delta_f(),
+        result.uncertainty(),
+        result.from_state().clone(),
+        result.to_state().clone(),
+        None,
+    )
+}
+
+fn block_estimate_from_scalar(
+    block_index: usize,
+    n_blocks: usize,
+    result: &FreeEnergyEstimate,
+) -> Result<BlockEstimate> {
+    BlockEstimate::new(
+        block_index,
+        n_blocks,
         result.delta_f(),
         result.uncertainty(),
         result.from_state().clone(),
@@ -338,6 +585,30 @@ fn convergence_point_from_matrix(
         result.uncertainties().map(|values| values[index]),
         from_state,
         to_state,
+        result.lambda_labels().map(|labels| labels.to_vec()),
+    )
+}
+
+fn block_estimate_from_matrix(
+    block_index: usize,
+    n_blocks: usize,
+    result: &DeltaFMatrix,
+) -> Result<BlockEstimate> {
+    let n_states = result.n_states();
+    if n_states == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let index = n_states - 1;
+    BlockEstimate::new(
+        block_index,
+        n_blocks,
+        result.values()[index],
+        result.uncertainties().map(|values| values[index]),
+        result.states().first().unwrap().clone(),
+        result.states().last().unwrap().clone(),
         result.lambda_labels().map(|labels| labels.to_vec()),
     )
 }

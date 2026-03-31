@@ -22,6 +22,7 @@ The first plotting surface is intentionally small:
 - `render_overlap_matrix_svg`
 - `render_delta_f_state_svg`
 - `render_ti_dhdl_svg`
+- `render_block_average_svg`
 
 These consume plot-ready analysis values and return SVG strings:
 
@@ -29,6 +30,7 @@ These consume plot-ready analysis values and return SVG strings:
 - `render_overlap_matrix_svg` for `OverlapMatrix`
 - `render_delta_f_state_svg` for `DeltaFMatrix`
 - `render_ti_dhdl_svg` for `DhdlSeries`
+- `render_block_average_svg` for `BlockEstimate`
 
 ## Example figures
 
@@ -53,6 +55,10 @@ Adjacent-state `ΔF` plot:
 TI `dH/dlambda` plot:
 
 ![TI dHdl example](assets/plots/ti-dhdl.svg)
+
+Block-average plot:
+
+![Block average example](assets/plots/block-average.svg)
 
 ## Example
 
@@ -144,6 +150,26 @@ let svg = render_ti_dhdl_svg(
     Some(TiDhdlPlotOptions {
         title: "TI dH/dlambda".to_string(),
         ..TiDhdlPlotOptions::default()
+    }),
+)?;
+assert!(svg.contains("<svg"));
+# Ok(())
+# }
+```
+
+Block-average plots can be rendered from library block analysis results:
+
+```rust
+use alchemrs::{BlockAveragePlotOptions, mbar_block_average, render_block_average_svg};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let windows = Vec::new();
+let blocks = mbar_block_average(&windows, 4, None)?;
+let svg = render_block_average_svg(
+    &blocks,
+    Some(BlockAveragePlotOptions {
+        title: "MBAR Block Average".to_string(),
+        ..BlockAveragePlotOptions::default()
     }),
 )?;
 assert!(svg.contains("<svg"));

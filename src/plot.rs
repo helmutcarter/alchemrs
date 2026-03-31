@@ -1,4 +1,4 @@
-use crate::analysis::ConvergencePoint;
+use crate::analysis::{BlockEstimate, ConvergencePoint};
 use crate::data::{DeltaFMatrix, DhdlSeries, OverlapMatrix};
 use crate::error::{CoreError, Result};
 use plotters::prelude::*;
@@ -77,6 +77,27 @@ impl Default for TiDhdlPlotOptions {
             title: "TI dH/dlambda".to_string(),
             x_label: "Lambda".to_string(),
             y_label: "<dH/dlambda> (kT)".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockAveragePlotOptions {
+    pub width: u32,
+    pub height: u32,
+    pub title: String,
+    pub x_label: String,
+    pub y_label: String,
+}
+
+impl Default for BlockAveragePlotOptions {
+    fn default() -> Self {
+        Self {
+            width: 800,
+            height: 500,
+            title: "Block Average".to_string(),
+            x_label: "Block Index".to_string(),
+            y_label: "Delta F (kT)".to_string(),
         }
     }
 }
@@ -408,6 +429,84 @@ pub fn render_ti_dhdl_svg(
     Ok(svg)
 }
 
+pub fn render_block_average_svg(
+    blocks: &[BlockEstimate],
+    options: Option<BlockAveragePlotOptions>,
+) -> Result<String> {
+    if blocks.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let options = options.unwrap_or_default();
+    let x_min = 0;
+    let x_max = blocks.len() as i32;
+    let (y_min, y_max) = block_average_bounds(blocks);
+    let mut svg = String::new();
+
+    {
+        let backend = SVGBackend::with_string(&mut svg, (options.width, options.height));
+        let root = backend.into_drawing_area();
+        root.fill(&WHITE)
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        let mut chart = ChartBuilder::on(&root)
+            .caption(options.title, ("sans-serif", 24))
+            .margin(20)
+            .x_label_area_size(40)
+            .y_label_area_size(60)
+            .build_cartesian_2d(x_min..x_max, y_min..y_max)
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        chart
+            .configure_mesh()
+            .x_desc(options.x_label)
+            .y_desc(options.y_label)
+            .x_labels(blocks.len())
+            .x_label_formatter(&|value| format!("{}", value + 1))
+            .draw()
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        chart
+            .draw_series(LineSeries::new(
+                blocks
+                    .iter()
+                    .map(|block| (block.block_index() as i32 + 1, block.delta_f())),
+                &RGBColor(117, 112, 179),
+            ))
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        chart
+            .draw_series(blocks.iter().map(|block| {
+                Circle::new(
+                    (block.block_index() as i32 + 1, block.delta_f()),
+                    4,
+                    RGBColor(117, 112, 179).filled(),
+                )
+            }))
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        for block in blocks {
+            if let Some(uncertainty) = block.uncertainty() {
+                let x = block.block_index() as i32 + 1;
+                chart
+                    .draw_series(std::iter::once(PathElement::new(
+                        vec![(x, block.delta_f() - uncertainty), (x, block.delta_f() + uncertainty)],
+                        BLACK,
+                    )))
+                    .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+            }
+        }
+
+        root.present()
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+    }
+
+    Ok(svg)
+}
+
 fn x_bounds(points: &[ConvergencePoint]) -> (i32, i32) {
     let min = points.iter().map(|point| point.n_windows()).min().unwrap() as i32;
     let max = points.iter().map(|point| point.n_windows()).max().unwrap() as i32;
@@ -559,6 +658,25 @@ fn ti_y_bounds(points: &[(f64, f64, f64)]) -> (f64, f64) {
     }
 }
 
+fn block_average_bounds(blocks: &[BlockEstimate]) -> (f64, f64) {
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for block in blocks {
+        min = min.min(block.delta_f());
+        max = max.max(block.delta_f());
+        if let Some(uncertainty) = block.uncertainty() {
+            min = min.min(block.delta_f() - uncertainty);
+            max = max.max(block.delta_f() + uncertainty);
+        }
+    }
+    if min == max {
+        (min - 1.0, max + 1.0)
+    } else {
+        let padding = (max - min) * 0.1;
+        (min - padding, max + padding)
+    }
+}
+
 fn lerp_channel(start: f64, end: f64, t: f64) -> u8 {
     (start + (end - start) * t).round() as u8
 }
@@ -576,11 +694,11 @@ fn format_state_label(state: &crate::data::StatePoint) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        render_convergence_svg, render_delta_f_state_svg, render_overlap_matrix_svg,
-        render_ti_dhdl_svg, ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions,
-        TiDhdlPlotOptions,
+        render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,
+        render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions,
+        ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions, TiDhdlPlotOptions,
     };
-    use crate::analysis::ConvergencePoint;
+    use crate::analysis::{BlockEstimate, ConvergencePoint};
     use crate::data::{DeltaFMatrix, DhdlSeries, OverlapMatrix, StatePoint};
     use crate::error::CoreError;
 
@@ -759,5 +877,38 @@ mod tests {
         .unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("TI dH/dlambda"));
+    }
+
+    #[test]
+    fn render_block_average_svg_rejects_empty_input() {
+        let err = render_block_average_svg(&[], None).unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::InvalidShape {
+                expected: 1,
+                found: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn render_block_average_svg_returns_svg_document() {
+        let from = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let to = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let blocks = vec![
+            BlockEstimate::new(0, 3, -2.0, Some(0.2), from.clone(), to.clone(), None).unwrap(),
+            BlockEstimate::new(1, 3, -2.2, Some(0.15), from.clone(), to.clone(), None).unwrap(),
+            BlockEstimate::new(2, 3, -2.1, Some(0.1), from, to, None).unwrap(),
+        ];
+        let svg = render_block_average_svg(
+            &blocks,
+            Some(BlockAveragePlotOptions {
+                title: "MBAR Block Average".to_string(),
+                ..BlockAveragePlotOptions::default()
+            }),
+        )
+        .unwrap();
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("MBAR Block Average"));
     }
 }

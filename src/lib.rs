@@ -43,8 +43,9 @@ pub mod plot;
 pub mod prep;
 
 pub use analysis::{
-    bar_convergence, dexp_convergence, exp_convergence, mbar_convergence, overlap_eigenvalues,
-    overlap_matrix, overlap_scalar, ti_convergence, ConvergencePoint,
+    bar_convergence, dexp_convergence, exp_convergence, mbar_block_average, mbar_convergence,
+    overlap_eigenvalues, overlap_matrix, overlap_scalar, ti_block_average, ti_convergence,
+    BlockEstimate, ConvergencePoint,
 };
 pub use data::{
     DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
@@ -56,9 +57,9 @@ pub use estimators::{IntegrationMethod, TiEstimator, TiOptions};
 pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 #[cfg(feature = "plotting")]
 pub use plot::{
-    render_convergence_svg, render_delta_f_state_svg, render_overlap_matrix_svg,
-    render_ti_dhdl_svg, ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions,
-    TiDhdlPlotOptions,
+    render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,
+    render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions,
+    ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions, TiDhdlPlotOptions,
 };
 pub use prep::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
