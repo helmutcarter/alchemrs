@@ -10,6 +10,16 @@ fn gromacs_extract_u_nk_from_real_multidimensional_file() {
     let u_nk = extract_gromacs_u_nk(path, 298.0).expect("parse real GROMACS dhdl.xvg");
 
     assert_eq!(u_nk.sampled_state().unwrap().lambdas(), &[0.0, 0.0, 0.8, 0.0, 0.0]);
+    assert_eq!(
+        u_nk.lambda_labels().unwrap(),
+        &[
+            "mass-lambda",
+            "coul-lambda",
+            "vdw-lambda",
+            "bonded-lambda",
+            "restraint-lambda",
+        ]
+    );
     assert_eq!(u_nk.n_states(), 3);
     assert!(u_nk.n_samples() > 10_000);
     assert_eq!(u_nk.evaluated_states().first().unwrap().lambdas(), &[0.0, 0.0, 0.7, 0.0, 0.0]);

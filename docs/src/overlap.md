@@ -16,6 +16,8 @@ This function:
 2. constructs the overlap matrix from those weights and state sample counts
 3. returns an `OverlapMatrix`
 
+When the input windows carry named lambda dimensions, the returned matrix preserves them via `overlap.lambda_labels()`.
+
 Input:
 
 - slice of `UNkMatrix`

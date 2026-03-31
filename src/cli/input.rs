@@ -240,13 +240,14 @@ fn trim_u_nk(u_nk: UNkMatrix, remove_burnin: usize) -> CliResult<UNkMatrix> {
     let n_states = u_nk.n_states();
     let data = u_nk.data()[(remove_burnin * n_states)..].to_vec();
     let time = u_nk.time_ps()[remove_burnin..].to_vec();
-    Ok(UNkMatrix::new(
+    Ok(UNkMatrix::new_with_labels(
         n_samples - remove_burnin,
         n_states,
         data,
         time,
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
+        u_nk.lambda_labels().map(|labels| labels.to_vec()),
     )?)
 }
 
@@ -308,6 +309,16 @@ mod tests {
         assert_eq!(
             loaded.windows[0].sampled_state().unwrap().lambdas(),
             &[0.0, 0.0, 0.8, 0.0, 0.0]
+        );
+        assert_eq!(
+            loaded.windows[0].lambda_labels().unwrap(),
+            &[
+                "mass-lambda",
+                "coul-lambda",
+                "vdw-lambda",
+                "bonded-lambda",
+                "restraint-lambda",
+            ]
         );
     }
 

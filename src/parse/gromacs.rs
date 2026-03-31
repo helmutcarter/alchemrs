@@ -73,6 +73,7 @@ impl From<CoreError> for GromacsParseError {
 struct Header {
     temperature_k: f64,
     sampled_state: Vec<f64>,
+    lambda_labels: Option<Vec<String>>,
     dhdl_columns: Vec<usize>,
     delta_h_columns: Vec<(usize, Vec<f64>)>,
     potential_column: Option<usize>,
@@ -209,19 +210,21 @@ fn extract_u_nk_internal(
     }
 
     let sampled_state = Some(StatePoint::new(header.sampled_state, temperature_k)?);
+    let lambda_labels = header.lambda_labels.clone();
     let evaluated_states = evaluated_states
         .into_iter()
         .map(|state| StatePoint::new(state, temperature_k))
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(GromacsParseError::from)?;
 
-    let u_nk = UNkMatrix::new(
+    let u_nk = UNkMatrix::new_with_labels(
         time_ps.len(),
         evaluated_states.len(),
         data,
         time_ps,
         sampled_state,
         evaluated_states,
+        lambda_labels,
     )
     .map_err(GromacsParseError::from)?;
 
@@ -248,6 +251,7 @@ fn read_header(path: &Path) -> Result<Header> {
 
     let mut temperature_k = None;
     let mut sampled_state = None;
+    let mut lambda_labels = None;
     let mut dhdl_columns = Vec::new();
     let mut delta_h_columns = Vec::new();
     let mut potential_column = None;
@@ -273,6 +277,7 @@ fn read_header(path: &Path) -> Result<Header> {
         }
         if sampled_state.is_none() && trimmed.starts_with("@") && trimmed.contains("subtitle") {
             sampled_state = parse_state_vector(trimmed);
+            lambda_labels = parse_state_labels(trimmed);
         }
 
         let Some((series_idx, legend)) = parse_legend(trimmed)? else {
@@ -303,6 +308,7 @@ fn read_header(path: &Path) -> Result<Header> {
             field: "temperature",
         })?,
         sampled_state: sampled_state.ok_or(GromacsParseError::MissingField { field: "lambda" })?,
+        lambda_labels,
         dhdl_columns,
         delta_h_columns,
         potential_column,
@@ -461,6 +467,19 @@ fn parse_state_vector(text: &str) -> Option<Vec<f64>> {
     last_float(text).map(|value| vec![value])
 }
 
+fn parse_state_labels(text: &str) -> Option<Vec<String>> {
+    let end = text.rfind(')')?;
+    let before_values = &text[..end];
+    let labels_end = before_values.rfind(") =")?;
+    let labels_start = before_values[..labels_end].rfind('(')?;
+    let labels = before_values[(labels_start + 1)..labels_end]
+        .split(',')
+        .map(|label| label.trim().to_string())
+        .filter(|label| !label.is_empty())
+        .collect::<Vec<_>>();
+    (!labels.is_empty()).then_some(labels)
+}
+
 fn parse_parenthesized_vector(text: &str) -> Option<Vec<f64>> {
     let end = text.rfind(')')?;
     let start = text[..end].rfind('(')?;
@@ -581,6 +600,10 @@ mod tests {
 
         let (u_nk, potential) = extract_u_nk_with_potential(file.path(), 300.0).unwrap();
         assert_eq!(u_nk.sampled_state().unwrap().lambdas(), &[0.4, 1.0]);
+        assert_eq!(
+            u_nk.lambda_labels().unwrap(),
+            &["coul-lambda", "vdw-lambda"]
+        );
         assert_eq!(u_nk.n_states(), 3);
         assert_eq!(u_nk.evaluated_states()[0].lambdas(), &[0.3, 1.0]);
         assert_eq!(u_nk.evaluated_states()[1].lambdas(), &[0.4, 1.0]);

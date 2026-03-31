@@ -33,6 +33,7 @@ pub struct OutputProvenance {
     pub conservative: bool,
     pub nskip: usize,
     pub u_nk_observable: Option<&'static str>,
+    pub lambda_components: Option<Vec<String>>,
 }
 
 struct RenderedScalarResult<'a> {
@@ -101,6 +102,12 @@ fn render_text(result: &RenderedScalarResult<'_>) -> String {
     if let Some(u_nk_observable) = result.provenance.u_nk_observable {
         output.push_str(&format!("u_nk_observable: {u_nk_observable}\n"));
     }
+    if let Some(lambda_components) = result.provenance.lambda_components.as_ref() {
+        output.push_str(&format!(
+            "lambda_components: {}\n",
+            lambda_components.join(", ")
+        ));
+    }
     if let Some(overlap) = result.overlap {
         output.push_str(&format!("overlap_scalar: {}\n", overlap.scalar));
         output.push_str("overlap_eigenvalues: ");
@@ -141,7 +148,7 @@ fn render_json(result: &RenderedScalarResult<'_>) -> String {
         })
         .unwrap_or_else(|| "null".to_string());
     let provenance = format!(
-        "{{\"estimator\":\"{}\",\"temperature_k\":{},\"decorrelate\":{},\"remove_burnin\":{},\"auto_equilibrate\":{},\"fast\":{},\"conservative\":{},\"nskip\":{},\"u_nk_observable\":{},\"windows\":{},\"samples_in\":{},\"samples_after_burnin\":{},\"samples_kept\":{}}}",
+        "{{\"estimator\":\"{}\",\"temperature_k\":{},\"decorrelate\":{},\"remove_burnin\":{},\"auto_equilibrate\":{},\"fast\":{},\"conservative\":{},\"nskip\":{},\"u_nk_observable\":{},\"lambda_components\":{},\"windows\":{},\"samples_in\":{},\"samples_after_burnin\":{},\"samples_kept\":{}}}",
         result.provenance.estimator,
         result.temperature,
         result.provenance.decorrelate,
@@ -154,6 +161,19 @@ fn render_json(result: &RenderedScalarResult<'_>) -> String {
             .provenance
             .u_nk_observable
             .map(|value| format!("\"{value}\""))
+            .unwrap_or_else(|| "null".to_string()),
+        result
+            .provenance
+            .lambda_components
+            .as_ref()
+            .map(|labels| format!(
+                "[{}]",
+                labels
+                    .iter()
+                    .map(|label| format!("\"{label}\""))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ))
             .unwrap_or_else(|| "null".to_string()),
         result.sample_counts.windows,
         result.sample_counts.samples_in,
@@ -187,10 +207,16 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> String {
         })
         .unwrap_or_default();
     let u_nk_observable = result.provenance.u_nk_observable.unwrap_or_default();
+    let lambda_components = result
+        .provenance
+        .lambda_components
+        .as_ref()
+        .map(|labels| format!("\"[{}]\"", labels.join(";")))
+        .unwrap_or_default();
     let from_state = render_state_csv(&result.from_state);
     let to_state = render_state_csv(&result.to_state);
     format!(
-        "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,windows,samples_in,samples_after_burnin,samples_kept\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues},{},{temperature},{},{},{},{},{},{},{},{},{},{},{}\n",
+        "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n{delta},{sigma},{from_lambda},{to_lambda},{units},{overlap_scalar},{overlap_eigenvalues},{},{temperature},{},{},{},{},{},{},{},{},{},{},{},{}\n",
         result.provenance.estimator,
         result.provenance.decorrelate,
         result.provenance.remove_burnin,
@@ -199,6 +225,7 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> String {
         result.provenance.conservative,
         result.provenance.nskip,
         u_nk_observable,
+        lambda_components,
         result.sample_counts.windows,
         result.sample_counts.samples_in,
         result.sample_counts.samples_after_burnin,
@@ -298,6 +325,7 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("de"),
+                    lambda_components: None,
                 },
                 sample_counts: AnalysisSampleCounts {
                     windows: 15,
@@ -311,7 +339,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":0,\"to_lambda\":1,\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":true,\"remove_burnin\":5,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1,\"u_nk_observable\":\"de\",\"windows\":15,\"samples_in\":300,\"samples_after_burnin\":225,\"samples_kept\":120}}\n"
+            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":0,\"to_lambda\":1,\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":true,\"remove_burnin\":5,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1,\"u_nk_observable\":\"de\",\"lambda_components\":null,\"windows\":15,\"samples_in\":300,\"samples_after_burnin\":225,\"samples_kept\":120}}\n"
         );
     }
 
@@ -335,6 +363,7 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: None,
+                    lambda_components: None,
                 },
                 sample_counts: AnalysisSampleCounts {
                     windows: 2,
@@ -348,7 +377,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1,,2,40,40,20\n"
+            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1,,,2,40,40,20\n"
         );
     }
 
@@ -375,6 +404,7 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("de"),
+                    lambda_components: None,
                 },
                 sample_counts: AnalysisSampleCounts {
                     windows: 15,
@@ -412,6 +442,11 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("all"),
+                    lambda_components: Some(vec![
+                        "mass-lambda".to_string(),
+                        "coul-lambda".to_string(),
+                        "vdw-lambda".to_string(),
+                    ]),
                 },
                 sample_counts: AnalysisSampleCounts {
                     windows: 3,
@@ -425,7 +460,91 @@ mod tests {
 
         assert_eq!(
             output,
-            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":[0,0,0.8],\"to_lambda\":[0,0,0.9],\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":false,\"remove_burnin\":0,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1,\"u_nk_observable\":\"all\",\"windows\":3,\"samples_in\":30,\"samples_after_burnin\":30,\"samples_kept\":30}}\n"
+            "{\"delta_f\":1.5,\"uncertainty\":0.25,\"from_lambda\":[0,0,0.8],\"to_lambda\":[0,0,0.9],\"units\":\"kT\",\"overlap\":null,\"provenance\":{\"estimator\":\"mbar\",\"temperature_k\":300,\"decorrelate\":false,\"remove_burnin\":0,\"auto_equilibrate\":false,\"fast\":false,\"conservative\":true,\"nskip\":1,\"u_nk_observable\":\"all\",\"lambda_components\":[\"mass-lambda\",\"coul-lambda\",\"vdw-lambda\"],\"windows\":3,\"samples_in\":30,\"samples_after_burnin\":30,\"samples_kept\":30}}\n"
+        );
+    }
+
+    #[test]
+    fn renders_multidimensional_scalar_result_as_text() {
+        let output = render_scalar_result(
+            &ScalarResult {
+                delta: 1.5,
+                sigma: None,
+                from_state: vec![0.0, 0.0, 0.8],
+                to_state: vec![0.0, 0.0, 0.9],
+                units: OutputUnits::KT,
+                temperature: 300.0,
+                overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "mbar",
+                    decorrelate: false,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                    u_nk_observable: Some("all"),
+                    lambda_components: Some(vec![
+                        "mass-lambda".to_string(),
+                        "coul-lambda".to_string(),
+                        "vdw-lambda".to_string(),
+                    ]),
+                },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 3,
+                    samples_in: 30,
+                    samples_after_burnin: 30,
+                    samples_kept: 30,
+                },
+            },
+            OutputFormat::Text,
+        );
+
+        assert_eq!(
+            output,
+            "delta_f: 1.5 kT\nuncertainty: none\nfrom_lambda: [0, 0, 0.8]\nto_lambda: [0, 0, 0.9]\nwindows: 3\nsamples_in: 30\nsamples_after_burnin: 30\nsamples_kept: 30\nu_nk_observable: all\nlambda_components: mass-lambda, coul-lambda, vdw-lambda\n"
+        );
+    }
+
+    #[test]
+    fn renders_multidimensional_scalar_result_as_csv() {
+        let output = render_scalar_result(
+            &ScalarResult {
+                delta: 1.5,
+                sigma: None,
+                from_state: vec![0.0, 0.0, 0.8],
+                to_state: vec![0.0, 0.0, 0.9],
+                units: OutputUnits::KT,
+                temperature: 300.0,
+                overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "mbar",
+                    decorrelate: false,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                    u_nk_observable: Some("all"),
+                    lambda_components: Some(vec![
+                        "mass-lambda".to_string(),
+                        "coul-lambda".to_string(),
+                        "vdw-lambda".to_string(),
+                    ]),
+                },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 3,
+                    samples_in: 30,
+                    samples_after_burnin: 30,
+                    samples_kept: 30,
+                },
+            },
+            OutputFormat::Csv,
+        );
+
+        assert_eq!(
+            output,
+            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,\"[0;0;0.8]\",\"[0;0;0.9]\",kT,,,mbar,300,false,0,false,false,true,1,all,\"[mass-lambda;coul-lambda;vdw-lambda]\",3,30,30,30\n"
         );
     }
 }

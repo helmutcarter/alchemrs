@@ -42,6 +42,7 @@ pub fn run(
                 conservative: input_options.effective_conservative(),
                 nskip: input_options.nskip,
                 u_nk_observable: input_options.u_nk_observable_name(),
+                lambda_components: None,
             },
             sample_counts: loaded.sample_counts,
         },

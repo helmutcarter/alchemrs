@@ -1,7 +1,7 @@
 use crate::data::{DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>);
+type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>, Option<Vec<String>>);
 type PairEstimate = (f64, f64);
 type ExpRow = (usize, Vec<f64>, Vec<f64>);
 
@@ -140,6 +140,7 @@ impl BarEstimator {
             });
         }
         let eval_states = ensure_consistent_states(windows)?;
+        let lambda_labels = ensure_consistent_lambda_labels(windows)?;
         let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; eval_states.len()];
         for window in windows {
             let sampled = window.sampled_state().ok_or_else(|| {
@@ -250,7 +251,7 @@ impl BarEstimator {
             }
         }
 
-        DeltaFMatrix::new(adelta, Some(ad_delta), n_states, eval_states)
+        DeltaFMatrix::new_with_labels(adelta, Some(ad_delta), n_states, eval_states, lambda_labels)
     }
 }
 
@@ -292,7 +293,7 @@ impl MbarEstimator {
                 found: 0,
             });
         }
-        let (u_kn, n_k, states) = combine_windows(windows)?;
+        let (u_kn, n_k, states, lambda_labels) = combine_windows(windows)?;
         let mut f_k = initial_f_k(&self.options, states.len())?;
 
         mbar_solve(
@@ -315,7 +316,7 @@ impl MbarEstimator {
         } else {
             None
         };
-        DeltaFMatrix::new(values, uncertainties, n_states, states)
+        DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
     }
 }
 
@@ -329,7 +330,7 @@ pub fn mbar_log_weights_from_windows(
             found: 0,
         });
     }
-    let (u_kn, n_k, states) = combine_windows(windows)?;
+    let (u_kn, n_k, states, _lambda_labels) = combine_windows(windows)?;
     let mut f_k = initial_f_k(options, states.len())?;
     mbar_solve(
         &u_kn,
@@ -415,6 +416,22 @@ fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
         }
     }
     Ok(first.to_vec())
+}
+
+fn ensure_consistent_lambda_labels(windows: &[UNkMatrix]) -> Result<Option<Vec<String>>> {
+    let first = windows[0].lambda_labels().map(|labels| labels.to_vec());
+    for window in windows.iter().skip(1) {
+        match (&first, window.lambda_labels()) {
+            (None, None) => {}
+            (Some(expected), Some(found)) if expected == found => {}
+            _ => {
+                return Err(CoreError::InvalidState(
+                    "lambda_labels differ between windows".to_string(),
+                ))
+            }
+        }
+    }
+    Ok(first)
 }
 
 fn states_match(a: &StatePoint, b: &StatePoint) -> bool {
@@ -578,12 +595,14 @@ impl ExpEstimator {
             }
         }
 
-        DeltaFMatrix::new(values, uncertainties, n_states, states)
+        let lambda_labels = ensure_consistent_lambda_labels(windows)?;
+        DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
     }
 }
 
 fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
     let states = ensure_consistent_states(windows)?;
+    let lambda_labels = ensure_consistent_lambda_labels(windows)?;
     let n_states = states.len();
     let mut n_k = vec![0.0; n_states];
     let mut offsets = Vec::with_capacity(windows.len());
@@ -614,7 +633,7 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
 
     validate_mbar_input(&u_kn)?;
 
-    Ok((u_kn, n_k, states))
+    Ok((u_kn, n_k, states, lambda_labels))
 }
 
 fn mbar_solve(
@@ -1301,14 +1320,24 @@ mod tests {
         let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
         let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
         let states = vec![s0.clone(), s1.clone()];
+        let labels = Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]);
 
         let data0 = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
         let data1 = vec![0.1, 0.0, 0.2, 0.1, 0.3, 0.2];
         let time = vec![0.0, 1.0, 2.0];
 
         vec![
-            UNkMatrix::new(3, 2, data0, time.clone(), Some(s0), states.clone()).unwrap(),
-            UNkMatrix::new(3, 2, data1, time, Some(s1), states).unwrap(),
+            UNkMatrix::new_with_labels(
+                3,
+                2,
+                data0,
+                time.clone(),
+                Some(s0),
+                states.clone(),
+                labels.clone(),
+            )
+            .unwrap(),
+            UNkMatrix::new_with_labels(3, 2, data1, time, Some(s1), states, labels).unwrap(),
         ]
     }
 
@@ -1558,6 +1587,7 @@ mod tests {
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
     }
 
     #[test]
@@ -1568,6 +1598,7 @@ mod tests {
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
     }
 
     #[test]
@@ -1578,6 +1609,7 @@ mod tests {
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
     }
 
     #[test]

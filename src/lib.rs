@@ -25,6 +25,9 @@
 //! let result = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
 //!
 //! println!("delta_f = {}", result.values()[result.n_states() - 1]);
+//! if let Some(labels) = result.lambda_labels() {
+//!     println!("lambda components = {:?}", labels);
+//! }
 //! # Ok(())
 //! # }
 //! ```

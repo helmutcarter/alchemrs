@@ -54,6 +54,7 @@ pub struct UNkMatrix {
     time_ps: Vec<f64>,
     sampled_state: Option<StatePoint>,
     evaluated_states: Vec<StatePoint>,
+    lambda_labels: Option<Vec<String>>,
 }
 
 impl UNkMatrix {
@@ -64,6 +65,26 @@ impl UNkMatrix {
         time_ps: Vec<f64>,
         sampled_state: Option<StatePoint>,
         evaluated_states: Vec<StatePoint>,
+    ) -> Result<Self> {
+        Self::new_with_labels(
+            n_samples,
+            n_states,
+            data,
+            time_ps,
+            sampled_state,
+            evaluated_states,
+            None,
+        )
+    }
+
+    pub fn new_with_labels(
+        n_samples: usize,
+        n_states: usize,
+        data: Vec<f64>,
+        time_ps: Vec<f64>,
+        sampled_state: Option<StatePoint>,
+        evaluated_states: Vec<StatePoint>,
+        lambda_labels: Option<Vec<String>>,
     ) -> Result<Self> {
         let expected = n_samples
             .checked_mul(n_states)
@@ -99,6 +120,19 @@ impl UNkMatrix {
                 )));
             }
         }
+        if let Some(labels) = lambda_labels.as_ref() {
+            let expected = sampled_state
+                .as_ref()
+                .map(|state| state.lambdas().len())
+                .or_else(|| evaluated_states.first().map(|state| state.lambdas().len()))
+                .unwrap_or(0);
+            if labels.len() != expected {
+                return Err(CoreError::InvalidShape {
+                    expected,
+                    found: labels.len(),
+                });
+            }
+        }
         Ok(Self {
             n_samples,
             n_states,
@@ -106,6 +140,7 @@ impl UNkMatrix {
             time_ps,
             sampled_state,
             evaluated_states,
+            lambda_labels,
         })
     }
 
@@ -131,6 +166,10 @@ impl UNkMatrix {
 
     pub fn evaluated_states(&self) -> &[StatePoint] {
         &self.evaluated_states
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.lambda_labels.as_deref()
     }
 }
 

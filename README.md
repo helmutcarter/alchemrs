@@ -15,6 +15,9 @@ use alchemrs::{
 let (u_nk, epot) = extract_u_nk_with_potential("prod.out", 300.0)?;
 let u_nk = decorrelate_u_nk_with_observable(&u_nk, &epot, &DecorrelationOptions::default())?;
 let result = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
+if let Some(labels) = result.lambda_labels() {
+    println!("lambda components = {:?}", labels);
+}
 ```
 
 The repo also includes runnable top-level examples:
@@ -33,7 +36,7 @@ mdbook serve docs
 
 ## CLI
 
-The `alchemrs` binary provides a command-line workflow for AMBER output files and GROMACS `dhdl.xvg` files.
+The `alchemrs` binary provides a command-line workflow.
 
 ### Build
 It can either be invoked through cargo:
@@ -105,6 +108,8 @@ Example JSON output:
   }
 }
 ```
+
+For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `DeltaFMatrix`, and `OverlapMatrix` all preserve parser-derived lambda component names when available through `.lambda_labels()`.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 

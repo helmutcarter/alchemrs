@@ -90,13 +90,14 @@ pub fn decorrelate_u_nk(
 
     let (time, data) = apply_indices_u_nk(&time, &data, u_nk.n_states(), &indices);
 
-    UNkMatrix::new(
+    UNkMatrix::new_with_labels(
         indices.len(),
         u_nk.n_states(),
         data,
         time,
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
+        u_nk.lambda_labels().map(|labels| labels.to_vec()),
     )
 }
 
@@ -118,13 +119,14 @@ pub fn decorrelate_u_nk_with_observable(
     let indices = subsample_indices(&observable, options)?;
     let (time, data) = apply_indices_u_nk(&time, &data, u_nk.n_states(), &indices);
 
-    UNkMatrix::new(
+    UNkMatrix::new_with_labels(
         indices.len(),
         u_nk.n_states(),
         data,
         time,
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
+        u_nk.lambda_labels().map(|labels| labels.to_vec()),
     )
 }
 

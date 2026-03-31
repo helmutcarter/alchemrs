@@ -51,6 +51,7 @@ Conceptually:
 - columns are evaluated states
 - `sampled_state` identifies the state the trajectory was sampled from
 - `evaluated_states` identifies the column states
+- `lambda_labels`, when present, name the lambda-vector components in order
 
 Validation rules:
 

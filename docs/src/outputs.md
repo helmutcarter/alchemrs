@@ -25,6 +25,7 @@ It includes:
 - `delta_f`
 - uncertainty
 - lambda endpoints, which are scalars for one-dimensional schedules and vectors for multidimensional schedules
+- `lambda_components` when available
 - sample counts
 - `u_nk_observable` when relevant
 - overlap summary when requested
@@ -65,6 +66,7 @@ Current provenance fields include:
 - the effective `conservative` value
 - `nskip`
 - `u_nk_observable` when applicable
+- `lambda_components` when the parser can identify named lambda dimensions
 - number of windows
 - number of samples before preprocessing
 - number of samples after burn-in trimming / auto-equilibration
@@ -95,6 +97,7 @@ This matters because preprocessing choices directly change the data used by the 
     "conservative": true,
     "nskip": 1,
     "u_nk_observable": "de",
+    "lambda_components": ["mass-lambda", "coul-lambda", "vdw-lambda"],
     "windows": 15,
     "samples_in": 300,
     "samples_after_burnin": 300,
