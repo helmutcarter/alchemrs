@@ -8,7 +8,7 @@ The top-level `alchemrs` crate re-exports the main types and functions needed fo
 use alchemrs::{
     DecorrelationOptions, MbarEstimator, MbarOptions, TiEstimator, TiOptions,
     decorrelate_dhdl, decorrelate_u_nk_with_observable, extract_dhdl,
-    extract_u_nk_with_potential, overlap_matrix, overlap_scalar,
+    extract_u_nk_with_potential, mbar_convergence, overlap_matrix, overlap_scalar,
 };
 ```
 
@@ -77,6 +77,22 @@ For GROMACS multidimensional schedules, parser-derived component names are avail
 ```rust
 if let Some(labels) = windows[0].lambda_labels() {
     println!("window components = {:?}", labels);
+}
+```
+
+The same `analysis` module also provides plot-ready convergence series for TI, BAR, MBAR, EXP,
+and DEXP:
+
+```rust
+let points = mbar_convergence(windows, Some(MbarOptions::default()))?;
+for point in points {
+    println!(
+        "windows={} delta_f={:.6} from={:?} to={:?}",
+        point.n_windows(),
+        point.delta_f(),
+        point.from_state().lambdas(),
+        point.to_state().lambdas()
+    );
 }
 ```
 

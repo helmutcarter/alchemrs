@@ -39,7 +39,10 @@ pub mod estimators;
 pub mod parse;
 pub mod prep;
 
-pub use analysis::{overlap_eigenvalues, overlap_matrix, overlap_scalar};
+pub use analysis::{
+    bar_convergence, dexp_convergence, exp_convergence, mbar_convergence, overlap_eigenvalues,
+    overlap_matrix, overlap_scalar, ti_convergence, ConvergencePoint,
+};
 pub use data::{
     DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
 };

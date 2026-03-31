@@ -7,6 +7,11 @@ Available functions:
 - `overlap_matrix`
 - `overlap_eigenvalues`
 - `overlap_scalar`
+- `ti_convergence`
+- `bar_convergence`
+- `mbar_convergence`
+- `exp_convergence`
+- `dexp_convergence`
 
 ## `overlap_matrix`
 
@@ -53,3 +58,23 @@ The CLI then reports:
 - overlap eigenvalues
 
 in text, JSON, or CSV output.
+
+## Convergence series
+
+The same module also exposes cumulative convergence helpers for plot-ready library output.
+
+Each function returns a `Vec<ConvergencePoint>`:
+
+- `ti_convergence`
+- `bar_convergence`
+- `mbar_convergence`
+- `exp_convergence`
+- `dexp_convergence`
+
+Each point includes:
+
+- the number of windows included in that cumulative estimate
+- the estimated free energy
+- optional uncertainty
+- the endpoint states for that estimate
+- optional `lambda_labels()` when they are available from the parsed windows

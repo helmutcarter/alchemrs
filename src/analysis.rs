@@ -1,7 +1,82 @@
-use crate::data::{OverlapMatrix, UNkMatrix};
+use crate::data::{DhdlSeries, DeltaFMatrix, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
-use crate::estimators::{mbar_log_weights_from_windows, MbarOptions};
+use crate::estimators::{
+    mbar_log_weights_from_windows, BarEstimator, BarOptions, ExpEstimator, ExpOptions,
+    MbarEstimator, MbarOptions, TiEstimator, TiOptions,
+};
 use nalgebra::{DMatrix, Schur};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConvergencePoint {
+    n_windows: usize,
+    delta_f: f64,
+    uncertainty: Option<f64>,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    lambda_labels: Option<Vec<String>>,
+}
+
+impl ConvergencePoint {
+    pub fn new(
+        n_windows: usize,
+        delta_f: f64,
+        uncertainty: Option<f64>,
+        from_state: StatePoint,
+        to_state: StatePoint,
+        lambda_labels: Option<Vec<String>>,
+    ) -> Result<Self> {
+        if n_windows == 0 {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        if !delta_f.is_finite() {
+            return Err(CoreError::NonFiniteValue(
+                "delta_f must be finite".to_string(),
+            ));
+        }
+        if let Some(value) = uncertainty {
+            if !value.is_finite() {
+                return Err(CoreError::NonFiniteValue(
+                    "uncertainty must be finite".to_string(),
+                ));
+            }
+        }
+        Ok(Self {
+            n_windows,
+            delta_f,
+            uncertainty,
+            from_state,
+            to_state,
+            lambda_labels,
+        })
+    }
+
+    pub fn n_windows(&self) -> usize {
+        self.n_windows
+    }
+
+    pub fn delta_f(&self) -> f64 {
+        self.delta_f
+    }
+
+    pub fn uncertainty(&self) -> Option<f64> {
+        self.uncertainty
+    }
+
+    pub fn from_state(&self) -> &StatePoint {
+        &self.from_state
+    }
+
+    pub fn to_state(&self) -> &StatePoint {
+        &self.to_state
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.lambda_labels.as_deref()
+    }
+}
 
 pub fn overlap_matrix(
     windows: &[UNkMatrix],
@@ -78,4 +153,191 @@ pub fn overlap_scalar(overlap: &OverlapMatrix) -> Result<f64> {
     }
     let eigenvalues = overlap_eigenvalues(overlap)?;
     Ok(1.0 - eigenvalues[1])
+}
+
+pub fn ti_convergence(series: &[DhdlSeries], options: Option<TiOptions>) -> Result<Vec<ConvergencePoint>> {
+    if series.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: series.len(),
+        });
+    }
+    let estimator = TiEstimator::new(options.unwrap_or_default());
+    let mut points = Vec::with_capacity(series.len() - 1);
+    for end in 2..=series.len() {
+        let result = estimator.fit(&series[..end])?;
+        points.push(convergence_point_from_scalar(end, &result)?);
+    }
+    Ok(points)
+}
+
+pub fn bar_convergence(windows: &[UNkMatrix], options: Option<BarOptions>) -> Result<Vec<ConvergencePoint>> {
+    convergence_from_matrix_windows(
+        windows,
+        |subset| BarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        false,
+        2,
+    )
+}
+
+pub fn mbar_convergence(
+    windows: &[UNkMatrix],
+    options: Option<MbarOptions>,
+) -> Result<Vec<ConvergencePoint>> {
+    convergence_from_matrix_windows(
+        windows,
+        |subset| MbarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        false,
+        1,
+    )
+}
+
+pub fn exp_convergence(windows: &[UNkMatrix], options: Option<ExpOptions>) -> Result<Vec<ConvergencePoint>> {
+    convergence_from_matrix_windows(
+        windows,
+        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        false,
+        2,
+    )
+}
+
+pub fn dexp_convergence(
+    windows: &[UNkMatrix],
+    options: Option<ExpOptions>,
+) -> Result<Vec<ConvergencePoint>> {
+    convergence_from_matrix_windows(
+        windows,
+        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        true,
+        2,
+    )
+}
+
+fn convergence_from_matrix_windows<F>(
+    windows: &[UNkMatrix],
+    fit: F,
+    reverse: bool,
+    minimum_windows: usize,
+) -> Result<Vec<ConvergencePoint>>
+where
+    F: Fn(&[UNkMatrix]) -> Result<DeltaFMatrix>,
+{
+    if windows.len() < minimum_windows {
+        return Err(CoreError::InvalidShape {
+            expected: minimum_windows,
+            found: windows.len(),
+        });
+    }
+    let mut points = Vec::with_capacity(windows.len() - minimum_windows + 1);
+    for count in minimum_windows..=windows.len() {
+        let subset = if reverse {
+            &windows[windows.len() - count..]
+        } else {
+            &windows[..count]
+        };
+        let trimmed = trim_windows_to_sampled_states(subset)?;
+        let result = fit(&trimmed)?;
+        points.push(convergence_point_from_matrix(count, &result, reverse)?);
+    }
+    Ok(points)
+}
+
+fn trim_windows_to_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix>> {
+    let states = windows
+        .iter()
+        .map(|window| {
+            window.sampled_state().cloned().ok_or_else(|| {
+                CoreError::InvalidState(
+                    "sampled_state required for convergence analysis".to_string(),
+                )
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut trimmed = Vec::with_capacity(windows.len());
+    for window in windows {
+        let indices = states
+            .iter()
+            .map(|state| {
+                window
+                    .evaluated_states()
+                    .iter()
+                    .position(|candidate| candidate == state)
+                    .ok_or_else(|| {
+                        CoreError::InvalidState(
+                            "sampled_state not found in evaluated_states".to_string(),
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut data = Vec::with_capacity(window.n_samples() * states.len());
+        for sample_idx in 0..window.n_samples() {
+            let row_offset = sample_idx * window.n_states();
+            for &idx in &indices {
+                data.push(window.data()[row_offset + idx]);
+            }
+        }
+
+        trimmed.push(UNkMatrix::new_with_labels(
+            window.n_samples(),
+            states.len(),
+            data,
+            window.time_ps().to_vec(),
+            window.sampled_state().cloned(),
+            states.clone(),
+            window.lambda_labels().map(|labels| labels.to_vec()),
+        )?);
+    }
+
+    Ok(trimmed)
+}
+
+fn convergence_point_from_scalar(n_windows: usize, result: &FreeEnergyEstimate) -> Result<ConvergencePoint> {
+    ConvergencePoint::new(
+        n_windows,
+        result.delta_f(),
+        result.uncertainty(),
+        result.from_state().clone(),
+        result.to_state().clone(),
+        None,
+    )
+}
+
+fn convergence_point_from_matrix(
+    n_windows: usize,
+    result: &DeltaFMatrix,
+    reverse: bool,
+) -> Result<ConvergencePoint> {
+    let n_states = result.n_states();
+    if n_states == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let index = if reverse {
+        (n_states - 1) * n_states
+    } else {
+        n_states - 1
+    };
+    let (from_state, to_state) = if reverse {
+        (
+            result.states().last().unwrap().clone(),
+            result.states().first().unwrap().clone(),
+        )
+    } else {
+        (
+            result.states().first().unwrap().clone(),
+            result.states().last().unwrap().clone(),
+        )
+    };
+    ConvergencePoint::new(
+        n_windows,
+        result.values()[index],
+        result.uncertainties().map(|values| values[index]),
+        from_state,
+        to_state,
+        result.lambda_labels().map(|labels| labels.to_vec()),
+    )
 }

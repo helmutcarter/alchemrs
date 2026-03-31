@@ -16,7 +16,7 @@ The `alchemrs` crate is organized into modules rather than separate library crat
 - `parse`: engine-specific parsers; today this means AMBER parsing
 - `prep`: time-series preparation such as duplicate cleanup, sorting, equilibration detection, and decorrelation
 - `estimators`: TI, BAR, MBAR, EXP, and DEXP implementations
-- `analysis`: overlap diagnostics built on top of MBAR log weights
+- `analysis`: overlap diagnostics and plot-ready convergence series
 
 The crate root also re-exports the most common types and functions directly for a flatter API.
 
