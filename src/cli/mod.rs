@@ -19,7 +19,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     Ti {
-        /// AMBER output files (one per lambda window)
+        /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
         /// Temperature in K
@@ -70,7 +70,7 @@ pub enum Command {
         u_nk_observable: Option<UNkObservable>,
     },
     Bar {
-        /// AMBER output files (one per lambda window)
+        /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
         /// Temperature in K
@@ -124,7 +124,7 @@ pub enum Command {
         u_nk_observable: UNkObservable,
     },
     Exp {
-        /// AMBER output files (one per lambda window)
+        /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
         /// Temperature in K
@@ -178,7 +178,7 @@ pub enum Command {
         parallel: bool,
     },
     Dexp {
-        /// AMBER output files (one per lambda window)
+        /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
         /// Temperature in K
@@ -232,7 +232,7 @@ pub enum Command {
         parallel: bool,
     },
     Mbar {
-        /// AMBER output files (one per lambda window)
+        /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
         /// Temperature in K

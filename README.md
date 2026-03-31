@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
+`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER outputs and GROMACS `dhdl.xvg` outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
 
 ## Library API
 
@@ -33,7 +33,7 @@ mdbook serve docs
 
 ## CLI
 
-The `alchemrs` binary provides a command-line workflow for AMBER output files.
+The `alchemrs` binary provides a command-line workflow for AMBER output files and GROMACS `dhdl.xvg` files.
 
 ### Build
 It can either be invoked through cargo:
@@ -73,7 +73,7 @@ alchemrs mbar \
   /path/to/*/prod.out
 ```
 
-For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses `EPtot` parsed from the AMBER output.
+For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses an engine-provided energy observable when one is available (`EPtot` for AMBER, `Potential Energy`/`Total Energy` legends for GROMACS `dhdl.xvg`).
 
 Example JSON output:
 

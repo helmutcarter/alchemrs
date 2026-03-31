@@ -1,6 +1,8 @@
-# Parsing AMBER Outputs
+# Parsing Outputs
 
-The current parser implementation is AMBER-specific and lives in `alchemrs::parse::amber`.
+The parser implementation supports AMBER outputs in `alchemrs::parse::amber` and GROMACS `dhdl.xvg` outputs in `alchemrs::parse::gromacs`.
+
+The top-level parser entry points `alchemrs::extract_dhdl`, `alchemrs::extract_u_nk`, and `alchemrs::extract_u_nk_with_potential` auto-detect between those supported formats.
 
 ## Available entry points
 
@@ -10,53 +12,65 @@ The current parser implementation is AMBER-specific and lives in `alchemrs::pars
 
 ## `extract_dhdl`
 
-This parser extracts:
-
-- `temp0`
-- `clambda`
-- `dt`
-- `ntpr`
-- the `begin time` coordinate
-- `DV/DL` values from `NSTEP` blocks
-
-The extracted gradients are converted to reduced units by multiplying by `beta = 1 / (k_B T)`.
-
 Returned value:
 
 - `DhdlSeries`
 
+AMBER parser behavior:
+
+- extracts `temp0`, `clambda`, `dt`, `ntpr`, the `begin time` coordinate, and `DV/DL` values from `NSTEP` blocks
+- converts gradients to reduced units by multiplying by `beta = 1 / (k_B T)`
+
+GROMACS parser behavior:
+
+- reads `dhdl.xvg` headers to identify the simulation temperature and lambda
+- extracts the `dH/dlambda` series from the legend tagged with `dH`
+- keeps the x-axis values as the returned `time_ps` values
+
 Common failure modes:
 
-- missing metadata fields such as `temp0`, `clambda`, `dt`, or `ntpr`
-- no `DV/DL` samples found
+- missing temperature or lambda metadata
+- missing `dH/dlambda` samples
 - temperature mismatch between the file and the requested temperature
 
 ## `extract_u_nk`
-
-This parser reads AMBER MBAR output blocks and constructs a `UNkMatrix`.
-
-Key behavior:
-
-- the parser requires a valid MBAR lambda list in the file header
-- `clambda` must be present in the evaluated-state grid
-- the returned matrix keeps sample rows with positive infinity values
-- rows that are entirely unusable can still cause parsing to fail if no finite MBAR samples remain
 
 Returned value:
 
 - `UNkMatrix`
 
-## `extract_u_nk_with_potential`
+AMBER parser behavior:
 
-This parser does everything `extract_u_nk` does, and additionally extracts `EPtot` from `NSTEP` blocks.
+- reads MBAR output blocks and constructs a `UNkMatrix`
+- requires a valid MBAR lambda list in the file header
+- requires `clambda` to be present in the evaluated-state grid
+- keeps sample rows with positive infinity values
+- fails if no finite MBAR samples remain after filtering unusable rows
+
+GROMACS parser behavior:
+
+- reads `dhdl.xvg` Delta H columns and maps them into reduced-energy rows
+- inserts the sampled lambda state explicitly with zero reduced energy
+- sorts the evaluated-state grid by lambda before building the matrix
+- requires at least one foreign-lambda Delta H column
+
+## `extract_u_nk_with_potential`
 
 Returned value:
 
 - `(UNkMatrix, Vec<f64>)`
 
-The parser requires the number of `EPtot` samples to match the number of retained MBAR samples exactly.
+AMBER parser behavior:
 
-This function exists because `EPtot` is often useful as a finite external observable for:
+- does everything `extract_u_nk` does and additionally extracts `EPtot` from `NSTEP` blocks
+- requires the number of `EPtot` samples to match the retained MBAR sample count exactly
+
+GROMACS parser behavior:
+
+- does everything `extract_u_nk` does and additionally extracts the first energy-like legend labeled `Potential Energy` or `Total Energy` from `dhdl.xvg`
+- requires that energy observable to be present when this entry point is used
+
+This function exists because an external energy observable is often useful for:
 
 - auto-equilibration
 - decorrelation
@@ -71,4 +85,4 @@ This is deliberate: parser output is temperature-dependent because reduced energ
 
 ## Current scope
 
-The public parser surface in this repository is AMBER-only. The architecture leaves room for additional engines later, but the implemented and tested parser today is the AMBER parser.
+The public parser surface in this repository supports AMBER outputs and GROMACS `dhdl.xvg` outputs. The architecture still leaves room for additional engines later.

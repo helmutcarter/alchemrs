@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 use alchemrs::{
+    extract_dhdl, extract_u_nk, extract_u_nk_with_potential,
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
     DecorrelationOptions, DhdlSeries, UNkMatrix, UNkSeriesMethod,

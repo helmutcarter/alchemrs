@@ -4,8 +4,78 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
-use crate::error::CoreError;
+use crate::error::{CoreError, Result as CoreResult};
 use thiserror::Error;
+
+pub mod gromacs;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParseFormat {
+    Amber,
+    Gromacs,
+}
+
+pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> CoreResult<DhdlSeries> {
+    match detect_format(path.as_ref())? {
+        ParseFormat::Amber => amber::extract_dhdl(path, temperature_k).map_err(Into::into),
+        ParseFormat::Gromacs => gromacs::extract_dhdl(path, temperature_k).map_err(Into::into),
+    }
+}
+
+pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> CoreResult<UNkMatrix> {
+    match detect_format(path.as_ref())? {
+        ParseFormat::Amber => amber::extract_u_nk(path, temperature_k).map_err(Into::into),
+        ParseFormat::Gromacs => gromacs::extract_u_nk(path, temperature_k).map_err(Into::into),
+    }
+}
+
+pub fn extract_u_nk_with_potential(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> CoreResult<(UNkMatrix, Vec<f64>)> {
+    match detect_format(path.as_ref())? {
+        ParseFormat::Amber => amber::extract_u_nk_with_potential(path, temperature_k).map_err(Into::into),
+        ParseFormat::Gromacs => gromacs::extract_u_nk_with_potential(path, temperature_k).map_err(Into::into),
+    }
+}
+
+fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
+    let file = File::open(path)
+        .map_err(|err| CoreError::Parse(format!("failed to open input for format detection: {err}")))?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let is_xvg = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xvg"));
+
+    for _ in 0..128 {
+        line.clear();
+        let bytes = reader.read_line(&mut line).map_err(|err| {
+            CoreError::Parse(format!("failed to read input for format detection: {err}"))
+        })?;
+        if bytes == 0 {
+            break;
+        }
+        let trimmed = line.trim();
+        if trimmed.starts_with('@') || trimmed.starts_with('#') {
+            return Ok(ParseFormat::Gromacs);
+        }
+        if trimmed.contains("CONTROL  DATA  FOR  THE  RUN")
+            || trimmed.contains("MBAR Energy analysis:")
+            || trimmed.contains("DV/DL")
+            || trimmed.contains("clambda")
+        {
+            return Ok(ParseFormat::Amber);
+        }
+    }
+
+    if is_xvg {
+        Ok(ParseFormat::Gromacs)
+    } else {
+        Ok(ParseFormat::Amber)
+    }
+}
 
 pub mod amber {
     use super::*;

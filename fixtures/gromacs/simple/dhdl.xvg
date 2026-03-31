@@ -1,0 +1,12 @@
+# This file was created by GROMACS
+@    title "dH/dlambda and Delta H"
+@    subtitle "T = 300.0 lambda = 0.1000"
+@    xaxis  label "Time (ps)"
+@    yaxis  label "Energy"
+@ s0 legend "dH/dlambda = 0.1000"
+@ s1 legend "Delta H to 0.0000"
+@ s2 legend "Delta H to 0.2000"
+@ s3 legend "Potential Energy"
+0.0  1.0000  -0.5000   0.2500  -10.0000
+2.0  2.0000  -0.4000   inf     -11.0000
+4.0  3.0000  -0.3000   0.3500  -12.0000

@@ -20,11 +20,11 @@ Important intentional difference:
 
 - `alchemrs` reports equilibration `Neff_max` using the actual suffix length `N - t0`, so this scalar can differ by 1 from `pymbar` / `alchemlyb`
 
-## AMBER-first scope
+## Current parser scope
 
-The implemented parser surface today is AMBER-focused.
+The implemented parser surface supports AMBER outputs and GROMACS `dhdl.xvg` outputs.
 
-The architecture leaves room for other engines later, but the documented and tested workflow in this repository currently centers on AMBER outputs.
+AMBER still has the broader and more battle-tested fixture coverage, but the documented and tested workflow now includes both engines.
 
 ## One-dimensional lambda assumption
 
@@ -54,7 +54,7 @@ This book documents the current implementation, not a frozen public-stability pr
 This repository does not currently provide:
 
 - plotting in the Rust library
-- production-grade multi-engine parser support
+- production-grade parser coverage for every major MD engine
 - Python bindings in the current package
 - versioned public API guarantees
 
