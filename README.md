@@ -2,6 +2,9 @@
 
 `alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER outputs and GROMACS `dhdl.xvg` outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
 
+Native SVG plotting is available as an optional `plotting` feature, currently covering
+convergence traces and overlap heatmaps.
+
 ## Library API
 
 The top-level `alchemrs` crate re-exports the common parse, prep, estimator, and analysis entry points:
@@ -24,6 +27,12 @@ The repo also includes runnable top-level examples:
 
 - `cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out`
 - `cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out`
+
+Optional plotting helpers can be enabled with:
+
+```bash
+cargo test --features plotting
+```
 
 ## Documentation
 

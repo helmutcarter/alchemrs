@@ -12,9 +12,14 @@ documentation = "https://docs.rs/alchemrs"
 keywords = ["alchemy", "free-energy", "mbar", "bar", "amber"]
 categories = ["science", "command-line-utilities"]
 
+[features]
+default = []
+plotting = ["dep:plotters"]
+
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
 nalgebra = "0.33"
+plotters = { version = "0.3.7", optional = true }
 rayon = "1.10"
 regex = "1"
 thiserror = "1"

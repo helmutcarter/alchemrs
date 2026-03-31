@@ -17,6 +17,7 @@ The `alchemrs` crate is organized into modules rather than separate library crat
 - `prep`: time-series preparation such as duplicate cleanup, sorting, equilibration detection, and decorrelation
 - `estimators`: TI, BAR, MBAR, EXP, and DEXP implementations
 - `analysis`: overlap diagnostics and plot-ready convergence series
+- `plot`: optional SVG rendering helpers behind the `plotting` feature
 
 The crate root also re-exports the most common types and functions directly for a flatter API.
 

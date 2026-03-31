@@ -96,6 +96,25 @@ for point in points {
 }
 ```
 
+If you enable the optional `plotting` feature, those convergence points can be rendered directly
+to SVG:
+
+```rust
+# #[cfg(feature = "plotting")]
+# {
+use alchemrs::{ConvergencePlotOptions, render_convergence_svg};
+
+let svg = render_convergence_svg(
+    &points,
+    Some(ConvergencePlotOptions {
+        title: "MBAR Convergence".to_string(),
+        ..ConvergencePlotOptions::default()
+    }),
+)?;
+assert!(svg.contains("<svg"));
+# }
+```
+
 ## Choosing the right preprocessing entry point
 
 - Use `decorrelate_dhdl` for TI inputs.

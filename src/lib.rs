@@ -6,6 +6,7 @@
 //! - preprocessing utilities for burn-in removal, equilibration detection, and decorrelation
 //! - estimators including TI, BAR, MBAR, EXP, and DEXP
 //! - overlap diagnostics built on top of MBAR weights
+//! - optional SVG plotting helpers behind the `plotting` feature
 //!
 //! Most users can work directly with the top-level re-exports, while more explicit module
 //! namespaces remain available through [`parse`], [`prep`], [`estimators`], [`analysis`],
@@ -37,6 +38,8 @@ pub mod data;
 pub mod error;
 pub mod estimators;
 pub mod parse;
+#[cfg(feature = "plotting")]
+pub mod plot;
 pub mod prep;
 
 pub use analysis::{
@@ -51,6 +54,12 @@ pub use estimators::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
 pub use estimators::{ExpEstimator, ExpOptions, MbarEstimator, MbarOptions};
 pub use estimators::{IntegrationMethod, TiEstimator, TiOptions};
 pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+#[cfg(feature = "plotting")]
+pub use plot::{
+    render_convergence_svg, render_delta_f_state_svg, render_overlap_matrix_svg,
+    render_ti_dhdl_svg, ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions,
+    TiDhdlPlotOptions,
+};
 pub use prep::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
