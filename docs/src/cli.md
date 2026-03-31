@@ -55,7 +55,7 @@ For `u_nk`-based estimators:
 
 - `de` is the default and matches the `alchemlyb`-style adjacent-state `dE` observable
 - `all` sums the full `u_nk` row
-- `epot` uses an engine-provided energy observable (`EPtot` for AMBER, `Potential Energy`/`Total Energy` for GROMACS `dhdl.xvg`)
+- `epot` uses an engine-provided potential-energy observable (`EPtot` for AMBER, `Potential Energy` for GROMACS `dhdl.xvg`)
 
 Use `epot` when:
 

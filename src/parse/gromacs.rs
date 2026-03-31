@@ -457,7 +457,7 @@ fn is_delta_h_legend(legend: &str) -> bool {
 
 fn is_potential_legend(legend: &str) -> bool {
     let lower = normalize_xvg_markup(legend).to_ascii_lowercase();
-    lower.contains("potential energy") || lower.contains("total energy")
+    lower.contains("potential energy")
 }
 
 fn parse_state_vector(text: &str) -> Option<Vec<f64>> {
@@ -586,7 +586,7 @@ mod tests {
     fn parse_multidimensional_gromacs_u_nk() {
         let content = r#"
 @ subtitle "T = 300.0 lambda state 9: (coul-lambda, vdw-lambda) = (0.4000, 1.0000)"
-@ s0 legend "Total Energy (kJ/mol)"
+@ s0 legend "Potential Energy (kJ/mol)"
 @ s1 legend "dH/d\xl\f{} coul-lambda = 0.4000"
 @ s2 legend "dH/d\xl\f{} vdw-lambda = 1.0000"
 @ s3 legend "\xD\f{}H \xl\f{} to (0.3000, 1.0000)"

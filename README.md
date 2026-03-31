@@ -76,7 +76,7 @@ alchemrs mbar \
   /path/to/*/prod.out
 ```
 
-For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses an engine-provided energy observable when one is available (`EPtot` for AMBER, `Potential Energy`/`Total Energy` legends for GROMACS `dhdl.xvg`).
+For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses an engine-provided potential-energy observable.
 
 Example JSON output:
 

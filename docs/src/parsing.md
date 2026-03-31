@@ -68,8 +68,8 @@ AMBER parser behavior:
 
 GROMACS parser behavior:
 
-- does everything `extract_u_nk` does and additionally extracts the first energy-like legend labeled `Potential Energy` or `Total Energy` from `dhdl.xvg`
-- requires that energy observable to be present when this entry point is used
+- does everything `extract_u_nk` does and additionally extracts the `Potential Energy` legend from `dhdl.xvg`
+- requires that potential-energy observable to be present when this entry point is used
 
 This function exists because an external energy observable is often useful for:
 
