@@ -1147,8 +1147,8 @@ fn validate_mbar_input(u_kn: &[Vec<f64>]) -> Result<()> {
 fn extract_lambda(state: &StatePoint) -> Result<f64> {
     let lambdas = state.lambdas();
     if lambdas.len() != 1 {
-        return Err(CoreError::InvalidState(
-            "TI requires exactly one lambda dimension".to_string(),
+        return Err(CoreError::Unsupported(
+            "estimators require one-dimensional lambda states".to_string(),
         ));
     }
     Ok(lambdas[0])
@@ -1305,6 +1305,38 @@ mod tests {
         vec![
             UNkMatrix::new(3, 2, data0, time.clone(), Some(s0), states.clone()).unwrap(),
             UNkMatrix::new(3, 2, data1, time, Some(s1), states).unwrap(),
+        ]
+    }
+
+    fn make_multidimensional_windows() -> Vec<UNkMatrix> {
+        let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
+        let states = vec![s0.clone(), s1.clone()];
+
+        let data0 = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
+        let data1 = vec![0.1, 0.0, 0.2, 0.1, 0.3, 0.2];
+        let time = vec![0.0, 1.0, 2.0];
+
+        vec![
+            UNkMatrix::new(3, 2, data0, time.clone(), Some(s0), states.clone()).unwrap(),
+            UNkMatrix::new(3, 2, data1, time, Some(s1), states).unwrap(),
+        ]
+    }
+
+    fn make_multidimensional_dhdl_series() -> Vec<DhdlSeries> {
+        vec![
+            DhdlSeries::new(
+                StatePoint::new(vec![0.0, 0.0], 300.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![1.0, 1.1, 1.2],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![1.0, 0.0], 300.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![2.0, 2.1, 2.2],
+            )
+            .unwrap(),
         ]
     }
 
@@ -1519,6 +1551,22 @@ mod tests {
         assert!(
             matches!(err, CoreError::InvalidState(message) if message == "multiple windows for sampled_state lambda 0")
         );
+    }
+
+    #[test]
+    fn mbar_rejects_multidimensional_lambda_states() {
+        let err = MbarEstimator::default()
+            .fit(&make_multidimensional_windows())
+            .unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(message) if message == "estimators require one-dimensional lambda states"));
+    }
+
+    #[test]
+    fn ti_rejects_multidimensional_lambda_states() {
+        let err = TiEstimator::default()
+            .fit(&make_multidimensional_dhdl_series())
+            .unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(message) if message == "estimators require one-dimensional lambda states"));
     }
 
     #[test]

@@ -130,12 +130,15 @@ This matches the `alchemlyb` `dE` convention.
 Important detail:
 
 - “adjacent” means adjacent in evaluated-state order, not nearest by numeric lambda distance
+- `DE` preprocessing is currently only supported for one-dimensional lambda states
 
 ### `UNkSeriesMethod::All`
 
 For each sample row, sum all evaluated-state reduced energies in that row.
 
 This is a generic matrix-derived scalar, but it is usually less targeted than `DE`.
+
+`All` remains defined for multidimensional parsed states because it does not need to identify a sampled-state neighbor.
 
 ### `decorrelate_u_nk_with_observable`
 
@@ -169,6 +172,8 @@ For CLI commands, preprocessing order is:
 TI uses `dH/dlambda` as the scalar series.
 
 `BAR`, `MBAR`, `EXP`, and `DEXP` use the observable chosen by `--u-nk-observable <de|all|epot>`.
+
+At present, multidimensional GROMACS states can be parsed into `u_nk`, but CLI estimator workflows still require one-dimensional lambda states.
 
 ## CLI auto-equilibrate overrides
 

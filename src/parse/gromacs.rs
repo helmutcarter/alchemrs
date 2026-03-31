@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -34,12 +35,14 @@ pub enum GromacsParseError {
     },
     #[error("missing dH/dlambda legend in GROMACS dhdl.xvg output")]
     MissingDhdlLegend,
+    #[error("GROMACS dhdl.xvg contains {count} dH/dlambda components; scalar dH/dlambda parsing is unsupported for multidimensional lambda schedules")]
+    MultipleDhdlComponents { count: usize },
     #[error("no Delta H legends found in GROMACS dhdl.xvg output")]
     NoDeltaHColumns,
     #[error("no potential-energy legend found in GROMACS dhdl.xvg output")]
     NoPotentialSamples,
-    #[error("duplicate lambda legend for state {lambda:.4}")]
-    DuplicateLambda { lambda: f64 },
+    #[error("duplicate evaluated state {state} in GROMACS dhdl.xvg output")]
+    DuplicateState { state: String },
     #[error("invalid legend line `{line}`")]
     InvalidLegendLine { line: String },
     #[error("invalid data line `{line}`")]
@@ -69,9 +72,9 @@ impl From<CoreError> for GromacsParseError {
 #[derive(Debug, Clone)]
 struct Header {
     temperature_k: f64,
-    sampled_lambda: f64,
-    dhdl_column: usize,
-    delta_h_columns: Vec<(usize, f64)>,
+    sampled_state: Vec<f64>,
+    dhdl_columns: Vec<usize>,
+    delta_h_columns: Vec<(usize, Vec<f64>)>,
     potential_column: Option<usize>,
 }
 
@@ -79,13 +82,23 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     let header = read_header(path.as_ref())?;
     validate_temperature(header.temperature_k, temperature_k)?;
 
+    if header.dhdl_columns.is_empty() {
+        return Err(GromacsParseError::MissingDhdlLegend);
+    }
+    if header.dhdl_columns.len() != 1 {
+        return Err(GromacsParseError::MultipleDhdlComponents {
+            count: header.dhdl_columns.len(),
+        });
+    }
+
+    let column = header.dhdl_columns[0];
     let mut time_ps = Vec::new();
     let mut values = Vec::new();
     for row in read_data_rows(path.as_ref())? {
         time_ps.push(row.time_ps);
         values.push(
             *row.values
-                .get(header.dhdl_column)
+                .get(column)
                 .ok_or_else(|| GromacsParseError::InvalidDataLine {
                     line: row.raw_line.clone(),
                 })?,
@@ -96,7 +109,7 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
         return Err(GromacsParseError::NoSamples);
     }
 
-    let state = StatePoint::new(vec![header.sampled_lambda], temperature_k)?;
+    let state = StatePoint::new(header.sampled_state, temperature_k)?;
     DhdlSeries::new(state, time_ps, values).map_err(Into::into)
 }
 
@@ -128,20 +141,35 @@ fn extract_u_nk_internal(
         return Err(GromacsParseError::NoPotentialSamples);
     }
 
-    let mut ordered_lambdas = vec![header.sampled_lambda];
-    ordered_lambdas.extend(header.delta_h_columns.iter().map(|(_, lambda)| *lambda));
-    ordered_lambdas.sort_by(|left, right| left.partial_cmp(right).expect("finite lambda"));
-
-    let mut lambda_to_column = HashMap::with_capacity(ordered_lambdas.len());
-    for (idx, lambda) in ordered_lambdas.iter().copied().enumerate() {
-        if lambda_to_column.insert(lambda_key(lambda), idx).is_some() {
-            return Err(GromacsParseError::DuplicateLambda { lambda });
+    let sampled_key = state_key(&header.sampled_state);
+    let mut seen_targets = HashSet::new();
+    for (_, state) in &header.delta_h_columns {
+        let key = state_key(state);
+        if key != sampled_key && !seen_targets.insert(key) {
+            return Err(GromacsParseError::DuplicateState {
+                state: format_state(state),
+            });
         }
     }
 
-    let sampled_idx = *lambda_to_column
-        .get(&lambda_key(header.sampled_lambda))
-        .expect("sampled lambda indexed");
+    let mut evaluated_states = vec![header.sampled_state.clone()];
+    let mut evaluated_keys = HashSet::from([sampled_key.clone()]);
+    for (_, state) in &header.delta_h_columns {
+        let key = state_key(state);
+        if evaluated_keys.insert(key) {
+            evaluated_states.push(state.clone());
+        }
+    }
+    evaluated_states.sort_by(|left, right| compare_state_vectors(left, right));
+
+    let mut state_to_column = HashMap::with_capacity(evaluated_states.len());
+    for (idx, state) in evaluated_states.iter().enumerate() {
+        state_to_column.insert(state_key(state), idx);
+    }
+
+    let sampled_idx = *state_to_column
+        .get(&sampled_key)
+        .expect("sampled state indexed");
     let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
 
     let mut time_ps = Vec::new();
@@ -149,18 +177,19 @@ fn extract_u_nk_internal(
     let mut potential = include_potential.then(Vec::new);
 
     for row in read_data_rows(path)? {
-        let mut reduced = vec![0.0; ordered_lambdas.len()];
-        reduced[sampled_idx] = 0.0;
-        for (series_idx, foreign_lambda) in &header.delta_h_columns {
+        let mut reduced = vec![0.0; evaluated_states.len()];
+        for (series_idx, target_state) in &header.delta_h_columns {
             let raw = *row.values.get(*series_idx).ok_or_else(|| {
                 GromacsParseError::InvalidDataLine {
                     line: row.raw_line.clone(),
                 }
             })?;
-            let target_idx = *lambda_to_column
-                .get(&lambda_key(*foreign_lambda))
-                .expect("foreign lambda indexed");
-            reduced[target_idx] = beta * raw;
+            let target_idx = *state_to_column
+                .get(&state_key(target_state))
+                .expect("target state indexed");
+            if target_idx != sampled_idx {
+                reduced[target_idx] = beta * raw;
+            }
         }
         if let Some(potential_column) = header.potential_column {
             if let Some(samples) = potential.as_mut() {
@@ -179,11 +208,10 @@ fn extract_u_nk_internal(
         return Err(GromacsParseError::NoSamples);
     }
 
-    let sampled_state = Some(StatePoint::new(vec![header.sampled_lambda], temperature_k)?);
-    let evaluated_states = ordered_lambdas
-        .iter()
-        .copied()
-        .map(|lambda| StatePoint::new(vec![lambda], temperature_k))
+    let sampled_state = Some(StatePoint::new(header.sampled_state, temperature_k)?);
+    let evaluated_states = evaluated_states
+        .into_iter()
+        .map(|state| StatePoint::new(state, temperature_k))
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(GromacsParseError::from)?;
 
@@ -219,8 +247,8 @@ fn read_header(path: &Path) -> Result<Header> {
     let mut line = String::new();
 
     let mut temperature_k = None;
-    let mut sampled_lambda = None;
-    let mut dhdl_column = None;
+    let mut sampled_state = None;
+    let mut dhdl_columns = Vec::new();
     let mut delta_h_columns = Vec::new();
     let mut potential_column = None;
 
@@ -243,8 +271,8 @@ fn read_header(path: &Path) -> Result<Header> {
         if temperature_k.is_none() {
             temperature_k = parse_temperature(trimmed)?;
         }
-        if sampled_lambda.is_none() {
-            sampled_lambda = parse_header_lambda(trimmed)?;
+        if sampled_state.is_none() && trimmed.starts_with("@") && trimmed.contains("subtitle") {
+            sampled_state = parse_state_vector(trimmed);
         }
 
         let Some((series_idx, legend)) = parse_legend(trimmed)? else {
@@ -252,19 +280,16 @@ fn read_header(path: &Path) -> Result<Header> {
         };
 
         if is_dhdl_legend(&legend) {
-            dhdl_column = Some(series_idx);
-            if sampled_lambda.is_none() {
-                sampled_lambda = parse_lambda_from_text(&legend);
-            }
+            dhdl_columns.push(series_idx);
             continue;
         }
 
         if is_delta_h_legend(&legend) {
-            let lambda = parse_lambda_from_text(&legend).ok_or(GromacsParseError::InvalidField {
+            let state = parse_state_vector(&legend).ok_or(GromacsParseError::InvalidField {
                 field: "foreign lambda",
                 value: legend.clone(),
             })?;
-            delta_h_columns.push((series_idx, lambda));
+            delta_h_columns.push((series_idx, state));
             continue;
         }
 
@@ -277,10 +302,8 @@ fn read_header(path: &Path) -> Result<Header> {
         temperature_k: temperature_k.ok_or(GromacsParseError::MissingField {
             field: "temperature",
         })?,
-        sampled_lambda: sampled_lambda.ok_or(GromacsParseError::MissingField {
-            field: "lambda",
-        })?,
-        dhdl_column: dhdl_column.ok_or(GromacsParseError::MissingDhdlLegend)?,
+        sampled_state: sampled_state.ok_or(GromacsParseError::MissingField { field: "lambda" })?,
+        dhdl_columns,
         delta_h_columns,
         potential_column,
     })
@@ -366,38 +389,24 @@ fn parse_temperature(line: &str) -> Result<Option<f64>> {
     Ok(Some(value))
 }
 
-fn parse_header_lambda(line: &str) -> Result<Option<f64>> {
-    let lower = line.to_ascii_lowercase();
-    if !lower.contains("lambda") {
-        return Ok(None);
-    }
-    Ok(parse_lambda_from_text(line))
-}
-
 fn parse_legend(line: &str) -> Result<Option<(usize, String)>> {
     if !line.starts_with('@') || !line.contains(" legend ") {
         return Ok(None);
     }
 
-    let mut parts = line.splitn(4, ' ');
-    let _at = parts.next();
-    let series = parts
-        .next()
-        .ok_or_else(|| GromacsParseError::InvalidLegendLine {
+    let mut parts = line.split_whitespace();
+    let marker = parts.next();
+    let series = parts.next();
+    let keyword = parts.next();
+    if marker != Some("@") || keyword != Some("legend") {
+        return Ok(None);
+    }
+    let Some(series) = series else {
+        return Err(GromacsParseError::InvalidLegendLine {
             line: line.to_string(),
-        })?;
-    let keyword = parts
-        .next()
-        .ok_or_else(|| GromacsParseError::InvalidLegendLine {
-            line: line.to_string(),
-        })?;
-    let remainder = parts
-        .next()
-        .ok_or_else(|| GromacsParseError::InvalidLegendLine {
-            line: line.to_string(),
-        })?;
-
-    if keyword != "legend" || !series.starts_with('s') {
+        });
+    };
+    if !series.starts_with('s') {
         return Ok(None);
     }
 
@@ -406,7 +415,7 @@ fn parse_legend(line: &str) -> Result<Option<(usize, String)>> {
         .map_err(|_| GromacsParseError::InvalidLegendLine {
             line: line.to_string(),
         })?;
-    let legend = extract_quoted_text(remainder).ok_or_else(|| GromacsParseError::InvalidLegendLine {
+    let legend = extract_quoted_text(line).ok_or_else(|| GromacsParseError::InvalidLegendLine {
         line: line.to_string(),
     })?;
     Ok(Some((series_idx, legend)))
@@ -418,23 +427,48 @@ fn extract_quoted_text(text: &str) -> Option<String> {
     (end > start).then(|| text[(start + 1)..end].to_string())
 }
 
+fn normalize_xvg_markup(text: &str) -> String {
+    text.replace(r"\xD\f{}H", "Delta H")
+        .replace(r"\xD", "Delta")
+        .replace(r"\xl\f{}", "lambda")
+        .replace(r"\xl", "lambda")
+        .replace(r"\f{}", "")
+        .replace(r"\S-1\N", "")
+        .replace(r"\N", "")
+}
+
 fn is_dhdl_legend(legend: &str) -> bool {
-    legend.contains("dH")
+    normalize_xvg_markup(legend)
+        .to_ascii_lowercase()
+        .contains("dh/dlambda")
 }
 
 fn is_delta_h_legend(legend: &str) -> bool {
-    legend.contains("Delta H")
-        || legend.contains('Δ')
-        || (legend.contains('D') && legend.contains('H') && !legend.contains("dH"))
+    normalize_xvg_markup(legend)
+        .to_ascii_lowercase()
+        .contains("delta h")
 }
 
 fn is_potential_legend(legend: &str) -> bool {
-    let lower = legend.to_ascii_lowercase();
+    let lower = normalize_xvg_markup(legend).to_ascii_lowercase();
     lower.contains("potential energy") || lower.contains("total energy")
 }
 
-fn parse_lambda_from_text(text: &str) -> Option<f64> {
-    last_float(text)
+fn parse_state_vector(text: &str) -> Option<Vec<f64>> {
+    if let Some(values) = parse_parenthesized_vector(text) {
+        return Some(values);
+    }
+    last_float(text).map(|value| vec![value])
+}
+
+fn parse_parenthesized_vector(text: &str) -> Option<Vec<f64>> {
+    let end = text.rfind(')')?;
+    let start = text[..end].rfind('(')?;
+    let values = float_regex()
+        .find_iter(&text[(start + 1)..end])
+        .filter_map(|m| m.as_str().parse::<f64>().ok())
+        .collect::<Vec<_>>();
+    (!values.is_empty()).then_some(values)
 }
 
 fn float_regex() -> &'static regex::Regex {
@@ -453,8 +487,27 @@ fn last_float(text: &str) -> Option<f64> {
         .and_then(|m| m.as_str().parse::<f64>().ok())
 }
 
-fn lambda_key(value: f64) -> i64 {
-    (value * 10_000.0).round() as i64
+fn compare_state_vectors(left: &[f64], right: &[f64]) -> Ordering {
+    for (lhs, rhs) in left.iter().zip(right.iter()) {
+        let ordering = lhs.total_cmp(rhs);
+        if ordering != Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
+fn state_key(values: &[f64]) -> Vec<i64> {
+    values.iter().map(|value| (value * 10_000.0).round() as i64).collect()
+}
+
+fn format_state(values: &[f64]) -> String {
+    let formatted = values
+        .iter()
+        .map(|value| format!("{value:.4}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("({formatted})")
 }
 
 #[cfg(test)]
@@ -511,35 +564,42 @@ mod tests {
     }
 
     #[test]
-    fn parse_gromacs_u_nk_with_potential() {
+    fn parse_multidimensional_gromacs_u_nk() {
         let content = r#"
-@ subtitle "T = 300.0 lambda = 0.1000"
-@ s0 legend "dH/dlambda = 0.1000"
-@ s1 legend "Delta H to 0.0000"
-@ s2 legend "Delta H to 0.2000"
-@ s3 legend "Potential Energy"
-0.0 1.0 -0.5 0.25 -10.0
-2.0 2.0 -0.4 0.30 -11.0
+@ subtitle "T = 300.0 lambda state 9: (coul-lambda, vdw-lambda) = (0.4000, 1.0000)"
+@ s0 legend "Total Energy (kJ/mol)"
+@ s1 legend "dH/d\xl\f{} coul-lambda = 0.4000"
+@ s2 legend "dH/d\xl\f{} vdw-lambda = 1.0000"
+@ s3 legend "\xD\f{}H \xl\f{} to (0.3000, 1.0000)"
+@ s4 legend "\xD\f{}H \xl\f{} to (0.4000, 1.0000)"
+@ s5 legend "\xD\f{}H \xl\f{} to (0.5000, 1.0000)"
+0.0 -10.0 1.0 2.0 -5.0 0.0 5.0
+2.0 -11.0 1.5 2.5 -4.0 0.0 inf
 "#;
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(content.as_bytes()).unwrap();
 
         let (u_nk, potential) = extract_u_nk_with_potential(file.path(), 300.0).unwrap();
-        assert_eq!(u_nk.n_samples(), 2);
+        assert_eq!(u_nk.sampled_state().unwrap().lambdas(), &[0.4, 1.0]);
+        assert_eq!(u_nk.n_states(), 3);
+        assert_eq!(u_nk.evaluated_states()[0].lambdas(), &[0.3, 1.0]);
+        assert_eq!(u_nk.evaluated_states()[1].lambdas(), &[0.4, 1.0]);
+        assert_eq!(u_nk.evaluated_states()[2].lambdas(), &[0.5, 1.0]);
         assert_eq!(potential, vec![-10.0, -11.0]);
     }
 
     #[test]
-    fn gromacs_u_nk_requires_delta_h_columns() {
+    fn multidimensional_gromacs_dhdl_is_unsupported() {
         let content = r#"
-@ subtitle "T = 300.0 lambda = 0.1000"
-@ s0 legend "dH/dlambda = 0.1000"
-0.0 1.0
+@ subtitle "T = 300.0 lambda state 9: (coul-lambda, vdw-lambda) = (0.4000, 1.0000)"
+@ s0 legend "dH/d\xl\f{} coul-lambda = 0.4000"
+@ s1 legend "dH/d\xl\f{} vdw-lambda = 1.0000"
+0.0 1.0 2.0
 "#;
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(content.as_bytes()).unwrap();
 
-        let error = extract_u_nk(file.path(), 300.0).unwrap_err();
-        assert_eq!(error, GromacsParseError::NoDeltaHColumns);
+        let error = extract_dhdl(file.path(), 300.0).unwrap_err();
+        assert_eq!(error, GromacsParseError::MultipleDhdlComponents { count: 2 });
     }
 }

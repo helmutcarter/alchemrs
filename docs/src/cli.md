@@ -20,7 +20,7 @@ cargo build --release
 
 Typical CLI usage is:
 
-1. pass one AMBER output per lambda window
+1. pass one simulation output per lambda window
 2. optionally trim burn-in
 3. optionally run auto-equilibration
 4. optionally decorrelate
@@ -55,16 +55,19 @@ For `u_nk`-based estimators:
 
 - `de` is the default and matches the `alchemlyb`-style adjacent-state `dE` observable
 - `all` sums the full `u_nk` row
-- `epot` uses `EPtot` parsed from the AMBER output
+- `epot` uses an engine-provided energy observable (`EPtot` for AMBER, `Potential Energy`/`Total Energy` for GROMACS `dhdl.xvg`)
 
 Use `epot` when:
 
 - you want the CLI's external-observable path
 - the `u_nk` matrix contains positive infinity values that make `de` invalid
+- you need a preprocessing observable that does not rely on one-dimensional adjacent-state `DE` semantics
 
 ## TI-specific behavior
 
 TI uses `dH/dlambda`, not `u_nk`.
+
+For GROMACS files with multidimensional lambda schedules, the CLI currently rejects TI input because the parser cannot collapse multiple `dH/dlambda` components into a single scalar series safely.
 
 The CLI accepts `--u-nk-observable` on `ti` only to provide a more helpful error message. If supplied, the command fails with a domain-specific explanation instead of a generic unknown-flag parse error.
 

@@ -24,8 +24,9 @@ AMBER parser behavior:
 GROMACS parser behavior:
 
 - reads `dhdl.xvg` headers to identify the simulation temperature and lambda
-- extracts the `dH/dlambda` series from the legend tagged with `dH`
+- extracts the `dH/dlambda` series from the legend tagged with `dH` when the file contains exactly one derivative component
 - keeps the x-axis values as the returned `time_ps` values
+- rejects multidimensional schedules with multiple `dH/dlambda` components because `DhdlSeries` is still scalar
 
 Common failure modes:
 
@@ -49,7 +50,7 @@ AMBER parser behavior:
 
 GROMACS parser behavior:
 
-- reads `dhdl.xvg` Delta H columns and maps them into reduced-energy rows
+- reads `dhdl.xvg` Delta H columns and maps them into reduced-energy rows, including multidimensional lambda tuples from legends like `to (coul, vdw)`
 - inserts the sampled lambda state explicitly with zero reduced energy
 - sorts the evaluated-state grid by lambda before building the matrix
 - requires at least one foreign-lambda Delta H column
