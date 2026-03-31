@@ -1,5 +1,6 @@
 use alchemrs::{
-    mbar_block_average, ti_block_average, CoreError, DhdlSeries, StatePoint, UNkMatrix,
+    BarEstimator, CoreError, DhdlSeries, ExpEstimator, MbarEstimator, StatePoint, TiEstimator,
+    UNkMatrix,
 };
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint], n_samples: usize) -> UNkMatrix {
     let mut data = Vec::with_capacity(n_samples * evaluated.len());
@@ -19,6 +20,34 @@ fn build_window(sampled: StatePoint, evaluated: &[StatePoint], n_samples: usize)
         evaluated.to_vec(),
     )
     .expect("window")
+}
+
+fn build_known_bar_windows() -> [UNkMatrix; 2] {
+    let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
+    let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
+    let evaluated = vec![s0.clone(), s1.clone()];
+    let time = vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+
+    let w0 = UNkMatrix::new(
+        6,
+        2,
+        vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4, 0.0, 0.2, 0.1, 0.3, 0.2, 0.4],
+        time.clone(),
+        Some(s0),
+        evaluated.clone(),
+    )
+    .unwrap();
+    let w1 = UNkMatrix::new(
+        6,
+        2,
+        vec![0.1, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.0, 0.2, 0.1, 0.3, 0.2],
+        time,
+        Some(s1),
+        evaluated,
+    )
+    .unwrap();
+
+    [w0, w1]
 }
 
 fn trim_window_to_states(window: &UNkMatrix, state_indices: &[usize]) -> UNkMatrix {
@@ -53,7 +82,9 @@ fn ti_block_average_returns_requested_blocks() {
         DhdlSeries::new(s1.clone(), vec![0.0, 1.0, 2.0, 3.0], vec![2.0, 2.2, 1.8, 2.1]).unwrap(),
     ];
 
-    let blocks = ti_block_average(&series, 2, None).expect("ti blocks");
+    let blocks = TiEstimator::default()
+        .block_average(&series, 2)
+        .expect("ti blocks");
     assert_eq!(blocks.len(), 2);
     assert_eq!(blocks[0].block_index(), 0);
     assert_eq!(blocks[1].block_index(), 1);
@@ -75,7 +106,7 @@ fn ti_block_average_requires_enough_samples_per_block() {
         .unwrap(),
     ];
 
-    let err = ti_block_average(&series, 3, None).unwrap_err();
+    let err = TiEstimator::default().block_average(&series, 3).unwrap_err();
     assert!(matches!(
         err,
         CoreError::InvalidShape {
@@ -111,7 +142,9 @@ fn mbar_block_average_preserves_labels() {
     )
     .unwrap();
 
-    let blocks = mbar_block_average(&[w0, w1], 2, None).expect("mbar blocks");
+    let blocks = MbarEstimator::default()
+        .block_average(&[w0, w1], 2)
+        .expect("mbar blocks");
     assert_eq!(blocks.len(), 2);
     assert_eq!(
         blocks[0].lambda_labels().unwrap(),
@@ -122,12 +155,64 @@ fn mbar_block_average_preserves_labels() {
 }
 
 #[test]
+fn bar_block_average_returns_requested_blocks() {
+    let [w0, w1] = build_known_bar_windows();
+    let s0 = w0.sampled_state().unwrap().clone();
+    let s1 = w1.sampled_state().unwrap().clone();
+
+    let blocks = BarEstimator::default()
+        .block_average(&[w0, w1], 2)
+        .expect("bar blocks");
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].block_index(), 0);
+    assert_eq!(blocks[1].block_index(), 1);
+    assert_eq!(blocks[0].from_state().lambdas(), s0.lambdas());
+    assert_eq!(blocks[0].to_state().lambdas(), s1.lambdas());
+}
+
+#[test]
+fn exp_block_average_returns_requested_blocks() {
+    let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
+    let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
+    let evaluated = vec![s0.clone(), s1.clone()];
+    let w0 = build_window(s0.clone(), &evaluated, 4);
+    let w1 = build_window(s1.clone(), &evaluated, 4);
+
+    let blocks = ExpEstimator::default()
+        .block_average(&[w0, w1], 2)
+        .expect("exp blocks");
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].block_index(), 0);
+    assert_eq!(blocks[1].block_index(), 1);
+    assert_eq!(blocks[0].from_state().lambdas(), s0.lambdas());
+    assert_eq!(blocks[0].to_state().lambdas(), s1.lambdas());
+}
+
+#[test]
+fn dexp_block_average_uses_reverse_endpoints() {
+    let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
+    let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
+    let evaluated = vec![s0.clone(), s1.clone()];
+    let w0 = build_window(s0.clone(), &evaluated, 4);
+    let w1 = build_window(s1.clone(), &evaluated, 4);
+
+    let blocks = ExpEstimator::default()
+        .reverse_block_average(&[w0, w1], 2)
+        .expect("dexp blocks");
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].from_state().lambdas(), s1.lambdas());
+    assert_eq!(blocks[0].to_state().lambdas(), s0.lambdas());
+}
+
+#[test]
 fn mbar_block_average_requires_nonzero_blocks() {
     let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
     let evaluated = vec![s0.clone()];
     let window = build_window(s0, &evaluated, 2);
 
-    let err = mbar_block_average(&[window], 0, None).unwrap_err();
+    let err = MbarEstimator::default()
+        .block_average(&[window], 0)
+        .unwrap_err();
     assert!(matches!(
         err,
         CoreError::InvalidShape {
@@ -152,7 +237,9 @@ fn real_gromacs_windows_support_mbar_block_average_after_grid_intersection() {
     assert_eq!(w2.evaluated_states()[1].lambdas(), &[0.0, 0.0, 0.15, 0.0, 0.0]);
     assert_eq!(w3.evaluated_states(), w2.evaluated_states());
 
-    let blocks = mbar_block_average(&[w2, w3], 4, None).expect("real gromacs mbar blocks");
+    let blocks = MbarEstimator::default()
+        .block_average(&[w2, w3], 4)
+        .expect("real gromacs mbar blocks");
     assert_eq!(blocks.len(), 4);
     assert_eq!(
         blocks[0].lambda_labels().unwrap(),

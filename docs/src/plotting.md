@@ -160,11 +160,11 @@ assert!(svg.contains("<svg"));
 Block-average plots can be rendered from library block analysis results:
 
 ```rust
-use alchemrs::{BlockAveragePlotOptions, mbar_block_average, render_block_average_svg};
+use alchemrs::{BlockAveragePlotOptions, MbarEstimator, render_block_average_svg};
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let windows = Vec::new();
-let blocks = mbar_block_average(&windows, 4, None)?;
+let blocks = MbarEstimator::default().block_average(&windows, 4)?;
 let svg = render_block_average_svg(
     &blocks,
     Some(BlockAveragePlotOptions {

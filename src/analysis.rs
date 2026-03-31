@@ -343,7 +343,50 @@ pub fn mbar_block_average(
         windows,
         n_blocks,
         |subset| MbarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        false,
         1,
+    )
+}
+
+pub fn bar_block_average(
+    windows: &[UNkMatrix],
+    n_blocks: usize,
+    options: Option<BarOptions>,
+) -> Result<Vec<BlockEstimate>> {
+    block_average_from_windows(
+        windows,
+        n_blocks,
+        |subset| BarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        false,
+        2,
+    )
+}
+
+pub fn exp_block_average(
+    windows: &[UNkMatrix],
+    n_blocks: usize,
+    options: Option<ExpOptions>,
+) -> Result<Vec<BlockEstimate>> {
+    block_average_from_windows(
+        windows,
+        n_blocks,
+        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        false,
+        2,
+    )
+}
+
+pub fn dexp_block_average(
+    windows: &[UNkMatrix],
+    n_blocks: usize,
+    options: Option<ExpOptions>,
+) -> Result<Vec<BlockEstimate>> {
+    block_average_from_windows(
+        windows,
+        n_blocks,
+        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        true,
+        2,
     )
 }
 
@@ -380,6 +423,7 @@ fn block_average_from_windows<F>(
     windows: &[UNkMatrix],
     n_blocks: usize,
     fit: F,
+    reverse: bool,
     minimum_windows: usize,
 ) -> Result<Vec<BlockEstimate>>
 where
@@ -411,7 +455,7 @@ where
             .collect::<Vec<_>>();
         let trimmed = trim_windows_to_sampled_states(&subset)?;
         let result = fit(&trimmed)?;
-        points.push(block_estimate_from_matrix(block_index, n_blocks, &result)?);
+        points.push(block_estimate_from_matrix(block_index, n_blocks, &result, reverse)?);
     }
     Ok(points)
 }
@@ -593,6 +637,7 @@ fn block_estimate_from_matrix(
     block_index: usize,
     n_blocks: usize,
     result: &DeltaFMatrix,
+    reverse: bool,
 ) -> Result<BlockEstimate> {
     let n_states = result.n_states();
     if n_states == 0 {
@@ -601,14 +646,26 @@ fn block_estimate_from_matrix(
             found: 0,
         });
     }
-    let index = n_states - 1;
+    let index = if reverse {
+        (n_states - 1) * n_states
+    } else {
+        n_states - 1
+    };
     BlockEstimate::new(
         block_index,
         n_blocks,
         result.values()[index],
         result.uncertainties().map(|values| values[index]),
-        result.states().first().unwrap().clone(),
-        result.states().last().unwrap().clone(),
+        if reverse {
+            result.states().last().unwrap().clone()
+        } else {
+            result.states().first().unwrap().clone()
+        },
+        if reverse {
+            result.states().first().unwrap().clone()
+        } else {
+            result.states().last().unwrap().clone()
+        },
         result.lambda_labels().map(|labels| labels.to_vec()),
     )
 }

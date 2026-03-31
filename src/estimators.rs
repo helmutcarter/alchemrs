@@ -1,3 +1,4 @@
+use crate::analysis::{self, BlockEstimate};
 use crate::data::{DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
@@ -86,6 +87,14 @@ impl TiEstimator {
         let from_state = points.first().unwrap().3.clone();
         let to_state = points.last().unwrap().3.clone();
         FreeEnergyEstimate::new(delta_f, uncertainty, from_state, to_state)
+    }
+
+    pub fn block_average(
+        &self,
+        series: &[DhdlSeries],
+        n_blocks: usize,
+    ) -> Result<Vec<BlockEstimate>> {
+        analysis::ti_block_average(series, n_blocks, Some(self.options.clone()))
     }
 }
 
@@ -253,6 +262,14 @@ impl BarEstimator {
 
         DeltaFMatrix::new_with_labels(adelta, Some(ad_delta), n_states, eval_states, lambda_labels)
     }
+
+    pub fn block_average(
+        &self,
+        windows: &[UNkMatrix],
+        n_blocks: usize,
+    ) -> Result<Vec<BlockEstimate>> {
+        analysis::bar_block_average(windows, n_blocks, Some(self.options.clone()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -317,6 +334,14 @@ impl MbarEstimator {
             None
         };
         DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
+    }
+
+    pub fn block_average(
+        &self,
+        windows: &[UNkMatrix],
+        n_blocks: usize,
+    ) -> Result<Vec<BlockEstimate>> {
+        analysis::mbar_block_average(windows, n_blocks, Some(self.options.clone()))
     }
 }
 
@@ -597,6 +622,22 @@ impl ExpEstimator {
 
         let lambda_labels = ensure_consistent_lambda_labels(windows)?;
         DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
+    }
+
+    pub fn block_average(
+        &self,
+        windows: &[UNkMatrix],
+        n_blocks: usize,
+    ) -> Result<Vec<BlockEstimate>> {
+        analysis::exp_block_average(windows, n_blocks, Some(self.options.clone()))
+    }
+
+    pub fn reverse_block_average(
+        &self,
+        windows: &[UNkMatrix],
+        n_blocks: usize,
+    ) -> Result<Vec<BlockEstimate>> {
+        analysis::dexp_block_average(windows, n_blocks, Some(self.options.clone()))
     }
 }
 

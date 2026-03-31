@@ -43,9 +43,8 @@ pub mod plot;
 pub mod prep;
 
 pub use analysis::{
-    bar_convergence, dexp_convergence, exp_convergence, mbar_block_average, mbar_convergence,
-    overlap_eigenvalues, overlap_matrix, overlap_scalar, ti_block_average, ti_convergence,
-    BlockEstimate, ConvergencePoint,
+    bar_convergence, dexp_convergence, exp_convergence, mbar_convergence, overlap_eigenvalues,
+    overlap_matrix, overlap_scalar, ti_convergence, BlockEstimate, ConvergencePoint,
 };
 pub use data::{
     DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
