@@ -4,7 +4,7 @@ Preprocessing lives in the `alchemrs::prep` module and is where most of the scie
 
 ## Core concepts
 
-The prep crate supports:
+The prep module supports:
 
 - duplicate-time cleanup
 - sorting by time
@@ -28,7 +28,7 @@ Default values are:
 
 ## Time cleanup
 
-Before decorrelation or equilibration detection, the prep crate can:
+Before decorrelation or equilibration detection, the prep module can:
 
 - drop duplicate time values
 - sort by time
@@ -100,7 +100,7 @@ Note: when `nskip > 1`, `alchemrs` maximizes `Neff` only over the sampled candid
 
 ## `remove_burnin`
 
-In the prep crate, `remove_burnin = true` means:
+In the prep module, `remove_burnin = true` means:
 
 - run equilibration detection
 - discard all data before `t0`
@@ -110,7 +110,7 @@ This is different from the CLI flag `--remove-burnin <N>`, which is a fixed-coun
 
 ## `u_nk` observables
 
-`u_nk` decorrelation needs a scalar time series. The prep crate supports two native derived observables and one external-observable path.
+`u_nk` decorrelation needs a scalar time series. The prep module supports two native derived observables and one external-observable path.
 
 ### `UNkSeriesMethod::DE`
 
@@ -142,7 +142,7 @@ This is a generic matrix-derived scalar, but it is usually less targeted than `D
 
 ### `decorrelate_u_nk_with_observable`
 
-This path accepts an external scalar observable, most commonly `EPtot`.
+This path accepts an external scalar observable, most commonly a potential-energy observable such as `EPtot`.
 
 The observable determines which sample indices are retained, and those retained indices are then applied back to the full `u_nk` rows.
 

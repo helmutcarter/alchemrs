@@ -44,7 +44,7 @@ It can either be invoked through cargo:
 cargo run --release [arguments]
 ```
 or compiled using cargo and called from the binary:
-```base
+```bash
 cargo build --release
 ./target/release/alchemrs [arguments]
 ```
@@ -101,6 +101,7 @@ Example JSON output:
     "conservative": true,
     "nskip": 1,
     "u_nk_observable": "de",
+    "lambda_components": null,
     "windows": 15,
     "samples_in": 300,
     "samples_after_burnin": 300,
@@ -123,7 +124,7 @@ alchemrs bar \
 CSV columns include estimator parameters after the result fields:
 
 ```text
-delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,windows,samples_in,samples_after_burnin,samples_kept
+delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept
 ```
 
 ### TI (trapezoidal)

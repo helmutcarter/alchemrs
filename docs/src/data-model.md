@@ -64,7 +64,7 @@ Validation rules:
 That last point matters for preprocessing:
 
 - some `u_nk`-derived observables fail on positive infinity
-- observable-based preprocessing using `EPtot` can still work if the external observable is finite
+- observable-based preprocessing using an external potential-energy series such as `EPtot` can still work if the external observable is finite
 
 ## `FreeEnergyEstimate`
 
@@ -86,12 +86,19 @@ It stores:
 - a dense `n_states x n_states` matrix of values
 - optional uncertainties
 - the ordered state list
+- `lambda_labels`, when present, naming the lambda-vector components in state order
 
 This is used by BAR, MBAR, EXP, and DEXP.
 
 ## `OverlapMatrix`
 
 Represents the overlap matrix between states and is used by the diagnostics layer.
+
+It stores:
+
+- a dense `n_states x n_states` matrix of overlap values
+- the ordered state list
+- `lambda_labels`, when present, naming the lambda-vector components in state order
 
 ## Error model
 

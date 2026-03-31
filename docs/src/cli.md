@@ -101,7 +101,7 @@ cargo run --release -- bar \
   path/to/*/prod.out
 ```
 
-### MBAR with EPtot fallback
+### MBAR with Potential-Energy Observable
 
 ```bash
 cargo run --release -- mbar \

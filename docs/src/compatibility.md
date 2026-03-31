@@ -28,9 +28,9 @@ AMBER still has the broader and more battle-tested workflow coverage, but the do
 
 ## One-dimensional lambda assumption
 
-The data-model types can store more general state metadata, but the estimator layer currently assumes one-dimensional lambda states.
+The data-model types can store more general state metadata, and `UNkMatrix`-based estimators now support multidimensional lambda states when windows share a consistent evaluated-state grid.
 
-If you need multidimensional alchemical states, the current estimators are not yet the right abstraction surface.
+The remaining one-dimensional restriction is TI: `DhdlSeries` is still scalar, so multidimensional `dH/dlambda` workflows are not yet supported.
 
 ## Non-finite `u_nk`
 
