@@ -298,7 +298,7 @@ pub fn dexp_convergence(
     )
 }
 
-pub fn ti_block_average(
+pub(crate) fn ti_block_average(
     series: &[DhdlSeries],
     n_blocks: usize,
     options: Option<TiOptions>,
@@ -334,7 +334,7 @@ pub fn ti_block_average(
     Ok(points)
 }
 
-pub fn mbar_block_average(
+pub(crate) fn mbar_block_average(
     windows: &[UNkMatrix],
     n_blocks: usize,
     options: Option<MbarOptions>,
@@ -348,7 +348,7 @@ pub fn mbar_block_average(
     )
 }
 
-pub fn bar_block_average(
+pub(crate) fn bar_block_average(
     windows: &[UNkMatrix],
     n_blocks: usize,
     options: Option<BarOptions>,
@@ -362,7 +362,7 @@ pub fn bar_block_average(
     )
 }
 
-pub fn exp_block_average(
+pub(crate) fn exp_block_average(
     windows: &[UNkMatrix],
     n_blocks: usize,
     options: Option<ExpOptions>,
@@ -376,7 +376,7 @@ pub fn exp_block_average(
     )
 }
 
-pub fn dexp_block_average(
+pub(crate) fn dexp_block_average(
     windows: &[UNkMatrix],
     n_blocks: usize,
     options: Option<ExpOptions>,
