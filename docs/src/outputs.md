@@ -24,7 +24,8 @@ It includes:
 
 - `delta_f`
 - uncertainty
-- lambda endpoints
+- lambda endpoints, which are scalars for one-dimensional schedules and vectors for multidimensional schedules
+- `lambda_components` when available
 - sample counts
 - `u_nk_observable` when relevant
 - overlap summary when requested
@@ -39,9 +40,16 @@ The payload contains:
 - optional overlap summary
 - a provenance object
 
+`from_lambda` and `to_lambda` are encoded as:
+
+- numbers for one-dimensional schedules
+- arrays for multidimensional schedules
+
 ## CSV output
 
 CSV output appends provenance fields after the result columns so the row remains self-describing.
+
+For multidimensional schedules, the endpoint columns are emitted as quoted bracketed vectors such as `"[0;0;0.8]"`.
 
 ## Provenance
 
@@ -58,6 +66,7 @@ Current provenance fields include:
 - the effective `conservative` value
 - `nskip`
 - `u_nk_observable` when applicable
+- `lambda_components` when the parser can identify named lambda dimensions
 - number of windows
 - number of samples before preprocessing
 - number of samples after burn-in trimming / auto-equilibration
@@ -71,8 +80,8 @@ This matters because preprocessing choices directly change the data used by the 
 {
   "delta_f": -113.58,
   "uncertainty": 1.17,
-  "from_lambda": 0.0,
-  "to_lambda": 1.0,
+  "from_lambda": [0.0, 0.0, 0.8],
+  "to_lambda": [0.0, 0.0, 0.9],
   "units": "kT",
   "overlap": {
     "scalar": 0.0183,
@@ -88,6 +97,7 @@ This matters because preprocessing choices directly change the data used by the 
     "conservative": true,
     "nskip": 1,
     "u_nk_observable": "de",
+    "lambda_components": ["mass-lambda", "coul-lambda", "vdw-lambda"],
     "windows": 15,
     "samples_in": 300,
     "samples_after_burnin": 300,

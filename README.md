@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
+`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER outputs and GROMACS `dhdl.xvg` outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
 
 ## Library API
 
@@ -15,6 +15,9 @@ use alchemrs::{
 let (u_nk, epot) = extract_u_nk_with_potential("prod.out", 300.0)?;
 let u_nk = decorrelate_u_nk_with_observable(&u_nk, &epot, &DecorrelationOptions::default())?;
 let result = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
+if let Some(labels) = result.lambda_labels() {
+    println!("lambda components = {:?}", labels);
+}
 ```
 
 The repo also includes runnable top-level examples:
@@ -33,7 +36,7 @@ mdbook serve docs
 
 ## CLI
 
-The `alchemrs` binary provides a command-line workflow for AMBER output files.
+The `alchemrs` binary provides a command-line workflow.
 
 ### Build
 It can either be invoked through cargo:
@@ -73,7 +76,7 @@ alchemrs mbar \
   /path/to/*/prod.out
 ```
 
-For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses `EPtot` parsed from the AMBER output.
+For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses an engine-provided energy observable when one is available (`EPtot` for AMBER, `Potential Energy`/`Total Energy` legends for GROMACS `dhdl.xvg`).
 
 Example JSON output:
 
@@ -105,6 +108,8 @@ Example JSON output:
   }
 }
 ```
+
+For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `DeltaFMatrix`, and `OverlapMatrix` all preserve parser-derived lambda component names when available through `.lambda_labels()`.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 

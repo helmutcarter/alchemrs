@@ -1,7 +1,7 @@
 use crate::data::{DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>);
+type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>, Option<Vec<String>>);
 type PairEstimate = (f64, f64);
 type ExpRow = (usize, Vec<f64>, Vec<f64>);
 
@@ -140,34 +140,31 @@ impl BarEstimator {
             });
         }
         let eval_states = ensure_consistent_states(windows)?;
-        let lambdas: Vec<f64> = eval_states.iter().map(|s| s.lambdas()[0]).collect();
-        let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; lambdas.len()];
+        let lambda_labels = ensure_consistent_lambda_labels(windows)?;
+        let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; eval_states.len()];
         for window in windows {
             let sampled = window.sampled_state().ok_or_else(|| {
                 CoreError::InvalidState("sampled_state required for BAR".to_string())
             })?;
-            let lambda = sampled.lambdas()[0];
-            let idx = find_lambda_index(&lambdas, lambda)?;
+            let idx = find_state_index(&eval_states, sampled)?;
             if window_by_index[idx].is_some() {
-                return Err(CoreError::InvalidState(format!(
-                    "multiple windows for sampled_state lambda {lambda}"
-                )));
+                return Err(CoreError::InvalidState(
+                    "multiple windows for same sampled_state".to_string(),
+                ));
             }
             window_by_index[idx] = Some(window);
         }
 
         let pair_results: Vec<Result<PairEstimate>> = if self.options.parallel {
             use rayon::prelude::*;
-            (0..(lambdas.len() - 1))
+            (0..(eval_states.len() - 1))
                 .into_par_iter()
                 .map(|idx| {
-                    let lambda = lambdas[idx];
-                    let lambda_next = lambdas[idx + 1];
                     let win_f = window_by_index[idx].ok_or_else(|| {
-                        CoreError::InvalidState(format!("missing window for lambda {lambda}"))
+                        CoreError::InvalidState(format!("missing window for state {idx}"))
                     })?;
                     let win_r = window_by_index[idx + 1].ok_or_else(|| {
-                        CoreError::InvalidState(format!("missing window for lambda {lambda_next}"))
+                        CoreError::InvalidState(format!("missing window for state {}", idx + 1))
                     })?;
                     let w_f = work_values(win_f, idx, idx + 1)?;
                     let w_r = work_values(win_r, idx, idx + 1)?
@@ -186,14 +183,12 @@ impl BarEstimator {
                 .collect::<Vec<_>>()
         } else {
             let mut out = Vec::new();
-            for idx in 0..(lambdas.len() - 1) {
-                let lambda = lambdas[idx];
-                let lambda_next = lambdas[idx + 1];
+            for idx in 0..(eval_states.len() - 1) {
                 let win_f = window_by_index[idx].ok_or_else(|| {
-                    CoreError::InvalidState(format!("missing window for lambda {lambda}"))
+                    CoreError::InvalidState(format!("missing window for state {idx}"))
                 })?;
                 let win_r = window_by_index[idx + 1].ok_or_else(|| {
-                    CoreError::InvalidState(format!("missing window for lambda {lambda_next}"))
+                    CoreError::InvalidState(format!("missing window for state {}", idx + 1))
                 })?;
                 let w_f = work_values(win_f, idx, idx + 1)?;
                 let w_r = work_values(win_r, idx, idx + 1)?
@@ -220,7 +215,7 @@ impl BarEstimator {
             d_deltas.push(d_delta);
         }
 
-        let n_states = lambdas.len();
+        let n_states = eval_states.len();
         let mut adelta = vec![0.0; n_states * n_states];
         let mut ad_delta = vec![f64::NAN; n_states * n_states];
 
@@ -256,7 +251,7 @@ impl BarEstimator {
             }
         }
 
-        DeltaFMatrix::new(adelta, Some(ad_delta), n_states, eval_states)
+        DeltaFMatrix::new_with_labels(adelta, Some(ad_delta), n_states, eval_states, lambda_labels)
     }
 }
 
@@ -298,7 +293,7 @@ impl MbarEstimator {
                 found: 0,
             });
         }
-        let (u_kn, n_k, states) = combine_windows(windows)?;
+        let (u_kn, n_k, states, lambda_labels) = combine_windows(windows)?;
         let mut f_k = initial_f_k(&self.options, states.len())?;
 
         mbar_solve(
@@ -321,7 +316,7 @@ impl MbarEstimator {
         } else {
             None
         };
-        DeltaFMatrix::new(values, uncertainties, n_states, states)
+        DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
     }
 }
 
@@ -335,7 +330,7 @@ pub fn mbar_log_weights_from_windows(
             found: 0,
         });
     }
-    let (u_kn, n_k, states) = combine_windows(windows)?;
+    let (u_kn, n_k, states, _lambda_labels) = combine_windows(windows)?;
     let mut f_k = initial_f_k(options, states.len())?;
     mbar_solve(
         &u_kn,
@@ -366,11 +361,6 @@ fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
     let first = windows[0].evaluated_states();
     let first_temperature = first[0].temperature_k();
     for state in first {
-        if state.lambdas().len() != 1 {
-            return Err(CoreError::Unsupported(
-                "estimators require one-dimensional lambda states".to_string(),
-            ));
-        }
         if (state.temperature_k() - first_temperature).abs() > 1e-6 {
             return Err(CoreError::InvalidState(
                 "evaluated_states temperatures differ within a window".to_string(),
@@ -392,17 +382,12 @@ fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
                     found: b.lambdas().len(),
                 });
             }
-            if a.lambdas().len() != 1 {
-                return Err(CoreError::Unsupported(
-                    "estimators require one-dimensional lambda states".to_string(),
-                ));
-            }
             if (a.temperature_k() - b.temperature_k()).abs() > 1e-6 {
                 return Err(CoreError::InvalidState(
                     "evaluated_states temperatures differ between windows".to_string(),
                 ));
             }
-            if (a.lambdas()[0] - b.lambdas()[0]).abs() > 1e-6 {
+            if !states_match(a, b) {
                 return Err(CoreError::InvalidState(
                     "evaluated_states differ between windows".to_string(),
                 ));
@@ -413,20 +398,18 @@ fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
         let sampled = window.sampled_state().ok_or_else(|| {
             CoreError::InvalidState("sampled_state required for estimator".to_string())
         })?;
-        if sampled.lambdas().len() != 1 {
-            return Err(CoreError::Unsupported(
-                "estimators require one-dimensional lambda states".to_string(),
-            ));
+        if sampled.lambdas().len() != first[0].lambdas().len() {
+            return Err(CoreError::InvalidShape {
+                expected: first[0].lambdas().len(),
+                found: sampled.lambdas().len(),
+            });
         }
         if (sampled.temperature_k() - first_temperature).abs() > 1e-6 {
             return Err(CoreError::InvalidState(
                 "sampled_state temperature differs from evaluated_states".to_string(),
             ));
         }
-        if !first
-            .iter()
-            .any(|state| (state.lambdas()[0] - sampled.lambdas()[0]).abs() < 1e-6)
-        {
+        if find_state_index(first, sampled).is_err() {
             return Err(CoreError::InvalidState(
                 "sampled_state not found in evaluated_states".to_string(),
             ));
@@ -435,9 +418,36 @@ fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
     Ok(first.to_vec())
 }
 
-fn find_lambda_index(lambdas: &[f64], target: f64) -> Result<usize> {
-    for (idx, value) in lambdas.iter().enumerate() {
-        if (*value - target).abs() < 1e-6 {
+fn ensure_consistent_lambda_labels(windows: &[UNkMatrix]) -> Result<Option<Vec<String>>> {
+    let first = windows[0].lambda_labels().map(|labels| labels.to_vec());
+    for window in windows.iter().skip(1) {
+        match (&first, window.lambda_labels()) {
+            (None, None) => {}
+            (Some(expected), Some(found)) if expected == found => {}
+            _ => {
+                return Err(CoreError::InvalidState(
+                    "lambda_labels differ between windows".to_string(),
+                ))
+            }
+        }
+    }
+    Ok(first)
+}
+
+fn states_match(a: &StatePoint, b: &StatePoint) -> bool {
+    a.lambdas().len() == b.lambdas().len()
+        && a
+            .lambdas()
+            .iter()
+            .zip(b.lambdas().iter())
+            .all(|(left, right)| (*left - *right).abs() < 1e-6)
+}
+
+fn find_state_index(states: &[StatePoint], target: &StatePoint) -> Result<usize> {
+    for (idx, state) in states.iter().enumerate() {
+        if states_match(state, target)
+            && (state.temperature_k() - target.temperature_k()).abs() < 1e-6
+        {
             return Ok(idx);
         }
     }
@@ -511,14 +521,13 @@ impl ExpEstimator {
         }
         let states = ensure_consistent_states(windows)?;
         let n_states = states.len();
-        let lambdas: Vec<f64> = states.iter().map(|s| s.lambdas()[0]).collect();
         let mut window_map: Vec<Option<&UNkMatrix>> = vec![None; n_states];
 
         for window in windows {
             let sampled = window.sampled_state().ok_or_else(|| {
                 CoreError::InvalidState("sampled_state required for EXP".to_string())
             })?;
-            let idx = find_lambda_index(&lambdas, sampled.lambdas()[0])?;
+            let idx = find_state_index(&states, sampled)?;
             if window_map[idx].is_some() {
                 return Err(CoreError::InvalidState(
                     "multiple windows for same sampled_state".to_string(),
@@ -586,25 +595,24 @@ impl ExpEstimator {
             }
         }
 
-        DeltaFMatrix::new(values, uncertainties, n_states, states)
+        let lambda_labels = ensure_consistent_lambda_labels(windows)?;
+        DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
     }
 }
 
 fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
     let states = ensure_consistent_states(windows)?;
+    let lambda_labels = ensure_consistent_lambda_labels(windows)?;
     let n_states = states.len();
     let mut n_k = vec![0.0; n_states];
     let mut offsets = Vec::with_capacity(windows.len());
     let mut total_samples = 0usize;
 
-    let lambdas: Vec<f64> = states.iter().map(|s| s.lambdas()[0]).collect();
-
     for window in windows {
         let sampled = window.sampled_state().ok_or_else(|| {
             CoreError::InvalidState("sampled_state required for MBAR".to_string())
         })?;
-        let lambda = sampled.lambdas()[0];
-        let idx = find_lambda_index(&lambdas, lambda)?;
+        let idx = find_state_index(&states, sampled)?;
         n_k[idx] += window.n_samples() as f64;
         offsets.push(total_samples);
         total_samples += window.n_samples();
@@ -625,7 +633,7 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
 
     validate_mbar_input(&u_kn)?;
 
-    Ok((u_kn, n_k, states))
+    Ok((u_kn, n_k, states, lambda_labels))
 }
 
 fn mbar_solve(
@@ -1147,8 +1155,8 @@ fn validate_mbar_input(u_kn: &[Vec<f64>]) -> Result<()> {
 fn extract_lambda(state: &StatePoint) -> Result<f64> {
     let lambdas = state.lambdas();
     if lambdas.len() != 1 {
-        return Err(CoreError::InvalidState(
-            "TI requires exactly one lambda dimension".to_string(),
+        return Err(CoreError::Unsupported(
+            "estimators require one-dimensional lambda states".to_string(),
         ));
     }
     Ok(lambdas[0])
@@ -1305,6 +1313,48 @@ mod tests {
         vec![
             UNkMatrix::new(3, 2, data0, time.clone(), Some(s0), states.clone()).unwrap(),
             UNkMatrix::new(3, 2, data1, time, Some(s1), states).unwrap(),
+        ]
+    }
+
+    fn make_multidimensional_windows() -> Vec<UNkMatrix> {
+        let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
+        let states = vec![s0.clone(), s1.clone()];
+        let labels = Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]);
+
+        let data0 = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
+        let data1 = vec![0.1, 0.0, 0.2, 0.1, 0.3, 0.2];
+        let time = vec![0.0, 1.0, 2.0];
+
+        vec![
+            UNkMatrix::new_with_labels(
+                3,
+                2,
+                data0,
+                time.clone(),
+                Some(s0),
+                states.clone(),
+                labels.clone(),
+            )
+            .unwrap(),
+            UNkMatrix::new_with_labels(3, 2, data1, time, Some(s1), states, labels).unwrap(),
+        ]
+    }
+
+    fn make_multidimensional_dhdl_series() -> Vec<DhdlSeries> {
+        vec![
+            DhdlSeries::new(
+                StatePoint::new(vec![0.0, 0.0], 300.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![1.0, 1.1, 1.2],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![1.0, 0.0], 300.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![2.0, 2.1, 2.2],
+            )
+            .unwrap(),
         ]
     }
 
@@ -1517,8 +1567,49 @@ mod tests {
 
         let err = BarEstimator::default().fit(&windows).unwrap_err();
         assert!(
-            matches!(err, CoreError::InvalidState(message) if message == "multiple windows for sampled_state lambda 0")
+            matches!(err, CoreError::InvalidState(message) if message == "multiple windows for same sampled_state")
         );
+    }
+
+    #[test]
+    fn ti_rejects_multidimensional_lambda_states() {
+        let err = TiEstimator::default()
+            .fit(&make_multidimensional_dhdl_series())
+            .unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(message) if message == "estimators require one-dimensional lambda states"));
+    }
+
+    #[test]
+    fn mbar_supports_multidimensional_lambda_states() {
+        let result = MbarEstimator::default()
+            .fit(&make_multidimensional_windows())
+            .unwrap();
+        assert_eq!(result.n_states(), 2);
+        assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+    }
+
+    #[test]
+    fn exp_supports_multidimensional_lambda_states() {
+        let result = ExpEstimator::default()
+            .fit(&make_multidimensional_windows())
+            .unwrap();
+        assert_eq!(result.n_states(), 2);
+        assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+    }
+
+    #[test]
+    fn bar_supports_multidimensional_lambda_states() {
+        let result = BarEstimator::default()
+            .fit(&make_multidimensional_windows())
+            .unwrap();
+        assert_eq!(result.n_states(), 2);
+        assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
     }
 
     #[test]

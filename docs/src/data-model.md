@@ -14,7 +14,13 @@ Validation rules:
 - temperature must be finite and positive
 - every lambda value must be finite
 
-Current estimators require one-dimensional lambda states. The type itself can store multiple lambda dimensions, but the estimator layer currently rejects multidimensional states.
+The type itself can store multiple lambda dimensions.
+
+Current estimator support is split:
+
+- `UNkMatrix`-based library estimators support multidimensional lambda states when windows share the same evaluated-state grid.
+- `DhdlSeries`-based TI remains one-dimensional.
+- The CLI supports multidimensional `u_nk` estimator inputs and renders multidimensional endpoints as lambda vectors.
 
 ## `DhdlSeries`
 
@@ -45,6 +51,7 @@ Conceptually:
 - columns are evaluated states
 - `sampled_state` identifies the state the trajectory was sampled from
 - `evaluated_states` identifies the column states
+- `lambda_labels`, when present, name the lambda-vector components in order
 
 Validation rules:
 

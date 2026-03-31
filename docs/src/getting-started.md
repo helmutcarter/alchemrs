@@ -3,8 +3,7 @@
 ## Prerequisites
 
 - Rust 1.85 or newer
-- AMBER output files 
-    - Currently, the parser only support AMBER output files. More are coming. 
+- AMBER output files or GROMACS `dhdl.xvg` files
 
 The repository is a normal Cargo package and can be built and tested with standard Rust tooling.
 

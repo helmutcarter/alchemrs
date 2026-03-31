@@ -63,15 +63,15 @@ fn run(
     } else {
         n_states - 1
     };
-    let (from_lambda, to_lambda) = if reverse {
+    let (from_state, to_state) = if reverse {
         (
-            result.states().last().unwrap().lambdas()[0],
-            result.states().first().unwrap().lambdas()[0],
+            result.states().last().unwrap().lambdas().to_vec(),
+            result.states().first().unwrap().lambdas().to_vec(),
         )
     } else {
         (
-            result.states().first().unwrap().lambdas()[0],
-            result.states().last().unwrap().lambdas()[0],
+            result.states().first().unwrap().lambdas().to_vec(),
+            result.states().last().unwrap().lambdas().to_vec(),
         )
     };
 
@@ -79,8 +79,8 @@ fn run(
         &ScalarResult {
             delta: result.values()[delta_index],
             sigma: result.uncertainties().map(|u| u[delta_index]),
-            from_lambda,
-            to_lambda,
+            from_state,
+            to_state,
             units: run_options.output_units,
             temperature: input_options.temperature,
             overlap,
@@ -93,6 +93,9 @@ fn run(
                 conservative: input_options.effective_conservative(),
                 nskip: input_options.nskip,
                 u_nk_observable: input_options.u_nk_observable_name(),
+                lambda_components: windows
+                    .first()
+                    .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             },
             sample_counts: loaded.sample_counts,
         },

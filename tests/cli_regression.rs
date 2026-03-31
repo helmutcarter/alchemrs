@@ -752,6 +752,108 @@ fn mbar_cli_reports_nonfinite_de_observable_error() {
     fs::remove_file(&input_path).expect("remove temporary AMBER input");
 }
 
+#[test]
+fn mbar_cli_outputs_multidimensional_gromacs_json_with_lambda_components() {
+    let inputs = gromacs_lambda15_input();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--temperature",
+            "298",
+            "--u-nk-observable",
+            "all",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let from_lambda = payload["from_lambda"].as_array().expect("from_lambda array");
+    let to_lambda = payload["to_lambda"].as_array().expect("to_lambda array");
+    assert_eq!(from_lambda.len(), 5);
+    assert_eq!(to_lambda.len(), 5);
+    assert_close(from_lambda[0].as_f64().expect("from[0]"), 0.0);
+    assert_close(from_lambda[1].as_f64().expect("from[1]"), 0.0);
+    assert_close(from_lambda[2].as_f64().expect("from[2]"), 0.7);
+    assert_close(from_lambda[3].as_f64().expect("from[3]"), 0.0);
+    assert_close(from_lambda[4].as_f64().expect("from[4]"), 0.0);
+    assert_close(to_lambda[0].as_f64().expect("to[0]"), 0.0);
+    assert_close(to_lambda[1].as_f64().expect("to[1]"), 0.0);
+    assert_close(to_lambda[2].as_f64().expect("to[2]"), 0.9);
+    assert_close(to_lambda[3].as_f64().expect("to[3]"), 0.0);
+    assert_close(to_lambda[4].as_f64().expect("to[4]"), 0.0);
+    assert_eq!(
+        payload["provenance"]["lambda_components"]
+            .as_array()
+            .expect("lambda_components"),
+        &vec![
+            Value::from("mass-lambda"),
+            Value::from("coul-lambda"),
+            Value::from("vdw-lambda"),
+            Value::from("bonded-lambda"),
+            Value::from("restraint-lambda"),
+        ]
+    );
+    assert_eq!(
+        payload["provenance"]["u_nk_observable"].as_str(),
+        Some("all")
+    );
+    assert_eq!(payload["provenance"]["windows"].as_u64(), Some(1));
+    assert_eq!(payload["provenance"]["samples_kept"].as_u64(), Some(50_001));
+}
+
+#[test]
+fn mbar_cli_outputs_multidimensional_gromacs_text_with_lambda_components() {
+    let inputs = gromacs_lambda15_input();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--temperature",
+            "298",
+            "--u-nk-observable",
+            "all",
+            "--output-format",
+            "text",
+        ],
+        &inputs,
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+
+    assert!(stdout.contains("from_lambda: [0, 0, 0.7, 0, 0]"));
+    assert!(stdout.contains("to_lambda: [0, 0, 0.9, 0, 0]"));
+    assert!(stdout.contains(
+        "lambda_components: mass-lambda, coul-lambda, vdw-lambda, bonded-lambda, restraint-lambda"
+    ));
+    assert!(stdout.contains("u_nk_observable: all"));
+}
+
+#[test]
+fn mbar_cli_outputs_multidimensional_gromacs_csv_with_lambda_components() {
+    let inputs = gromacs_lambda15_input();
+    let output = run_cli(
+        &[
+            "mbar",
+            "--temperature",
+            "298",
+            "--u-nk-observable",
+            "epot",
+            "--output-format",
+            "csv",
+        ],
+        &inputs,
+    );
+    let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
+
+    assert!(stdout.contains("lambda_components"));
+    assert!(stdout.contains("\"[0;0;0.7;0;0]\""));
+    assert!(stdout.contains("\"[0;0;0.9;0;0]\""));
+    assert!(stdout.contains(
+        "\"[mass-lambda;coul-lambda;vdw-lambda;bonded-lambda;restraint-lambda]\""
+    ));
+    assert!(stdout.contains(",epot,"));
+}
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
@@ -768,6 +870,10 @@ fn acetamide_inputs() -> Vec<PathBuf> {
     .into_iter()
     .map(|lambda| base.join(lambda).join("acetamide.prod.out"))
     .collect()
+}
+
+fn gromacs_lambda15_input() -> Vec<PathBuf> {
+    vec![repo_root().join("fixtures").join("gromacs").join("lambda15.dhdl.xvg")]
 }
 
 fn run_cli(args: &[&str], inputs: &[PathBuf]) -> Output {

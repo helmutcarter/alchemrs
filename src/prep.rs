@@ -90,13 +90,14 @@ pub fn decorrelate_u_nk(
 
     let (time, data) = apply_indices_u_nk(&time, &data, u_nk.n_states(), &indices);
 
-    UNkMatrix::new(
+    UNkMatrix::new_with_labels(
         indices.len(),
         u_nk.n_states(),
         data,
         time,
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
+        u_nk.lambda_labels().map(|labels| labels.to_vec()),
     )
 }
 
@@ -118,13 +119,14 @@ pub fn decorrelate_u_nk_with_observable(
     let indices = subsample_indices(&observable, options)?;
     let (time, data) = apply_indices_u_nk(&time, &data, u_nk.n_states(), &indices);
 
-    UNkMatrix::new(
+    UNkMatrix::new_with_labels(
         indices.len(),
         u_nk.n_states(),
         data,
         time,
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
+        u_nk.lambda_labels().map(|labels| labels.to_vec()),
     )
 }
 
@@ -394,6 +396,16 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
             let sampled = u_nk.sampled_state().ok_or_else(|| {
                 CoreError::InvalidState("sampled_state must be set for dE".to_string())
             })?;
+            if sampled.lambdas().len() != 1
+                || u_nk
+                    .evaluated_states()
+                    .iter()
+                    .any(|state| state.lambdas().len() != 1)
+            {
+                return Err(CoreError::Unsupported(
+                    "DE u_nk preprocessing requires one-dimensional lambda states".to_string(),
+                ));
+            }
             let sampled_lambda = sampled.lambdas()[0];
             let index = find_state_index(u_nk.evaluated_states(), sampled_lambda)?;
             let other_index = if index + 1 < n_states {
@@ -712,6 +724,25 @@ mod tests {
         assert_eq!(best.t0, 4);
         assert_eq!(best.g, 2.0);
         assert_eq!(best.neff_max, 3.0);
+    }
+
+    #[test]
+    fn decorrelate_u_nk_de_rejects_multidimensional_states() {
+        let sampled = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
+        let neighbor = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
+        let u_nk = UNkMatrix::new(
+            2,
+            2,
+            vec![0.0, 1.0, 0.0, 2.0],
+            vec![0.0, 1.0],
+            Some(sampled.clone()),
+            vec![sampled, neighbor],
+        )
+        .unwrap();
+
+        let err = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
+            .unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(message) if message == "DE u_nk preprocessing requires one-dimensional lambda states"));
     }
 
     #[test]

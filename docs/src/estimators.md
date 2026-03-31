@@ -6,10 +6,11 @@ Estimator implementations live in the `alchemrs::estimators` module.
 
 For `UNkMatrix`-based estimators, the current implementation assumes:
 
-- one-dimensional lambda states
+- consistent lambda-vector dimensionality across windows
 - consistent evaluated-state grids across windows
 - `sampled_state` is set and present in `evaluated_states`
 - state temperatures are consistent across all windows
+- `lambda_labels`, when present, are consistent across windows
 
 If those invariants are violated, the estimators fail early.
 
@@ -53,6 +54,7 @@ Behavior:
 - expects windows mapped to sampled states on one evaluated-state grid
 - computes work values between adjacent states
 - fills a full pairwise `DeltaFMatrix`
+- preserves `lambda_labels()` from the input windows when available
 
 Important limitation:
 
@@ -85,6 +87,7 @@ Behavior:
 - combines windows into a shared reduced-energy representation
 - solves for free energies iteratively
 - returns a full `DeltaFMatrix`
+- preserves `lambda_labels()` from the input windows when available
 
 The analysis crate uses MBAR-derived log weights to compute overlap diagnostics.
 
@@ -103,6 +106,7 @@ Behavior:
 
 - computes exponential averaging from each sampled-state window to all evaluated states
 - returns a full pairwise `DeltaFMatrix`
+- preserves `lambda_labels()` from the input windows when available
 
 CLI direction conventions:
 

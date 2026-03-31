@@ -59,10 +59,24 @@ fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     let result = estimator.fit(windows)?;
     let delta_index = result.n_states() - 1;
     println!("MBAR dG = {:.6}", result.values()[delta_index]);
+    if let Some(labels) = result.lambda_labels() {
+        println!("lambda components = {:?}", labels);
+    }
 
     let overlap = overlap_matrix(windows, Some(MbarOptions::default()))?;
     println!("overlap = {:.6}", overlap_scalar(&overlap)?);
+    if let Some(labels) = overlap.lambda_labels() {
+        println!("overlap components = {:?}", labels);
+    }
     Ok(())
+}
+```
+
+For GROMACS multidimensional schedules, parser-derived component names are available from the parsed windows too:
+
+```rust
+if let Some(labels) = windows[0].lambda_labels() {
+    println!("window components = {:?}", labels);
 }
 ```
 

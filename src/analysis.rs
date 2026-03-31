@@ -8,6 +8,9 @@ pub fn overlap_matrix(
     options: Option<MbarOptions>,
 ) -> Result<OverlapMatrix> {
     let options = options.unwrap_or_default();
+    let lambda_labels = windows
+        .first()
+        .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec()));
     let (log_w, n_k, states) = mbar_log_weights_from_windows(windows, &options)?;
     let n_states = states.len();
     if log_w.len() % n_states != 0 {
@@ -40,7 +43,7 @@ pub fn overlap_matrix(
         }
     }
 
-    OverlapMatrix::new(values, n_states, states)
+    OverlapMatrix::new_with_labels(values, n_states, states, lambda_labels)
 }
 
 pub fn overlap_eigenvalues(overlap: &OverlapMatrix) -> Result<Vec<f64>> {

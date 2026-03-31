@@ -28,8 +28,8 @@ pub fn run(
         &ScalarResult {
             delta: result.delta_f(),
             sigma: result.uncertainty(),
-            from_lambda: result.from_state().lambdas()[0],
-            to_lambda: result.to_state().lambdas()[0],
+            from_state: result.from_state().lambdas().to_vec(),
+            to_state: result.to_state().lambdas().to_vec(),
             units: output_units,
             temperature: input_options.temperature,
             overlap: None,
@@ -42,6 +42,7 @@ pub fn run(
                 conservative: input_options.effective_conservative(),
                 nskip: input_options.nskip,
                 u_nk_observable: input_options.u_nk_observable_name(),
+                lambda_components: None,
             },
             sample_counts: loaded.sample_counts,
         },

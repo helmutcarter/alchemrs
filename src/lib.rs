@@ -2,7 +2,7 @@
 //!
 //! The crate provides:
 //!
-//! - AMBER parsers for `dH/dlambda` and `u_nk` data
+//! - AMBER and GROMACS parsers for `dH/dlambda` and `u_nk` data
 //! - preprocessing utilities for burn-in removal, equilibration detection, and decorrelation
 //! - estimators including TI, BAR, MBAR, EXP, and DEXP
 //! - overlap diagnostics built on top of MBAR weights
@@ -25,6 +25,9 @@
 //! let result = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
 //!
 //! println!("delta_f = {}", result.values()[result.n_states() - 1]);
+//! if let Some(labels) = result.lambda_labels() {
+//!     println!("lambda components = {:?}", labels);
+//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -44,7 +47,7 @@ pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
 pub use estimators::{ExpEstimator, ExpOptions, MbarEstimator, MbarOptions};
 pub use estimators::{IntegrationMethod, TiEstimator, TiOptions};
-pub use parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 pub use prep::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,

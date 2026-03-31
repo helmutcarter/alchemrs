@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 use alchemrs::{
+    extract_dhdl, extract_u_nk, extract_u_nk_with_potential,
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
     DecorrelationOptions, DhdlSeries, UNkMatrix, UNkSeriesMethod,
@@ -84,6 +84,22 @@ impl AnalysisInputOptions {
     }
 }
 
+fn map_cli_dhdl_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::Error> {
+    let message = error.to_string();
+    if message.contains("scalar dH/dlambda parsing is unsupported") {
+        return "multidimensional GROMACS dH/dlambda inputs are not supported by the CLI yet; use u_nk-based workflows or provide a one-dimensional schedule".into();
+    }
+    error
+}
+
+fn map_cli_u_nk_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::Error> {
+    let message = error.to_string();
+    if message == "DE u_nk preprocessing requires one-dimensional lambda states" {
+        return "the CLI `de` observable is only supported for one-dimensional lambda schedules; use `--u-nk-observable all` or `epot`, or analyze a one-dimensional schedule".into();
+    }
+    error
+}
+
 pub fn load_windows(
     inputs: Vec<PathBuf>,
     options: AnalysisInputOptions,
@@ -99,8 +115,8 @@ pub fn load_windows(
                 .ok_or("u_nk observable is required for u_nk estimators")?;
             let u_nk = match observable {
                 UNkObservable::Epot => {
-                    let (mut u_nk, potential) =
-                        extract_u_nk_with_potential(&path, options.temperature)?;
+                    let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)
+                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
                     let mut potential = potential;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
@@ -110,7 +126,8 @@ pub fn load_windows(
                             &potential,
                             options.effective_fast(),
                             options.nskip,
-                        )?;
+                        )
+                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
                         u_nk = trim_u_nk(u_nk, equilibration.t0)?;
                         potential = trim_values(potential, equilibration.t0)?;
                     }
@@ -120,7 +137,8 @@ pub fn load_windows(
                             &u_nk,
                             &potential,
                             &options.decorrelation_options(),
-                        )?;
+                        )
+                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
                     }
                     u_nk
                 }
@@ -130,7 +148,8 @@ pub fn load_windows(
                         UNkObservable::All => UNkSeriesMethod::All,
                         UNkObservable::Epot => unreachable!(),
                     };
-                    let mut u_nk = extract_u_nk(&path, options.temperature)?;
+                    let mut u_nk = extract_u_nk(&path, options.temperature)
+                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
                     if options.auto_equilibrate {
@@ -138,12 +157,14 @@ pub fn load_windows(
                             &u_nk,
                             method,
                             &options.equilibration_options(),
-                        )?;
+                        )
+                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
                         u_nk = trim_u_nk(u_nk, equilibration.t0)?;
                     }
                     samples_after_burnin += u_nk.n_samples();
                     if options.decorrelate {
-                        u_nk = decorrelate_u_nk(&u_nk, method, &options.decorrelation_options())?;
+                        u_nk = decorrelate_u_nk(&u_nk, method, &options.decorrelation_options())
+                            .map_err(|err| map_cli_u_nk_error(err.into()))?;
                     }
                     u_nk
                 }
@@ -152,7 +173,8 @@ pub fn load_windows(
             windows.push(u_nk);
             continue;
         }
-        let mut u_nk = extract_u_nk(path, options.temperature)?;
+        let mut u_nk = extract_u_nk(path, options.temperature)
+            .map_err(|err| map_cli_u_nk_error(err.into()))?;
         samples_in += u_nk.n_samples();
         u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
         samples_after_burnin += u_nk.n_samples();
@@ -179,7 +201,8 @@ pub fn load_dhdl_series(
     let mut samples_after_burnin = 0;
     let mut samples_kept = 0;
     for path in inputs {
-        let mut dhdl = extract_dhdl(path, options.temperature)?;
+        let mut dhdl = extract_dhdl(path, options.temperature)
+            .map_err(|err| map_cli_dhdl_error(err.into()))?;
         samples_in += dhdl.values().len();
         dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
         if options.auto_equilibrate {
@@ -217,13 +240,14 @@ fn trim_u_nk(u_nk: UNkMatrix, remove_burnin: usize) -> CliResult<UNkMatrix> {
     let n_states = u_nk.n_states();
     let data = u_nk.data()[(remove_burnin * n_states)..].to_vec();
     let time = u_nk.time_ps()[remove_burnin..].to_vec();
-    Ok(UNkMatrix::new(
+    Ok(UNkMatrix::new_with_labels(
         n_samples - remove_burnin,
         n_states,
         data,
         time,
         u_nk.sampled_state().cloned(),
         u_nk.evaluated_states().to_vec(),
+        u_nk.lambda_labels().map(|labels| labels.to_vec()),
     )?)
 }
 
@@ -256,9 +280,74 @@ fn trim_values(values: Vec<f64>, remove_burnin: usize) -> CliResult<Vec<f64>> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::cli::UNkObservable;
 
-    use super::AnalysisInputOptions;
+    use super::{load_dhdl_series, load_windows, AnalysisInputOptions};
+
+    #[test]
+    fn load_windows_accepts_multidimensional_gromacs_states_for_cli_estimators() {
+        let base = env!("CARGO_MANIFEST_DIR");
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda15.dhdl.xvg"));
+        let loaded = load_windows(
+            vec![path],
+            AnalysisInputOptions {
+                temperature: 298.0,
+                decorrelate: false,
+                remove_burnin: 0,
+                auto_equilibrate: false,
+                fast: false,
+                conservative: true,
+                nskip: 1,
+                u_nk_observable: Some(UNkObservable::All),
+            },
+        )
+        .expect("expected multidimensional CLI u_nk load to succeed");
+
+        assert_eq!(loaded.windows.len(), 1);
+        assert_eq!(
+            loaded.windows[0].sampled_state().unwrap().lambdas(),
+            &[0.0, 0.0, 0.8, 0.0, 0.0]
+        );
+        assert_eq!(
+            loaded.windows[0].lambda_labels().unwrap(),
+            &[
+                "mass-lambda",
+                "coul-lambda",
+                "vdw-lambda",
+                "bonded-lambda",
+                "restraint-lambda",
+            ]
+        );
+    }
+
+    #[test]
+    fn load_dhdl_series_reports_multidimensional_gromacs_ti_limit() {
+        let base = env!("CARGO_MANIFEST_DIR");
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda15.dhdl.xvg"));
+        let err = match load_dhdl_series(
+            vec![path],
+            AnalysisInputOptions {
+                temperature: 298.0,
+                decorrelate: false,
+                remove_burnin: 0,
+                auto_equilibrate: false,
+                fast: false,
+                conservative: true,
+                nskip: 1,
+                u_nk_observable: None,
+            },
+        ) {
+            Ok(_) => panic!("expected multidimensional CLI dH/dlambda load to fail"),
+            Err(err) => err,
+        };
+
+        assert_eq!(
+            err.to_string(),
+            "multidimensional GROMACS dH/dlambda inputs are not supported by the CLI yet; use u_nk-based workflows or provide a one-dimensional schedule"
+        );
+    }
 
     #[test]
     fn auto_equilibrate_overrides_decorrelation_flags() {
