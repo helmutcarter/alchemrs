@@ -402,9 +402,9 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
                     .iter()
                     .any(|state| state.lambdas().len() != 1)
             {
-                return Err(CoreError::Unsupported(
-                    "DE u_nk preprocessing requires one-dimensional lambda states".to_string(),
-                ));
+                return Err(CoreError::RequiresOneDimensionalLambda {
+                    operation: "DE u_nk preprocessing",
+                });
             }
             let sampled_lambda = sampled.lambdas()[0];
             let index = find_state_index(u_nk.evaluated_states(), sampled_lambda)?;
@@ -742,7 +742,12 @@ mod tests {
 
         let err = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
             .unwrap_err();
-        assert!(matches!(err, CoreError::Unsupported(message) if message == "DE u_nk preprocessing requires one-dimensional lambda states"));
+        assert!(matches!(
+            err,
+            CoreError::RequiresOneDimensionalLambda {
+                operation: "DE u_nk preprocessing"
+            }
+        ));
     }
 
     #[test]

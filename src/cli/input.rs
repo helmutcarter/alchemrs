@@ -1,11 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use alchemrs::{
+    CoreError,
     extract_dhdl, extract_u_nk, extract_u_nk_with_potential,
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
     DecorrelationOptions, DhdlSeries, UNkMatrix, UNkSeriesMethod,
 };
+use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, GromacsParseError};
+use thiserror::Error;
 
 use crate::cli::UNkObservable;
 use crate::CliResult;
@@ -84,20 +87,41 @@ impl AnalysisInputOptions {
     }
 }
 
-fn map_cli_dhdl_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::Error> {
-    let message = error.to_string();
-    if message.contains("scalar dH/dlambda parsing is unsupported") {
-        return "multidimensional GROMACS dH/dlambda inputs are not supported by the CLI yet; use u_nk-based workflows or provide a one-dimensional schedule".into();
-    }
-    error
+#[derive(Debug, Error)]
+enum CliInputError {
+    #[error("multidimensional GROMACS dH/dlambda inputs are not supported by the CLI yet; use u_nk-based workflows or provide a one-dimensional schedule")]
+    MultidimensionalGromacsDhdlUnsupported,
+    #[error("the CLI `de` observable is only supported for one-dimensional lambda schedules; use `--u-nk-observable all` or `epot`, or analyze a one-dimensional schedule")]
+    DeObservableRequiresOneDimensionalLambda,
+    #[error(transparent)]
+    Core(#[from] CoreError),
 }
 
-fn map_cli_u_nk_error(error: Box<dyn std::error::Error>) -> Box<dyn std::error::Error> {
-    let message = error.to_string();
-    if message == "DE u_nk preprocessing requires one-dimensional lambda states" {
-        return "the CLI `de` observable is only supported for one-dimensional lambda schedules; use `--u-nk-observable all` or `epot`, or analyze a one-dimensional schedule".into();
+fn map_cli_u_nk_error(error: CoreError) -> CliInputError {
+    match error {
+        CoreError::RequiresOneDimensionalLambda {
+            operation: "DE u_nk preprocessing",
+        } => CliInputError::DeObservableRequiresOneDimensionalLambda,
+        other => CliInputError::Core(other),
     }
-    error
+}
+
+fn extract_cli_dhdl(path: &Path, temperature: f64) -> Result<DhdlSeries, CliInputError> {
+    let is_xvg = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("xvg"));
+
+    if is_xvg {
+        return extract_gromacs_dhdl(path, temperature).map_err(|error| match error {
+            GromacsParseError::MultipleDhdlComponents { .. } => {
+                CliInputError::MultidimensionalGromacsDhdlUnsupported
+            }
+            other => CliInputError::Core(other.into()),
+        });
+    }
+
+    extract_dhdl(path, temperature).map_err(CliInputError::from)
 }
 
 pub fn load_windows(
@@ -116,7 +140,7 @@ pub fn load_windows(
             let u_nk = match observable {
                 UNkObservable::Epot => {
                     let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)
-                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
+                        .map_err(map_cli_u_nk_error)?;
                     let mut potential = potential;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
@@ -127,7 +151,7 @@ pub fn load_windows(
                             options.effective_fast(),
                             options.nskip,
                         )
-                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
+                        .map_err(map_cli_u_nk_error)?;
                         u_nk = trim_u_nk(u_nk, equilibration.t0)?;
                         potential = trim_values(potential, equilibration.t0)?;
                     }
@@ -138,7 +162,7 @@ pub fn load_windows(
                             &potential,
                             &options.decorrelation_options(),
                         )
-                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
+                        .map_err(map_cli_u_nk_error)?;
                     }
                     u_nk
                 }
@@ -149,7 +173,7 @@ pub fn load_windows(
                         UNkObservable::Epot => unreachable!(),
                     };
                     let mut u_nk = extract_u_nk(&path, options.temperature)
-                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
+                        .map_err(map_cli_u_nk_error)?;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
                     if options.auto_equilibrate {
@@ -158,13 +182,13 @@ pub fn load_windows(
                             method,
                             &options.equilibration_options(),
                         )
-                        .map_err(|err| map_cli_u_nk_error(err.into()))?;
+                        .map_err(map_cli_u_nk_error)?;
                         u_nk = trim_u_nk(u_nk, equilibration.t0)?;
                     }
                     samples_after_burnin += u_nk.n_samples();
                     if options.decorrelate {
                         u_nk = decorrelate_u_nk(&u_nk, method, &options.decorrelation_options())
-                            .map_err(|err| map_cli_u_nk_error(err.into()))?;
+                            .map_err(map_cli_u_nk_error)?;
                     }
                     u_nk
                 }
@@ -174,7 +198,7 @@ pub fn load_windows(
             continue;
         }
         let mut u_nk = extract_u_nk(path, options.temperature)
-            .map_err(|err| map_cli_u_nk_error(err.into()))?;
+            .map_err(map_cli_u_nk_error)?;
         samples_in += u_nk.n_samples();
         u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
         samples_after_burnin += u_nk.n_samples();
@@ -201,8 +225,7 @@ pub fn load_dhdl_series(
     let mut samples_after_burnin = 0;
     let mut samples_kept = 0;
     for path in inputs {
-        let mut dhdl = extract_dhdl(path, options.temperature)
-            .map_err(|err| map_cli_dhdl_error(err.into()))?;
+        let mut dhdl = extract_cli_dhdl(&path, options.temperature)?;
         samples_in += dhdl.values().len();
         dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
         if options.auto_equilibrate {

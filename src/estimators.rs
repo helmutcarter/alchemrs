@@ -1196,9 +1196,9 @@ fn validate_mbar_input(u_kn: &[Vec<f64>]) -> Result<()> {
 fn extract_lambda(state: &StatePoint) -> Result<f64> {
     let lambdas = state.lambdas();
     if lambdas.len() != 1 {
-        return Err(CoreError::Unsupported(
-            "estimators require one-dimensional lambda states".to_string(),
-        ));
+        return Err(CoreError::RequiresOneDimensionalLambda {
+            operation: "estimators",
+        });
     }
     Ok(lambdas[0])
 }
@@ -1617,7 +1617,12 @@ mod tests {
         let err = TiEstimator::default()
             .fit(&make_multidimensional_dhdl_series())
             .unwrap_err();
-        assert!(matches!(err, CoreError::Unsupported(message) if message == "estimators require one-dimensional lambda states"));
+        assert!(matches!(
+            err,
+            CoreError::RequiresOneDimensionalLambda {
+                operation: "estimators"
+            }
+        ));
     }
 
     #[test]

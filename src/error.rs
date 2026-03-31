@@ -14,6 +14,8 @@ pub enum CoreError {
     Parse(String),
     #[error("estimator failed to converge")]
     ConvergenceFailure,
+    #[error("{operation} requires one-dimensional lambda states")]
+    RequiresOneDimensionalLambda { operation: &'static str },
     #[error("unsupported input: {0}")]
     Unsupported(String),
 }
