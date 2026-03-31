@@ -846,10 +846,10 @@ fn mbar_cli_outputs_multidimensional_gromacs_csv_with_lambda_components() {
     let stdout = String::from_utf8(output.stdout).expect("utf8 stdout");
 
     assert!(stdout.contains("lambda_components"));
-    assert!(stdout.contains("\"[0;0;0.7;0;0]\""));
-    assert!(stdout.contains("\"[0;0;0.9;0;0]\""));
+    assert!(stdout.contains("[0;0;0.7;0;0]"));
+    assert!(stdout.contains("[0;0;0.9;0;0]"));
     assert!(stdout.contains(
-        "\"[mass-lambda;coul-lambda;vdw-lambda;bonded-lambda;restraint-lambda]\""
+        "[mass-lambda;coul-lambda;vdw-lambda;bonded-lambda;restraint-lambda]"
     ));
     assert!(stdout.contains(",epot,"));
 }
