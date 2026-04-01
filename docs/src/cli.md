@@ -143,11 +143,23 @@ cargo run --release -- advise-schedule \
   path/to/*/prod.out
 ```
 
-This command reports adjacent-edge diagnostics and schedule suggestions instead of a final scalar free-energy estimate.
+This command reports schedule diagnostics and suggestions instead of a final scalar free-energy estimate.
 
-The advisor output includes neighbor-relative overlap/uncertainty context, dominant lambda components for each jump, a priority score for ranking suggestions, and proposal strategies such as focused component splits for multidimensional schedules.
+By default it uses the existing `u_nk` path. To force TI-style `dH/dlambda` spacing diagnostics through the same command, pass `--input-kind dhdl`:
 
-When `--report` is provided, the command also writes a standalone HTML report with a top priority queue, ranked suggestions, edge summaries, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown for multidimensional schedules, including normalized delta bars per component.
+```bash
+cargo run --release -- advise-schedule \
+  --temperature 300 \
+  --input-kind dhdl \
+  --decorrelate \
+  --report ti-schedule-report.html \
+  --output-format json \
+  path/to/*/prod.out
+```
+
+`u_nk` advisor output includes neighbor-relative overlap/uncertainty context, dominant lambda components for each jump, a priority score for ranking suggestions, and proposal strategies such as focused component splits for multidimensional schedules. TI mode emits per-window `mean_dhdl`/SEM/block diagnostics plus per-interval slope, curvature, trapezoid contribution, interval uncertainty, and ranked schedule suggestions.
+
+When `--report` is provided, the command also writes a standalone HTML report. The `u_nk` report includes a top priority queue, ranked suggestions, edge summaries, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown for multidimensional schedules, including normalized delta bars per component. The TI report uses the same overall structure but renders windows and intervals instead of overlap edges.
 
 See [Schedule Advisor](schedule-advisor.md) for the output schema and current heuristics.
 

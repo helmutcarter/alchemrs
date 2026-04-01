@@ -388,6 +388,237 @@ impl ScheduleAdvice {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TiScheduleAdvisorOptions {
+    pub n_blocks: usize,
+    pub block_cv_min: f64,
+    pub curvature_z_min: f64,
+    pub slope_z_min: f64,
+    pub interval_uncertainty_z_min: f64,
+    pub suggest_midpoints: bool,
+}
+
+impl Default for TiScheduleAdvisorOptions {
+    fn default() -> Self {
+        Self {
+            n_blocks: 4,
+            block_cv_min: 0.15,
+            curvature_z_min: 1.5,
+            slope_z_min: 1.5,
+            interval_uncertainty_z_min: 1.5,
+            suggest_midpoints: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TiEdgeSeverity {
+    Healthy,
+    Monitor,
+    AddSampling,
+    AddWindow,
+    AddWindowAndSampling,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TiSuggestionKind {
+    NoChange,
+    ExtendSampling,
+    InsertWindow,
+    InsertWindowAndExtendSampling,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TiWindowDiagnostic {
+    window_index: usize,
+    state: StatePoint,
+    mean_dhdl: f64,
+    sem_dhdl: Option<f64>,
+    block_mean: Option<f64>,
+    block_stddev: Option<f64>,
+    block_cv: Option<f64>,
+    forward_reverse_delta: Option<f64>,
+}
+
+impl TiWindowDiagnostic {
+    pub fn window_index(&self) -> usize {
+        self.window_index
+    }
+
+    pub fn state(&self) -> &StatePoint {
+        &self.state
+    }
+
+    pub fn mean_dhdl(&self) -> f64 {
+        self.mean_dhdl
+    }
+
+    pub fn sem_dhdl(&self) -> Option<f64> {
+        self.sem_dhdl
+    }
+
+    pub fn block_mean(&self) -> Option<f64> {
+        self.block_mean
+    }
+
+    pub fn block_stddev(&self) -> Option<f64> {
+        self.block_stddev
+    }
+
+    pub fn block_cv(&self) -> Option<f64> {
+        self.block_cv
+    }
+
+    pub fn forward_reverse_delta(&self) -> Option<f64> {
+        self.forward_reverse_delta
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TiIntervalDiagnostic {
+    interval_index: usize,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    delta_lambda: f64,
+    left_mean_dhdl: f64,
+    right_mean_dhdl: f64,
+    trapezoid_contribution: f64,
+    slope: f64,
+    abs_slope: f64,
+    curvature: Option<f64>,
+    interval_uncertainty: Option<f64>,
+    severity: TiEdgeSeverity,
+    priority_score: f64,
+}
+
+impl TiIntervalDiagnostic {
+    pub fn interval_index(&self) -> usize {
+        self.interval_index
+    }
+
+    pub fn from_state(&self) -> &StatePoint {
+        &self.from_state
+    }
+
+    pub fn to_state(&self) -> &StatePoint {
+        &self.to_state
+    }
+
+    pub fn delta_lambda(&self) -> f64 {
+        self.delta_lambda
+    }
+
+    pub fn left_mean_dhdl(&self) -> f64 {
+        self.left_mean_dhdl
+    }
+
+    pub fn right_mean_dhdl(&self) -> f64 {
+        self.right_mean_dhdl
+    }
+
+    pub fn trapezoid_contribution(&self) -> f64 {
+        self.trapezoid_contribution
+    }
+
+    pub fn slope(&self) -> f64 {
+        self.slope
+    }
+
+    pub fn abs_slope(&self) -> f64 {
+        self.abs_slope
+    }
+
+    pub fn curvature(&self) -> Option<f64> {
+        self.curvature
+    }
+
+    pub fn interval_uncertainty(&self) -> Option<f64> {
+        self.interval_uncertainty
+    }
+
+    pub fn severity(&self) -> TiEdgeSeverity {
+        self.severity
+    }
+
+    pub fn priority_score(&self) -> f64 {
+        self.priority_score
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TiScheduleSuggestion {
+    kind: TiSuggestionKind,
+    interval_index: usize,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    proposed_state: Option<StatePoint>,
+    priority_score: f64,
+    reason: String,
+}
+
+impl TiScheduleSuggestion {
+    pub fn kind(&self) -> TiSuggestionKind {
+        self.kind
+    }
+
+    pub fn interval_index(&self) -> usize {
+        self.interval_index
+    }
+
+    pub fn from_state(&self) -> &StatePoint {
+        &self.from_state
+    }
+
+    pub fn to_state(&self) -> &StatePoint {
+        &self.to_state
+    }
+
+    pub fn proposed_state(&self) -> Option<&StatePoint> {
+        self.proposed_state.as_ref()
+    }
+
+    pub fn priority_score(&self) -> f64 {
+        self.priority_score
+    }
+
+    pub fn reason(&self) -> &str {
+        &self.reason
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TiScheduleAdvice {
+    windows: Vec<TiWindowDiagnostic>,
+    intervals: Vec<TiIntervalDiagnostic>,
+    suggestions: Vec<TiScheduleSuggestion>,
+}
+
+impl TiScheduleAdvice {
+    pub fn new(
+        windows: Vec<TiWindowDiagnostic>,
+        intervals: Vec<TiIntervalDiagnostic>,
+        suggestions: Vec<TiScheduleSuggestion>,
+    ) -> Self {
+        Self {
+            windows,
+            intervals,
+            suggestions,
+        }
+    }
+
+    pub fn windows(&self) -> &[TiWindowDiagnostic] {
+        &self.windows
+    }
+
+    pub fn intervals(&self) -> &[TiIntervalDiagnostic] {
+        &self.intervals
+    }
+
+    pub fn suggestions(&self) -> &[TiScheduleSuggestion] {
+        &self.suggestions
+    }
+}
+
 impl BlockEstimate {
     pub fn new(
         block_index: usize,
@@ -779,6 +1010,184 @@ pub fn advise_lambda_schedule(
     Ok(ScheduleAdvice::new(edges, suggestions))
 }
 
+pub fn advise_ti_schedule(
+    series: &[DhdlSeries],
+    options: Option<TiScheduleAdvisorOptions>,
+) -> Result<TiScheduleAdvice> {
+    if series.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: series.len(),
+        });
+    }
+
+    let options = validate_ti_schedule_advisor_options(options.unwrap_or_default())?;
+    let ordered = sort_dhdl_series_by_state(series)?;
+
+    let mut window_means = Vec::with_capacity(ordered.len());
+    let mut window_sems = Vec::with_capacity(ordered.len());
+    let mut block_cvs = Vec::with_capacity(ordered.len());
+    let mut forward_reverse_deltas = Vec::with_capacity(ordered.len());
+    let mut windows = Vec::with_capacity(ordered.len());
+
+    for (window_index, item) in ordered.iter().enumerate() {
+        let mean = mean_dhdl_values(item.values())?;
+        let sem = sem_dhdl_values(item.values());
+        let block_stats = dhdl_block_stats(item, options.n_blocks)?;
+        let forward_reverse_delta = forward_reverse_dhdl_delta(item.values());
+        windows.push(TiWindowDiagnostic {
+            window_index,
+            state: item.state().clone(),
+            mean_dhdl: mean,
+            sem_dhdl: sem,
+            block_mean: block_stats.map(|(block_mean, _, _)| block_mean),
+            block_stddev: block_stats.map(|(_, stddev, _)| stddev),
+            block_cv: block_stats.map(|(_, _, cv)| cv),
+            forward_reverse_delta,
+        });
+        window_means.push(mean);
+        window_sems.push(sem);
+        block_cvs.push(block_stats.map(|(_, _, cv)| cv));
+        forward_reverse_deltas.push(forward_reverse_delta);
+    }
+
+    let lambdas = ordered
+        .iter()
+        .map(|item| extract_scalar_lambda(item.state(), "TI schedule advisor"))
+        .collect::<Result<Vec<_>>>()?;
+
+    let slopes = (0..(ordered.len() - 1))
+        .map(|index| {
+            let delta_lambda = lambdas[index + 1] - lambdas[index];
+            if delta_lambda <= 0.0 {
+                return Err(CoreError::InvalidState(
+                    "TI schedule advisor requires strictly increasing lambda values".to_string(),
+                ));
+            }
+            Ok((window_means[index + 1] - window_means[index]) / delta_lambda)
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let slope_magnitudes = slopes
+        .iter()
+        .map(|value: &f64| value.abs())
+        .collect::<Vec<_>>();
+    let slope_mean = mean_optionless(&slope_magnitudes);
+    let slope_std = stddev_optionless(&slope_magnitudes, slope_mean);
+
+    let point_curvatures = ti_point_curvatures(&lambdas, &window_means)?;
+    let curvature_abs = point_curvatures
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .collect::<Vec<_>>();
+    let curvature_mean = mean_optionless(&curvature_abs);
+    let curvature_std = stddev_optionless(&curvature_abs, curvature_mean);
+
+    let interval_uncertainties = (0..(ordered.len() - 1))
+        .map(|index| {
+            ti_interval_uncertainty(
+                lambdas[index + 1] - lambdas[index],
+                window_sems[index],
+                window_sems[index + 1],
+            )
+        })
+        .collect::<Vec<_>>();
+    let interval_uncertainty_values = interval_uncertainties
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let uncertainty_mean = mean_optionless(&interval_uncertainty_values);
+    let uncertainty_std = stddev_optionless(&interval_uncertainty_values, uncertainty_mean);
+
+    let mut intervals = Vec::with_capacity(ordered.len() - 1);
+    let mut suggestions = Vec::new();
+    for interval_index in 0..(ordered.len() - 1) {
+        let delta_lambda = lambdas[interval_index + 1] - lambdas[interval_index];
+        let slope = slopes[interval_index];
+        let abs_slope = slope.abs();
+        let curvature = match (
+            point_curvatures[interval_index],
+            point_curvatures[interval_index + 1],
+        ) {
+            (Some(left), Some(right)) => Some(left.abs().max(right.abs())),
+            (Some(value), None) | (None, Some(value)) => Some(value.abs()),
+            (None, None) => None,
+        };
+        let slope_z = z_score(abs_slope, slope_mean, slope_std);
+        let curvature_z = curvature.and_then(|value| z_score(value, curvature_mean, curvature_std));
+        let interval_uncertainty = interval_uncertainties[interval_index];
+        let uncertainty_z = interval_uncertainty
+            .and_then(|value| z_score(value, uncertainty_mean, uncertainty_std));
+        let left_block_cv = block_cvs[interval_index];
+        let right_block_cv = block_cvs[interval_index + 1];
+        let left_reverse = forward_reverse_deltas[interval_index];
+        let right_reverse = forward_reverse_deltas[interval_index + 1];
+        let sampling_issue = left_block_cv.is_some_and(|value| value >= options.block_cv_min)
+            || right_block_cv.is_some_and(|value| value >= options.block_cv_min)
+            || uncertainty_z.is_some_and(|value| value >= options.interval_uncertainty_z_min)
+            || left_reverse
+                .is_some_and(|value| value > window_sems[interval_index].unwrap_or(0.0) * 2.0)
+            || right_reverse
+                .is_some_and(|value| value > window_sems[interval_index + 1].unwrap_or(0.0) * 2.0);
+        let structure_issue = slope_z.is_some_and(|value| value >= options.slope_z_min)
+            || curvature_z.is_some_and(|value| value >= options.curvature_z_min);
+        let severity = match (structure_issue, sampling_issue) {
+            (true, true) => TiEdgeSeverity::AddWindowAndSampling,
+            (true, false) => TiEdgeSeverity::AddWindow,
+            (false, true) => TiEdgeSeverity::AddSampling,
+            (false, false)
+                if slope_z.is_some_and(|value| value >= options.slope_z_min * 0.75)
+                    || curvature_z.is_some_and(|value| value >= options.curvature_z_min * 0.75)
+                    || uncertainty_z.is_some_and(|value| {
+                        value >= options.interval_uncertainty_z_min * 0.75
+                    }) =>
+            {
+                TiEdgeSeverity::Monitor
+            }
+            _ => TiEdgeSeverity::Healthy,
+        };
+        let priority_score = ti_priority_score(
+            slope_z,
+            curvature_z,
+            uncertainty_z,
+            left_block_cv,
+            right_block_cv,
+            options.block_cv_min,
+        );
+        let diagnostic = TiIntervalDiagnostic {
+            interval_index,
+            from_state: ordered[interval_index].state().clone(),
+            to_state: ordered[interval_index + 1].state().clone(),
+            delta_lambda,
+            left_mean_dhdl: window_means[interval_index],
+            right_mean_dhdl: window_means[interval_index + 1],
+            trapezoid_contribution: 0.5
+                * (window_means[interval_index] + window_means[interval_index + 1])
+                * delta_lambda,
+            slope,
+            abs_slope,
+            curvature,
+            interval_uncertainty,
+            severity,
+            priority_score,
+        };
+        if let Some(suggestion) = ti_schedule_suggestion(&diagnostic, &options)? {
+            suggestions.push(suggestion);
+        }
+        intervals.push(diagnostic);
+    }
+
+    suggestions.sort_by(|left, right| {
+        right
+            .priority_score()
+            .partial_cmp(&left.priority_score())
+            .unwrap_or(Ordering::Equal)
+    });
+    Ok(TiScheduleAdvice::new(windows, intervals, suggestions))
+}
+
 pub(crate) fn ti_block_average(
     series: &[DhdlSeries],
     n_blocks: usize,
@@ -1076,6 +1485,33 @@ fn validate_schedule_advisor_options(
     Ok(options)
 }
 
+fn validate_ti_schedule_advisor_options(
+    options: TiScheduleAdvisorOptions,
+) -> Result<TiScheduleAdvisorOptions> {
+    if options.n_blocks == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    for (name, value) in [
+        ("block_cv_min", options.block_cv_min),
+        ("curvature_z_min", options.curvature_z_min),
+        ("slope_z_min", options.slope_z_min),
+        (
+            "interval_uncertainty_z_min",
+            options.interval_uncertainty_z_min,
+        ),
+    ] {
+        if !value.is_finite() || value < 0.0 {
+            return Err(CoreError::InvalidState(format!(
+                "TI schedule advisor {name} must be finite and non-negative"
+            )));
+        }
+    }
+    Ok(options)
+}
+
 fn sort_windows_by_sampled_state(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix>> {
     for window in windows {
         if window.sampled_state().is_none() {
@@ -1101,6 +1537,19 @@ fn sort_windows_by_sampled_state(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix>
     Ok(ordered)
 }
 
+fn sort_dhdl_series_by_state(series: &[DhdlSeries]) -> Result<Vec<DhdlSeries>> {
+    let mut ordered = series.to_vec();
+    ordered.sort_by(|left, right| compare_state_points(left.state(), right.state()));
+    for idx in 1..ordered.len() {
+        if ordered[idx - 1].state() == ordered[idx].state() {
+            return Err(CoreError::InvalidState(
+                "multiple DhdlSeries for same lambda state".to_string(),
+            ));
+        }
+    }
+    Ok(ordered)
+}
+
 fn compare_state_points(left: &StatePoint, right: &StatePoint) -> Ordering {
     let len_order = left.lambdas().len().cmp(&right.lambdas().len());
     if len_order != Ordering::Equal {
@@ -1115,11 +1564,236 @@ fn compare_state_points(left: &StatePoint, right: &StatePoint) -> Ordering {
     Ordering::Equal
 }
 
+fn extract_scalar_lambda(state: &StatePoint, operation: &'static str) -> Result<f64> {
+    if state.lambdas().len() != 1 {
+        return Err(CoreError::RequiresOneDimensionalLambda { operation });
+    }
+    Ok(state.lambdas()[0])
+}
+
 fn fit_pair(windows: &[UNkMatrix], estimator: AdvisorEstimator) -> Result<DeltaFMatrix> {
     match estimator {
         AdvisorEstimator::Mbar => MbarEstimator::default().fit(windows),
         AdvisorEstimator::Bar => BarEstimator::default().fit(windows),
     }
+}
+
+fn mean_dhdl_values(values: &[f64]) -> Result<f64> {
+    if values.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    Ok(values.iter().sum::<f64>() / values.len() as f64)
+}
+
+fn sem_dhdl_values(values: &[f64]) -> Option<f64> {
+    if values.len() < 2 {
+        return None;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let variance = values
+        .iter()
+        .map(|value| {
+            let delta = value - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / (values.len() - 1) as f64;
+    Some((variance / values.len() as f64).sqrt())
+}
+
+fn dhdl_block_stats(series: &DhdlSeries, n_blocks: usize) -> Result<Option<(f64, f64, f64)>> {
+    let blocks = match split_dhdl_series(series, n_blocks) {
+        Ok(blocks) => blocks,
+        Err(CoreError::InvalidShape { .. }) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if blocks.is_empty() {
+        return Ok(None);
+    }
+    let values = blocks
+        .iter()
+        .map(|block| mean_dhdl_values(block.values()))
+        .collect::<Result<Vec<_>>>()?;
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let variance = values
+        .iter()
+        .map(|value| {
+            let delta = value - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / values.len() as f64;
+    let stddev = variance.sqrt();
+    let cv = if mean.abs() > 1.0e-12 {
+        stddev / mean.abs()
+    } else {
+        stddev
+    };
+    Ok(Some((mean, stddev, cv)))
+}
+
+fn forward_reverse_dhdl_delta(values: &[f64]) -> Option<f64> {
+    if values.len() < 4 {
+        return None;
+    }
+    let half = values.len() / 2;
+    if half == 0 || half == values.len() {
+        return None;
+    }
+    let forward = values[..half].iter().sum::<f64>() / half as f64;
+    let reverse = values[values.len() - half..].iter().sum::<f64>() / half as f64;
+    Some((forward - reverse).abs())
+}
+
+fn ti_point_curvatures(lambdas: &[f64], means: &[f64]) -> Result<Vec<Option<f64>>> {
+    if lambdas.len() != means.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: means.len(),
+        });
+    }
+    let mut out = vec![None; lambdas.len()];
+    if lambdas.len() < 3 {
+        return Ok(out);
+    }
+    for index in 1..(lambdas.len() - 1) {
+        let dx_left = lambdas[index] - lambdas[index - 1];
+        let dx_right = lambdas[index + 1] - lambdas[index];
+        if dx_left <= 0.0 || dx_right <= 0.0 {
+            return Err(CoreError::InvalidState(
+                "TI schedule advisor requires strictly increasing lambda values".to_string(),
+            ));
+        }
+        let slope_left = (means[index] - means[index - 1]) / dx_left;
+        let slope_right = (means[index + 1] - means[index]) / dx_right;
+        let center_dx = 0.5 * (dx_left + dx_right);
+        out[index] = Some((slope_right - slope_left) / center_dx);
+    }
+    Ok(out)
+}
+
+fn ti_interval_uncertainty(
+    delta_lambda: f64,
+    left_sem: Option<f64>,
+    right_sem: Option<f64>,
+) -> Option<f64> {
+    match (left_sem, right_sem) {
+        (Some(left), Some(right)) => Some(0.5 * delta_lambda * left.hypot(right)),
+        _ => None,
+    }
+}
+
+fn mean_optionless(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        None
+    } else {
+        Some(values.iter().sum::<f64>() / values.len() as f64)
+    }
+}
+
+fn stddev_optionless(values: &[f64], mean: Option<f64>) -> Option<f64> {
+    let mean = mean?;
+    if values.len() < 2 {
+        return None;
+    }
+    let variance = values
+        .iter()
+        .map(|value| {
+            let delta = value - mean;
+            delta * delta
+        })
+        .sum::<f64>()
+        / values.len() as f64;
+    let stddev = variance.sqrt();
+    if stddev <= 1.0e-12 {
+        None
+    } else {
+        Some(stddev)
+    }
+}
+
+fn z_score(value: f64, mean: Option<f64>, stddev: Option<f64>) -> Option<f64> {
+    let mean = mean?;
+    let stddev = stddev?;
+    Some(((value - mean) / stddev).max(0.0))
+}
+
+fn ti_priority_score(
+    slope_z: Option<f64>,
+    curvature_z: Option<f64>,
+    uncertainty_z: Option<f64>,
+    left_block_cv: Option<f64>,
+    right_block_cv: Option<f64>,
+    block_cv_min: f64,
+) -> f64 {
+    let mut score = 0.0;
+    score += slope_z.unwrap_or(0.0);
+    score += curvature_z.unwrap_or(0.0) * 2.0;
+    score += uncertainty_z.unwrap_or(0.0) * 1.5;
+    for value in [left_block_cv, right_block_cv].into_iter().flatten() {
+        score += (value / block_cv_min.max(1.0e-12) - 1.0).max(0.0) * 1.5;
+    }
+    score.max(0.0)
+}
+
+fn ti_schedule_suggestion(
+    diagnostic: &TiIntervalDiagnostic,
+    options: &TiScheduleAdvisorOptions,
+) -> Result<Option<TiScheduleSuggestion>> {
+    let suggestion = match diagnostic.severity() {
+        TiEdgeSeverity::AddWindow => Some(TiScheduleSuggestion {
+            kind: TiSuggestionKind::InsertWindow,
+            interval_index: diagnostic.interval_index(),
+            from_state: diagnostic.from_state().clone(),
+            to_state: diagnostic.to_state().clone(),
+            proposed_state: if options.suggest_midpoints {
+                Some(midpoint_state(
+                    diagnostic.from_state(),
+                    diagnostic.to_state(),
+                )?)
+            } else {
+                None
+            },
+            priority_score: diagnostic.priority_score(),
+            reason: format!(
+                "interval slope/curvature indicates under-resolved TI integrand between {} and {}",
+                diagnostic.from_state().lambdas()[0],
+                diagnostic.to_state().lambdas()[0]
+            ),
+        }),
+        TiEdgeSeverity::AddSampling => Some(TiScheduleSuggestion {
+            kind: TiSuggestionKind::ExtendSampling,
+            interval_index: diagnostic.interval_index(),
+            from_state: diagnostic.from_state().clone(),
+            to_state: diagnostic.to_state().clone(),
+            proposed_state: None,
+            priority_score: diagnostic.priority_score(),
+            reason: "interval uncertainty or block instability suggests more TI sampling"
+                .to_string(),
+        }),
+        TiEdgeSeverity::AddWindowAndSampling => Some(TiScheduleSuggestion {
+            kind: TiSuggestionKind::InsertWindowAndExtendSampling,
+            interval_index: diagnostic.interval_index(),
+            from_state: diagnostic.from_state().clone(),
+            to_state: diagnostic.to_state().clone(),
+            proposed_state: if options.suggest_midpoints {
+                Some(midpoint_state(
+                    diagnostic.from_state(),
+                    diagnostic.to_state(),
+                )?)
+            } else {
+                None
+            },
+            priority_score: diagnostic.priority_score(),
+            reason: "TI interval is both structurally under-resolved and statistically unstable"
+                .to_string(),
+        }),
+        TiEdgeSeverity::Healthy | TiEdgeSeverity::Monitor => None,
+    };
+    Ok(suggestion)
 }
 
 fn pair_block_stats(
@@ -1326,10 +2000,10 @@ fn schedule_suggestion(
                 proposal_strategy,
                 diagnostic.priority_score(),
                 format!(
-                    "{} overlap {:.6} is below threshold {:.6}",
+                    "{} overlap {} is below threshold {}",
                     focus_component_prefix(diagnostic),
-                    diagnostic.overlap_min(),
-                    options.overlap_min
+                    format_reason_number(diagnostic.overlap_min()),
+                    format_reason_number(options.overlap_min)
                 ),
             ))
         }
@@ -1342,12 +2016,7 @@ fn schedule_suggestion(
             diagnostic.dominant_components().to_vec(),
             None,
             diagnostic.priority_score(),
-            format!(
-                "{} block coefficient of variation {:.6} exceeds threshold {:.6}",
-                focus_component_prefix(diagnostic),
-                diagnostic.block_cv().unwrap_or_default(),
-                options.block_cv_min
-            ),
+            sampling_reason(diagnostic, options),
         )),
         EdgeSeverity::Healthy | EdgeSeverity::Monitor => None,
     };
@@ -1405,6 +2074,65 @@ fn focus_component_prefix(diagnostic: &AdjacentEdgeDiagnostic) -> String {
             "components [{}]:",
             diagnostic.dominant_components().join(", ")
         )
+    }
+}
+
+fn format_reason_number(value: f64) -> String {
+    format!("{value:.3}")
+}
+
+fn sampling_reason(
+    diagnostic: &AdjacentEdgeDiagnostic,
+    options: &ScheduleAdvisorOptions,
+) -> String {
+    let block_cv_trigger = diagnostic
+        .block_cv()
+        .filter(|value| *value >= options.block_cv_min);
+    let relative_uncertainty_trigger = diagnostic
+        .relative_uncertainty()
+        .filter(|value| *value >= 1.5);
+
+    match (block_cv_trigger, relative_uncertainty_trigger) {
+        (Some(block_cv), Some(relative_uncertainty)) => format!(
+            "{} block coefficient of variation {} exceeds threshold {} and relative uncertainty {} exceeds attention threshold {}",
+            focus_component_prefix(diagnostic),
+            format_reason_number(block_cv),
+            format_reason_number(options.block_cv_min),
+            format_reason_number(relative_uncertainty),
+            format_reason_number(1.5)
+        ),
+        (Some(block_cv), None) => format!(
+            "{} block coefficient of variation {} exceeds threshold {}",
+            focus_component_prefix(diagnostic),
+            format_reason_number(block_cv),
+            format_reason_number(options.block_cv_min)
+        ),
+        (None, Some(relative_uncertainty)) => format!(
+            "{} relative uncertainty {} exceeds attention threshold {}",
+            focus_component_prefix(diagnostic),
+            format_reason_number(relative_uncertainty),
+            format_reason_number(1.5)
+        ),
+        (None, None) => {
+            if let Some(relative_uncertainty) = diagnostic.relative_uncertainty() {
+                format!(
+                    "{} relative uncertainty {} suggests additional sampling",
+                    focus_component_prefix(diagnostic),
+                    format_reason_number(relative_uncertainty)
+                )
+            } else if let Some(block_cv) = diagnostic.block_cv() {
+                format!(
+                    "{} block coefficient of variation {} suggests additional sampling",
+                    focus_component_prefix(diagnostic),
+                    format_reason_number(block_cv)
+                )
+            } else {
+                format!(
+                    "{} sampling stability metrics suggest additional sampling",
+                    focus_component_prefix(diagnostic)
+                )
+            }
+        }
     }
 }
 
@@ -1532,10 +2260,12 @@ fn block_estimate_from_matrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        advise_lambda_schedule, AdvisorEstimator, EdgeSeverity, ProposalStrategy,
-        ScheduleAdvisorOptions,
+        advise_lambda_schedule, advise_ti_schedule, schedule_suggestion, AdjacentEdgeDiagnostic,
+        AdvisorEstimator, EdgeSeverity, ProposalStrategy, ScheduleAdvisorOptions, TiEdgeSeverity,
+        TiScheduleAdvisorOptions,
     };
     use crate::data::{StatePoint, UNkMatrix};
+    use crate::DhdlSeries;
 
     fn build_window(
         sampled_lambda: f64,
@@ -1777,5 +2507,113 @@ mod tests {
             Some(ProposalStrategy::FocusedSplit)
         );
         assert_eq!(suggestion.proposed_state().unwrap().lambdas(), &[0.4, 0.0]);
+    }
+
+    #[test]
+    fn advise_ti_schedule_marks_linear_series_healthy() {
+        let s0 = StatePoint::new(vec![0.0], 298.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 298.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 298.0).unwrap();
+        let series = vec![
+            DhdlSeries::new(s0, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+            DhdlSeries::new(s1, vec![0.0, 1.0, 2.0, 3.0], vec![1.0, 1.0, 1.0, 1.0]).unwrap(),
+            DhdlSeries::new(s2, vec![0.0, 1.0, 2.0, 3.0], vec![2.0, 2.0, 2.0, 2.0]).unwrap(),
+        ];
+
+        let advice = advise_ti_schedule(
+            &series,
+            Some(TiScheduleAdvisorOptions {
+                n_blocks: 2,
+                block_cv_min: 1.0e30,
+                curvature_z_min: 10.0,
+                slope_z_min: 10.0,
+                interval_uncertainty_z_min: 10.0,
+                suggest_midpoints: true,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(advice.intervals().len(), 2);
+        assert!(advice.suggestions().is_empty());
+        assert!(advice
+            .intervals()
+            .iter()
+            .all(|interval| interval.severity() == TiEdgeSeverity::Healthy));
+    }
+
+    #[test]
+    fn advise_ti_schedule_can_suggest_new_window() {
+        let s0 = StatePoint::new(vec![0.0], 298.0).unwrap();
+        let s1 = StatePoint::new(vec![0.33], 298.0).unwrap();
+        let s2 = StatePoint::new(vec![0.66], 298.0).unwrap();
+        let s3 = StatePoint::new(vec![1.0], 298.0).unwrap();
+        let series = vec![
+            DhdlSeries::new(s0, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+            DhdlSeries::new(s1, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+            DhdlSeries::new(s2, vec![0.0, 1.0, 2.0, 3.0], vec![10.0, 10.0, 10.0, 10.0]).unwrap(),
+            DhdlSeries::new(s3, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+        ];
+
+        let advice = advise_ti_schedule(
+            &series,
+            Some(TiScheduleAdvisorOptions {
+                n_blocks: 2,
+                block_cv_min: 1.0e30,
+                curvature_z_min: 0.1,
+                slope_z_min: 0.1,
+                interval_uncertainty_z_min: 10.0,
+                suggest_midpoints: true,
+            }),
+        )
+        .unwrap();
+
+        assert!(!advice.suggestions().is_empty());
+        assert!(advice
+            .suggestions()
+            .iter()
+            .any(|suggestion| suggestion.proposed_state().is_some()));
+    }
+
+    #[test]
+    fn add_sampling_reason_uses_relative_uncertainty_when_block_cv_is_below_threshold() {
+        let from = StatePoint::new(vec![0.3], 298.0).unwrap();
+        let to = StatePoint::new(vec![0.4], 298.0).unwrap();
+        let diagnostic = AdjacentEdgeDiagnostic::new(
+            5,
+            from.clone(),
+            to.clone(),
+            None,
+            0.058,
+            0.058,
+            -6.056,
+            Some(0.636),
+            None,
+            None,
+            Some(0.053_021),
+            Some(0.667),
+            Some(1.811),
+            vec!["lambda[0]".to_string()],
+            1.072,
+            EdgeSeverity::AddSampling,
+        )
+        .unwrap();
+
+        let suggestion = schedule_suggestion(
+            &diagnostic,
+            &ScheduleAdvisorOptions {
+                estimator: AdvisorEstimator::Mbar,
+                overlap_min: 0.03,
+                block_cv_min: 0.15,
+                n_blocks: 4,
+                suggest_midpoints: true,
+            },
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            suggestion.reason(),
+            "components [lambda[0]]: relative uncertainty 1.811 exceeds attention threshold 1.500"
+        );
     }
 }

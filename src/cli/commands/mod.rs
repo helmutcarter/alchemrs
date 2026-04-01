@@ -21,6 +21,7 @@ pub fn run(command: Command) -> CliResult<()> {
             conservative,
             nskip,
             u_nk_observable,
+            input_kind,
             overlap_min,
             block_cv_min,
             n_blocks,
@@ -42,6 +43,7 @@ pub fn run(command: Command) -> CliResult<()> {
             },
             advise::AdviseRunOptions {
                 estimator,
+                input_kind,
                 overlap_min,
                 block_cv_min,
                 n_blocks,

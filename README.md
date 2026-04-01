@@ -132,7 +132,7 @@ For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `Delta
 
 ### Schedule advisor
 
-The CLI also includes a lambda-schedule advisor for `u_nk` workflows. It analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window.
+The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics.
 
 ```bash
 alchemrs advise-schedule \
@@ -147,13 +147,26 @@ alchemrs advise-schedule \
 Useful advisor-specific flags:
 
 - `--estimator <mbar|bar>`
+- `--input-kind <auto|u-nk|dhdl>`
 - `--overlap-min <VALUE>`
 - `--block-cv-min <VALUE>`
 - `--n-blocks <N>`
 - `--no-midpoints`
 - `--report <PATH>`
 
-The JSON output includes `sample_counts`, `provenance`, `edges`, and `suggestions`. Edge diagnostics now include neighbor-relative metrics, dominant changing components, and a priority score. Insert-window suggestions can emit either a full midpoint or a component-focused split proposal for multidimensional schedules. When `--report` is provided, the CLI also writes a standalone HTML report with a top priority queue, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown that marks which lambda components are bisected, held at the source state, or unchanged, plus normalized delta bars so the dominant jump is obvious at a glance.
+For TI spacing diagnostics:
+
+```bash
+alchemrs advise-schedule \
+  --temperature 300 \
+  --input-kind dhdl \
+  --decorrelate \
+  --report ti-schedule-report.html \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+The JSON output includes `sample_counts`, `provenance`, and `suggestions`, plus either `edges` for `u_nk` mode or `windows` and `intervals` for TI mode. `u_nk` edge diagnostics include neighbor-relative metrics, dominant changing components, and a priority score. TI interval diagnostics include `mean_dhdl`, `slope`, `curvature`, `interval_uncertainty`, and block-stability summaries. When `--report` is provided, the CLI also writes a standalone HTML report; the `u_nk` report includes the full SVG lambda-axis and multidimensional component breakdown, while the TI report focuses on ranked interval diagnostics and schedule suggestions.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 

@@ -5,9 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 use alchemrs::{
-    advise_lambda_schedule, decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
-    detect_equilibration_dhdl, detect_equilibration_u_nk, AdvisorEstimator, DecorrelationOptions,
-    ScheduleAdvisorOptions, UNkSeriesMethod,
+    advise_lambda_schedule, advise_ti_schedule, decorrelate_dhdl, decorrelate_u_nk,
+    decorrelate_u_nk_with_observable, detect_equilibration_dhdl, detect_equilibration_u_nk,
+    AdvisorEstimator, DecorrelationOptions, ScheduleAdvisorOptions, TiScheduleAdvisorOptions,
+    UNkSeriesMethod,
 };
 use alchemrs::{
     overlap_eigenvalues, overlap_matrix, BarEstimator, BarMethod, BarOptions, DhdlSeries,
@@ -196,6 +197,170 @@ fn advise_schedule_cli_outputs_expected_json_when_decorrelating() {
 }
 
 #[test]
+fn advise_schedule_cli_outputs_expected_ti_json_when_forced_to_dhdl() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "advise-schedule",
+            "--input-kind",
+            "dhdl",
+            "--decorrelate",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let series = load_decorrelated_dhdl_series(&inputs);
+    let advice = advise_ti_schedule(
+        &series,
+        Some(TiScheduleAdvisorOptions {
+            n_blocks: 4,
+            block_cv_min: 0.15,
+            ..TiScheduleAdvisorOptions::default()
+        }),
+    )
+    .expect("compute TI schedule advice");
+    let expected_counts = expected_dhdl_counts(&inputs, &series);
+
+    assert_eq!(payload["advisor_mode"].as_str(), Some("ti"));
+    assert_eq!(payload["provenance"]["input_kind"].as_str(), Some("dhdl"));
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_close(
+        payload["provenance"]["block_cv_min"]
+            .as_f64()
+            .expect("block_cv_min"),
+        0.15,
+    );
+    assert_eq!(payload["provenance"]["n_blocks"].as_u64(), Some(4));
+
+    let sample_counts = payload["sample_counts"].as_object().expect("sample_counts");
+    assert_eq!(
+        sample_counts["windows"].as_u64(),
+        Some(expected_counts.windows as u64)
+    );
+    assert_eq!(
+        sample_counts["samples_in"].as_u64(),
+        Some(expected_counts.samples_in as u64)
+    );
+    assert_eq!(
+        sample_counts["samples_after_burnin"].as_u64(),
+        Some(expected_counts.samples_after_burnin as u64)
+    );
+    assert_eq!(
+        sample_counts["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
+
+    let windows = payload["windows"].as_array().expect("windows");
+    assert_eq!(windows.len(), advice.windows().len());
+    for (actual, expected) in windows.iter().zip(advice.windows().iter()) {
+        assert_eq!(
+            actual["window_index"].as_u64(),
+            Some(expected.window_index() as u64)
+        );
+        assert_eq!(actual["lambda"], json_state(expected.state().lambdas()));
+        assert_close(
+            actual["mean_dhdl"].as_f64().expect("mean_dhdl"),
+            expected.mean_dhdl(),
+        );
+        assert_json_optional_f64_close(&actual["sem_dhdl"], expected.sem_dhdl());
+        assert_json_optional_f64_close(&actual["block_cv"], expected.block_cv());
+        assert_json_optional_f64_close(
+            &actual["forward_reverse_delta"],
+            expected.forward_reverse_delta(),
+        );
+    }
+
+    let intervals = payload["intervals"].as_array().expect("intervals");
+    assert_eq!(intervals.len(), advice.intervals().len());
+    for (actual, expected) in intervals.iter().zip(advice.intervals().iter()) {
+        assert_eq!(
+            actual["interval_index"].as_u64(),
+            Some(expected.interval_index() as u64)
+        );
+        assert_eq!(
+            actual["from_lambda"],
+            json_state(expected.from_state().lambdas())
+        );
+        assert_eq!(
+            actual["to_lambda"],
+            json_state(expected.to_state().lambdas())
+        );
+        assert_close(
+            actual["delta_lambda"].as_f64().expect("delta_lambda"),
+            expected.delta_lambda(),
+        );
+        assert_close(
+            actual["left_mean_dhdl"].as_f64().expect("left_mean_dhdl"),
+            expected.left_mean_dhdl(),
+        );
+        assert_close(
+            actual["right_mean_dhdl"].as_f64().expect("right_mean_dhdl"),
+            expected.right_mean_dhdl(),
+        );
+        assert_close(
+            actual["trapezoid_contribution"]
+                .as_f64()
+                .expect("trapezoid_contribution"),
+            expected.trapezoid_contribution(),
+        );
+        assert_close(actual["slope"].as_f64().expect("slope"), expected.slope());
+        assert_close(
+            actual["abs_slope"].as_f64().expect("abs_slope"),
+            expected.abs_slope(),
+        );
+        assert_json_optional_f64_close(&actual["curvature"], expected.curvature());
+        assert_json_optional_f64_close(
+            &actual["interval_uncertainty"],
+            expected.interval_uncertainty(),
+        );
+        assert_eq!(
+            actual["severity"].as_str(),
+            Some(ti_schedule_severity_name(expected.severity()))
+        );
+        assert_close(
+            actual["priority_score"].as_f64().expect("priority_score"),
+            expected.priority_score(),
+        );
+    }
+
+    let suggestions = payload["suggestions"].as_array().expect("suggestions");
+    assert_eq!(suggestions.len(), advice.suggestions().len());
+    for (actual, expected) in suggestions.iter().zip(advice.suggestions().iter()) {
+        assert_eq!(
+            actual["interval_index"].as_u64(),
+            Some(expected.interval_index() as u64)
+        );
+        assert_eq!(
+            actual["kind"].as_str(),
+            Some(ti_schedule_suggestion_name(expected.kind()))
+        );
+        assert_eq!(
+            actual["from_lambda"],
+            json_state(expected.from_state().lambdas())
+        );
+        assert_eq!(
+            actual["to_lambda"],
+            json_state(expected.to_state().lambdas())
+        );
+        assert_eq!(
+            actual["proposed_lambda"],
+            expected
+                .proposed_state()
+                .map(|state| json_state(state.lambdas()))
+                .unwrap_or(Value::Null)
+        );
+        assert_close(
+            actual["priority_score"].as_f64().expect("priority_score"),
+            expected.priority_score(),
+        );
+        assert_eq!(actual["reason"].as_str(), Some(expected.reason()));
+    }
+}
+
+#[test]
 fn advise_schedule_cli_writes_html_report() {
     let inputs = acetamide_inputs();
     let report_path = unique_output_path("advise-schedule-report.html");
@@ -247,6 +412,27 @@ fn schedule_proposal_strategy_name(strategy: alchemrs::ProposalStrategy) -> &'st
     match strategy {
         alchemrs::ProposalStrategy::Midpoint => "midpoint",
         alchemrs::ProposalStrategy::FocusedSplit => "focused_split",
+    }
+}
+
+fn ti_schedule_severity_name(severity: alchemrs::TiEdgeSeverity) -> &'static str {
+    match severity {
+        alchemrs::TiEdgeSeverity::Healthy => "healthy",
+        alchemrs::TiEdgeSeverity::Monitor => "monitor",
+        alchemrs::TiEdgeSeverity::AddSampling => "add_sampling",
+        alchemrs::TiEdgeSeverity::AddWindow => "add_window",
+        alchemrs::TiEdgeSeverity::AddWindowAndSampling => "add_window_and_sampling",
+    }
+}
+
+fn ti_schedule_suggestion_name(kind: alchemrs::TiSuggestionKind) -> &'static str {
+    match kind {
+        alchemrs::TiSuggestionKind::NoChange => "no_change",
+        alchemrs::TiSuggestionKind::ExtendSampling => "extend_sampling",
+        alchemrs::TiSuggestionKind::InsertWindow => "insert_window",
+        alchemrs::TiSuggestionKind::InsertWindowAndExtendSampling => {
+            "insert_window_and_extend_sampling"
+        }
     }
 }
 
@@ -1141,6 +1327,14 @@ fn parse_json_output(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).expect("parse CLI JSON output")
 }
 
+fn json_state(state: &[f64]) -> Value {
+    if state.len() == 1 {
+        Value::from(state[0])
+    } else {
+        Value::Array(state.iter().copied().map(Value::from).collect())
+    }
+}
+
 fn load_decorrelated_windows(inputs: &[PathBuf]) -> Vec<UNkMatrix> {
     inputs
         .iter()
@@ -1471,6 +1665,13 @@ fn assert_close(actual: f64, expected: f64) {
         (actual - expected).abs() <= tolerance,
         "expected {expected}, got {actual}"
     );
+}
+
+fn assert_json_optional_f64_close(actual: &Value, expected: Option<f64>) {
+    match expected {
+        Some(expected) => assert_close(actual.as_f64().expect("optional float"), expected),
+        None => assert!(actual.is_null(), "expected null, got {actual:?}"),
+    }
 }
 
 mod alchemrs_cli_input_like {

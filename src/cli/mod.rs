@@ -56,6 +56,9 @@ pub enum Command {
         /// Observable to use for u_nk auto-equilibration and decorrelation
         #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
         u_nk_observable: UNkObservable,
+        /// Force advise-schedule to treat the inputs as u_nk or dH/dlambda data
+        #[arg(long = "input-kind", value_enum, default_value_t = AdviseInputKind::Auto)]
+        input_kind: AdviseInputKind,
         /// Minimum adjacent overlap before suggesting a new window
         #[arg(long = "overlap-min", default_value_t = 0.03)]
         overlap_min: f64,
@@ -357,6 +360,13 @@ pub enum Command {
 pub enum TiMethod {
     Trapezoidal,
     Simpson,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum AdviseInputKind {
+    Auto,
+    UNk,
+    Dhdl,
 }
 
 impl From<TiMethod> for IntegrationMethod {
