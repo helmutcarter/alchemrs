@@ -1,3 +1,4 @@
+mod advise;
 mod bar;
 mod exp;
 mod mbar;
@@ -9,6 +10,45 @@ use crate::CliResult;
 
 pub fn run(command: Command) -> CliResult<()> {
     match command {
+        Command::AdviseSchedule {
+            inputs,
+            temperature,
+            estimator,
+            decorrelate,
+            remove_burnin,
+            auto_equilibrate,
+            fast,
+            conservative,
+            nskip,
+            u_nk_observable,
+            overlap_min,
+            block_cv_min,
+            n_blocks,
+            no_midpoints,
+            output_format,
+            output,
+        } => advise::run(
+            inputs,
+            AnalysisInputOptions {
+                temperature,
+                decorrelate,
+                remove_burnin,
+                auto_equilibrate,
+                fast,
+                conservative,
+                nskip,
+                u_nk_observable: Some(u_nk_observable),
+            },
+            advise::AdviseRunOptions {
+                estimator,
+                overlap_min,
+                block_cv_min,
+                n_blocks,
+                suggest_midpoints: !no_midpoints,
+                output_format,
+                output_path: output,
+            },
+        ),
         Command::Ti {
             inputs,
             temperature,

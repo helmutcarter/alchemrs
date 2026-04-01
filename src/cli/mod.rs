@@ -18,6 +18,63 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    AdviseSchedule {
+        /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Temperature in K
+        #[arg(long, default_value_t = 300.0)]
+        temperature: f64,
+        /// Estimator to use for adjacent edge estimates
+        #[arg(long, value_enum, default_value_t = AdvisorEstimatorArg::Mbar)]
+        estimator: AdvisorEstimatorArg,
+        /// Apply decorrelation to each window using the selected u_nk observable
+        #[arg(long)]
+        decorrelate: bool,
+        /// Skip this many initial samples before any analysis
+        #[arg(long = "remove-burnin", default_value_t = 0)]
+        remove_burnin: usize,
+        /// Automatically detect equilibration and remove burn-in
+        #[arg(long)]
+        auto_equilibrate: bool,
+        /// Use fast statistical inefficiency estimate
+        #[arg(long)]
+        fast: bool,
+        /// Use conservative subsampling
+        #[arg(
+            long,
+            action = ArgAction::Set,
+            default_value_t = true,
+            default_missing_value = "true",
+            require_equals = true,
+            num_args = 0..=1
+        )]
+        conservative: bool,
+        /// Subsample stride for equilibration detection
+        #[arg(long, default_value_t = 1)]
+        nskip: usize,
+        /// Observable to use for u_nk auto-equilibration and decorrelation
+        #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
+        u_nk_observable: UNkObservable,
+        /// Minimum adjacent overlap before suggesting a new window
+        #[arg(long = "overlap-min", default_value_t = 0.03)]
+        overlap_min: f64,
+        /// Minimum block coefficient of variation before suggesting more sampling
+        #[arg(long = "block-cv-min", default_value_t = 0.15)]
+        block_cv_min: f64,
+        /// Number of blocks for adjacent-edge block averaging
+        #[arg(long = "n-blocks", default_value_t = 4)]
+        n_blocks: usize,
+        /// Disable midpoint proposals for insert-window suggestions
+        #[arg(long = "no-midpoints")]
+        no_midpoints: bool,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
+        /// Write output to a file instead of stdout
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     Ti {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
@@ -322,6 +379,12 @@ pub enum OutputFormat {
     Csv,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum AdvisorEstimatorArg {
+    Mbar,
+    Bar,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum UNkObservable {
     Epot,
@@ -370,6 +433,7 @@ mod tests {
             ["alchemrs", "exp", "window.out"].as_slice(),
             ["alchemrs", "dexp", "window.out"].as_slice(),
             ["alchemrs", "mbar", "window.out"].as_slice(),
+            ["alchemrs", "advise-schedule", "window.out"].as_slice(),
         ] {
             let cli = Cli::parse_from(args);
             assert!(command_conservative(cli.command));
@@ -384,6 +448,13 @@ mod tests {
             ["alchemrs", "exp", "--conservative=false", "window.out"].as_slice(),
             ["alchemrs", "dexp", "--conservative=false", "window.out"].as_slice(),
             ["alchemrs", "mbar", "--conservative=false", "window.out"].as_slice(),
+            [
+                "alchemrs",
+                "advise-schedule",
+                "--conservative=false",
+                "window.out",
+            ]
+            .as_slice(),
         ] {
             let cli = Cli::parse_from(args);
             assert!(!command_conservative(cli.command));
@@ -392,7 +463,8 @@ mod tests {
 
     fn command_conservative(command: Command) -> bool {
         match command {
-            Command::Ti { conservative, .. }
+            Command::AdviseSchedule { conservative, .. }
+            | Command::Ti { conservative, .. }
             | Command::Bar { conservative, .. }
             | Command::Exp { conservative, .. }
             | Command::Dexp { conservative, .. }
