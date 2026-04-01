@@ -4,6 +4,7 @@ The CLI is the `alchemrs` binary in the same package as the `alchemrs` library c
 
 Commands:
 
+- `advise-schedule`
 - `ti`
 - `bar`
 - `mbar`
@@ -48,6 +49,15 @@ For `bar`, `mbar`, `exp`, and `dexp`:
 For overlap-aware commands:
 
 - `--overlap-summary`
+
+For the lambda-schedule advisor:
+
+- `--estimator <mbar|bar>`
+- `--overlap-min <VALUE>`
+- `--block-cv-min <VALUE>`
+- `--n-blocks <N>`
+- `--no-midpoints`
+- `--report <PATH>`
 
 ## Observable selection
 
@@ -120,6 +130,38 @@ cargo run --release -- exp --temperature 300 path/to/*/prod.out
 
 cargo run --release -- dexp --temperature 300 path/to/*/prod.out
 ```
+
+### Schedule Advisor
+
+```bash
+cargo run --release -- advise-schedule \
+  --temperature 300 \
+  --decorrelate \
+  --u-nk-observable de \
+  --report schedule-report.html \
+  --output-format json \
+  path/to/*/prod.out
+```
+
+This command reports schedule diagnostics and suggestions instead of a final scalar free-energy estimate.
+
+By default it uses the existing `u_nk` path. To force TI-style `dH/dlambda` spacing diagnostics through the same command, pass `--input-kind dhdl`:
+
+```bash
+cargo run --release -- advise-schedule \
+  --temperature 300 \
+  --input-kind dhdl \
+  --decorrelate \
+  --report ti-schedule-report.html \
+  --output-format json \
+  path/to/*/prod.out
+```
+
+`u_nk` advisor output includes neighbor-relative overlap/uncertainty context, dominant lambda components for each jump, a priority score for ranking suggestions, and proposal strategies such as focused component splits for multidimensional schedules. TI mode emits per-window `mean_dhdl`/SEM/block diagnostics plus per-interval slope, curvature, trapezoid contribution, interval uncertainty, and ranked schedule suggestions.
+
+When `--report` is provided, the command also writes a standalone HTML report. The `u_nk` report includes a top priority queue, ranked suggestions, edge summaries, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown for multidimensional schedules, including normalized delta bars per component. The TI report uses the same overall structure but renders windows and intervals instead of overlap edges.
+
+See [Schedule Advisor](schedule-advisor.md) for the output schema and current heuristics.
 
 ## Effective settings
 

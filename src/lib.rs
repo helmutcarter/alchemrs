@@ -43,8 +43,12 @@ pub mod plot;
 pub mod prep;
 
 pub use analysis::{
-    bar_convergence, dexp_convergence, exp_convergence, mbar_convergence, overlap_eigenvalues,
-    overlap_matrix, overlap_scalar, ti_convergence, BlockEstimate, ConvergencePoint,
+    advise_lambda_schedule, advise_ti_schedule, bar_convergence, dexp_convergence, exp_convergence,
+    mbar_convergence, overlap_eigenvalues, overlap_matrix, overlap_scalar, ti_convergence,
+    AdjacentEdgeDiagnostic, AdvisorEstimator, BlockEstimate, ConvergencePoint, EdgeSeverity,
+    ProposalStrategy, ScheduleAdvice, ScheduleAdvisorOptions, ScheduleSuggestion, SuggestionKind,
+    TiEdgeSeverity, TiIntervalDiagnostic, TiScheduleAdvice, TiScheduleAdvisorOptions,
+    TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };
 pub use data::{
     DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,

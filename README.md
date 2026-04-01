@@ -46,6 +46,15 @@ mdbook serve docs
 
 The `alchemrs` binary provides a command-line workflow.
 
+Commands:
+
+- `advise-schedule`
+- `ti`
+- `bar`
+- `mbar`
+- `exp`
+- `dexp`
+
 ### Build
 It can either be invoked through cargo:
 ```bash
@@ -119,6 +128,44 @@ Example JSON output:
 ```
 
 For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `DeltaFMatrix`, and `OverlapMatrix` all preserve parser-derived lambda component names when available through `.lambda_labels()`.
+
+### Schedule advisor
+
+The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics.
+
+```bash
+alchemrs advise-schedule \
+  --temperature 300 \
+  --decorrelate \
+  --u-nk-observable de \
+  --report schedule-report.html \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+Useful advisor-specific flags:
+
+- `--estimator <mbar|bar>`
+- `--input-kind <auto|u-nk|dhdl>`
+- `--overlap-min <VALUE>`
+- `--block-cv-min <VALUE>`
+- `--n-blocks <N>`
+- `--no-midpoints`
+- `--report <PATH>`
+
+For TI spacing diagnostics:
+
+```bash
+alchemrs advise-schedule \
+  --temperature 300 \
+  --input-kind dhdl \
+  --decorrelate \
+  --report ti-schedule-report.html \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+The JSON output includes `sample_counts`, `provenance`, and `suggestions`, plus either `edges` for `u_nk` mode or `windows` and `intervals` for TI mode. `u_nk` edge diagnostics include neighbor-relative metrics, dominant changing components, and a priority score. TI interval diagnostics include `mean_dhdl`, `slope`, `curvature`, `interval_uncertainty`, and block-stability summaries. When `--report` is provided, the CLI also writes a standalone HTML report; the `u_nk` report includes the full SVG lambda-axis and multidimensional component breakdown, while the TI report focuses on ranked interval diagnostics and schedule suggestions.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
