@@ -307,6 +307,7 @@ pub struct ScheduleSuggestion {
 }
 
 impl ScheduleSuggestion {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         kind: SuggestionKind,
         edge_index: usize,

@@ -748,10 +748,10 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
 </style></head><body><div class=\"wrap\">",
     );
 
-    html.push_str(&format!(
+    html.push_str(
         "<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>Lambda Schedule Report</h1>\
-<div class=\"lede\">Threshold-driven local schedule diagnostics with neighbor-aware ranking and component-aware insertion proposals.</div></header>"
-    ));
+<div class=\"lede\">Threshold-driven local schedule diagnostics with neighbor-aware ranking and component-aware insertion proposals.</div></header>",
+    );
 
     html.push_str("<section class=\"grid summary\">");
     html.push_str(&summary_card(
@@ -1924,160 +1924,6 @@ fn severity_class_from_suggestion(kind: SuggestionKind) -> &'static str {
     }
 }
 
-fn render_lambda_axis_svg(
-    from: &[f64],
-    to: &[f64],
-    proposed: Option<&[f64]>,
-    labels: Option<&[String]>,
-    focus_components: &[String],
-) -> String {
-    let width = 420.0;
-    let left = 120.0;
-    let right = width - 18.0;
-    let row_height = 34.0;
-    let height = 24.0 + row_height * from.len() as f64;
-    let mut svg = format!(
-        "<svg viewBox=\"0 0 {width} {height}\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"lambda axis visualization\">"
-    );
-
-    for (index, (&from_value, &to_value)) in from.iter().zip(to.iter()).enumerate() {
-        let y = 24.0 + index as f64 * row_height;
-        let label = labels
-            .and_then(|labels| labels.get(index))
-            .cloned()
-            .unwrap_or_else(|| format!("lambda[{index}]"));
-        let is_focus = focus_components.iter().any(|value| value == &label);
-        let proposed_value = proposed.and_then(|values| values.get(index)).copied();
-
-        svg.push_str(&format!(
-            "<text x=\"10\" y=\"{:.1}\" font-family=\"Consolas, monospace\" font-size=\"11\" fill=\"{}\">{}</text>",
-            y + 4.0,
-            if is_focus { "#1f5e5b" } else { "#6a655e" },
-            escape_html(&label)
-        ));
-        svg.push_str(&format!(
-            "<line x1=\"{left}\" y1=\"{y}\" x2=\"{right}\" y2=\"{y}\" stroke=\"{}\" stroke-width=\"3\" stroke-linecap=\"round\"/>",
-            if is_focus { "#8db8a3" } else { "#d7cfc0" }
-        ));
-        svg.push_str(&format!(
-            "<circle cx=\"{:.1}\" cy=\"{y}\" r=\"5\" fill=\"#1f5e5b\"/>",
-            axis_position(from_value, left, right)
-        ));
-        svg.push_str(&format!(
-            "<circle cx=\"{:.1}\" cy=\"{y}\" r=\"5\" fill=\"#b5483d\"/>",
-            axis_position(to_value, left, right)
-        ));
-        if let Some(value) = proposed_value {
-            let x = axis_position(value, left, right);
-            svg.push_str(&format!(
-                "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"10\" height=\"10\" rx=\"2\" fill=\"#b9832f\" transform=\"rotate(45 {:.1} {:.1})\"/>",
-                x - 5.0,
-                y - 5.0,
-                x,
-                y
-            ));
-        }
-        svg.push_str(&format!(
-            "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Consolas, monospace\" font-size=\"10\" fill=\"#6a655e\">{:.3}</text>",
-            left - 6.0,
-            y - 9.0,
-            from_value
-        ));
-        svg.push_str(&format!(
-            "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Consolas, monospace\" font-size=\"10\" fill=\"#6a655e\" text-anchor=\"end\">{:.3}</text>",
-            right + 6.0,
-            y - 9.0,
-            to_value
-        ));
-    }
-
-    svg.push_str("</svg>");
-    svg
-}
-
-fn render_component_breakdown(
-    from: &[f64],
-    to: &[f64],
-    proposed: Option<&[f64]>,
-    labels: Option<&[String]>,
-    highlight_components: &[String],
-) -> String {
-    if from.len() <= 1 {
-        return String::new();
-    }
-    let max_delta = from
-        .iter()
-        .zip(to.iter())
-        .map(|(from_value, to_value)| (to_value - from_value).abs())
-        .fold(0.0, f64::max)
-        .max(1.0e-12);
-
-    let mut html = String::from(
-        "<div class=\"component-grid\"><div class=\"component-row component-head\"><div>component</div><div>from</div><div>proposal</div><div>to</div><div>delta</div><div>status</div></div>",
-    );
-    for (index, (&from_value, &to_value)) in from.iter().zip(to.iter()).enumerate() {
-        let label = component_label(index, labels);
-        let delta = (to_value - from_value).abs();
-        let delta_width = (delta / max_delta * 100.0).clamp(0.0, 100.0);
-        let proposed_value = proposed.and_then(|values| values.get(index)).copied();
-        let is_highlight = highlight_components.iter().any(|value| value == &label);
-        let (status_class, status_label) =
-            component_status(from_value, to_value, proposed_value, is_highlight);
-        html.push_str(&format!(
-            "<div class=\"component-row{}\"><div class=\"component-name\">{}</div><div class=\"component-value\">{:.3}</div><div class=\"component-value\">{}</div><div class=\"component-value\">{:.3}</div><div><div class=\"delta-track\"><div class=\"delta-fill{}\" style=\"width:{:.2}%\"></div></div><div class=\"delta-value\">{:.3}</div></div><div><span class=\"status {}\">{}</span></div></div>",
-            if is_highlight { " focus" } else { "" },
-            escape_html(&label),
-            from_value,
-            proposed_value
-                .map(|value| format!("{value:.3}"))
-                .unwrap_or_else(|| "&mdash;".to_string()),
-            to_value,
-            if is_highlight { " focus" } else { "" },
-            delta_width,
-            delta,
-            status_class,
-            status_label,
-        ));
-    }
-    html.push_str("</div>");
-    html
-}
-
-fn axis_position(value: f64, left: f64, right: f64) -> f64 {
-    let normalized = value.clamp(0.0, 1.0);
-    left + normalized * (right - left)
-}
-
-fn component_label(index: usize, labels: Option<&[String]>) -> String {
-    labels
-        .and_then(|labels| labels.get(index))
-        .cloned()
-        .unwrap_or_else(|| format!("lambda[{index}]"))
-}
-
-fn component_status(
-    from: f64,
-    to: f64,
-    proposed: Option<f64>,
-    is_highlight: bool,
-) -> (&'static str, &'static str) {
-    let delta = (to - from).abs();
-    if delta <= 1.0e-12 {
-        return ("fixed", "fixed");
-    }
-    if let Some(proposed) = proposed {
-        if (proposed - from).abs() <= 1.0e-12 {
-            return ("held", "held");
-        }
-        return ("split", "bisect");
-    }
-    if is_highlight {
-        ("dominant", "dominant")
-    } else {
-        ("changed", "changed")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alchemrs::{
@@ -2189,7 +2035,7 @@ mod tests {
     }
 
     fn sample_ti_advice() -> alchemrs::TiScheduleAdvice {
-        let states = vec![
+        let states = [
             StatePoint::new(vec![0.0], 298.0).unwrap(),
             StatePoint::new(vec![0.33], 298.0).unwrap(),
             StatePoint::new(vec![0.66], 298.0).unwrap(),
@@ -2236,7 +2082,7 @@ mod tests {
     }
 
     fn sample_ti_sampling_advice() -> alchemrs::TiScheduleAdvice {
-        let states = vec![
+        let states = [
             StatePoint::new(vec![0.0], 298.0).unwrap(),
             StatePoint::new(vec![0.5], 298.0).unwrap(),
             StatePoint::new(vec![1.0], 298.0).unwrap(),
