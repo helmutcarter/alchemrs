@@ -61,7 +61,10 @@ fn dexp_convergence_uses_reverse_endpoints() {
     let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
     let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
     let evaluated = vec![s0.clone(), s1.clone()];
-    let windows = vec![build_window(s0.clone(), &evaluated), build_window(s1.clone(), &evaluated)];
+    let windows = vec![
+        build_window(s0.clone(), &evaluated),
+        build_window(s1.clone(), &evaluated),
+    ];
 
     let points = dexp_convergence(&windows, None).expect("dexp convergence");
     assert_eq!(points.len(), 1);

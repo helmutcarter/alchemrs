@@ -180,11 +180,12 @@ fn extract_u_nk_internal(
     for row in read_data_rows(path)? {
         let mut reduced = vec![0.0; evaluated_states.len()];
         for (series_idx, target_state) in &header.delta_h_columns {
-            let raw = *row.values.get(*series_idx).ok_or_else(|| {
-                GromacsParseError::InvalidDataLine {
-                    line: row.raw_line.clone(),
-                }
-            })?;
+            let raw =
+                *row.values
+                    .get(*series_idx)
+                    .ok_or_else(|| GromacsParseError::InvalidDataLine {
+                        line: row.raw_line.clone(),
+                    })?;
             let target_idx = *state_to_column
                 .get(&state_key(target_state))
                 .expect("target state indexed");
@@ -352,9 +353,11 @@ fn read_data_rows(path: &Path) -> Result<Vec<DataRow>> {
         }
 
         let mut fields = trimmed.split_whitespace();
-        let time_token = fields.next().ok_or_else(|| GromacsParseError::InvalidDataLine {
-            line: trimmed.to_string(),
-        })?;
+        let time_token = fields
+            .next()
+            .ok_or_else(|| GromacsParseError::InvalidDataLine {
+                line: trimmed.to_string(),
+            })?;
         let time_ps = parse_data_value(trimmed, time_token)?;
         let values = fields
             .map(|token| parse_data_value(trimmed, token))
@@ -416,11 +419,12 @@ fn parse_legend(line: &str) -> Result<Option<(usize, String)>> {
         return Ok(None);
     }
 
-    let series_idx = series[1..]
-        .parse::<usize>()
-        .map_err(|_| GromacsParseError::InvalidLegendLine {
-            line: line.to_string(),
-        })?;
+    let series_idx =
+        series[1..]
+            .parse::<usize>()
+            .map_err(|_| GromacsParseError::InvalidLegendLine {
+                line: line.to_string(),
+            })?;
     let legend = extract_quoted_text(line).ok_or_else(|| GromacsParseError::InvalidLegendLine {
         line: line.to_string(),
     })?;
@@ -517,7 +521,10 @@ fn compare_state_vectors(left: &[f64], right: &[f64]) -> Ordering {
 }
 
 fn state_key(values: &[f64]) -> Vec<i64> {
-    values.iter().map(|value| (value * 10_000.0).round() as i64).collect()
+    values
+        .iter()
+        .map(|value| (value * 10_000.0).round() as i64)
+        .collect()
 }
 
 fn format_state(values: &[f64]) -> String {
@@ -623,6 +630,9 @@ mod tests {
         file.write_all(content.as_bytes()).unwrap();
 
         let error = extract_dhdl(file.path(), 300.0).unwrap_err();
-        assert_eq!(error, GromacsParseError::MultipleDhdlComponents { count: 2 });
+        assert_eq!(
+            error,
+            GromacsParseError::MultipleDhdlComponents { count: 2 }
+        );
     }
 }

@@ -1,13 +1,35 @@
-use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, extract_u_nk as extract_gromacs_u_nk};
+use alchemrs::parse::gromacs::{
+    extract_dhdl as extract_gromacs_dhdl, extract_u_nk as extract_gromacs_u_nk,
+};
 use alchemrs::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential, CoreError};
 
 const REAL_FIXTURE: &str = "/fixtures/gromacs/lambda_15.xvg";
 const WINDOW_FIXTURES: &[(&str, f64, &[f64])] = &[
-    ("/fixtures/gromacs/lambda_0.xvg", 0.0, &[0.0, 0.0, 0.0, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_1.xvg", 0.05, &[0.0, 0.0, 0.05, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_2.xvg", 0.1, &[0.0, 0.0, 0.1, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_3.xvg", 0.15, &[0.0, 0.0, 0.15, 0.0, 0.0]),
-    ("/fixtures/gromacs/lambda_15.xvg", 0.8, &[0.0, 0.0, 0.8, 0.0, 0.0]),
+    (
+        "/fixtures/gromacs/lambda_0.xvg",
+        0.0,
+        &[0.0, 0.0, 0.0, 0.0, 0.0],
+    ),
+    (
+        "/fixtures/gromacs/lambda_1.xvg",
+        0.05,
+        &[0.0, 0.0, 0.05, 0.0, 0.0],
+    ),
+    (
+        "/fixtures/gromacs/lambda_2.xvg",
+        0.1,
+        &[0.0, 0.0, 0.1, 0.0, 0.0],
+    ),
+    (
+        "/fixtures/gromacs/lambda_3.xvg",
+        0.15,
+        &[0.0, 0.0, 0.15, 0.0, 0.0],
+    ),
+    (
+        "/fixtures/gromacs/lambda_15.xvg",
+        0.8,
+        &[0.0, 0.0, 0.8, 0.0, 0.0],
+    ),
 ];
 
 #[test]
@@ -16,7 +38,10 @@ fn gromacs_extract_u_nk_from_real_multidimensional_file() {
     let path = format!("{base}{REAL_FIXTURE}");
     let u_nk = extract_gromacs_u_nk(path, 298.0).expect("parse real GROMACS dhdl.xvg");
 
-    assert_eq!(u_nk.sampled_state().unwrap().lambdas(), &[0.0, 0.0, 0.8, 0.0, 0.0]);
+    assert_eq!(
+        u_nk.sampled_state().unwrap().lambdas(),
+        &[0.0, 0.0, 0.8, 0.0, 0.0]
+    );
     assert_eq!(
         u_nk.lambda_labels().unwrap(),
         &[
@@ -29,9 +54,18 @@ fn gromacs_extract_u_nk_from_real_multidimensional_file() {
     );
     assert_eq!(u_nk.n_states(), 3);
     assert_eq!(u_nk.n_samples(), 200);
-    assert_eq!(u_nk.evaluated_states().first().unwrap().lambdas(), &[0.0, 0.0, 0.7, 0.0, 0.0]);
-    assert_eq!(u_nk.evaluated_states()[1].lambdas(), &[0.0, 0.0, 0.8, 0.0, 0.0]);
-    assert_eq!(u_nk.evaluated_states().last().unwrap().lambdas(), &[0.0, 0.0, 0.9, 0.0, 0.0]);
+    assert_eq!(
+        u_nk.evaluated_states().first().unwrap().lambdas(),
+        &[0.0, 0.0, 0.7, 0.0, 0.0]
+    );
+    assert_eq!(
+        u_nk.evaluated_states()[1].lambdas(),
+        &[0.0, 0.0, 0.8, 0.0, 0.0]
+    );
+    assert_eq!(
+        u_nk.evaluated_states().last().unwrap().lambdas(),
+        &[0.0, 0.0, 0.9, 0.0, 0.0]
+    );
 }
 
 #[test]
@@ -54,11 +88,15 @@ fn real_multidimensional_gromacs_dhdl_rejects_scalar_parser() {
     let path = format!("{base}{REAL_FIXTURE}");
 
     let err = extract_dhdl(&path, 298.0).unwrap_err();
-    assert!(matches!(err, CoreError::Parse(message) if message.contains("scalar dH/dlambda parsing is unsupported")));
+    assert!(
+        matches!(err, CoreError::Parse(message) if message.contains("scalar dH/dlambda parsing is unsupported"))
+    );
 
     let err = extract_gromacs_dhdl(&path, 298.0).unwrap_err();
     let _ = extract_gromacs_u_nk(path, 298.0).expect("direct GROMACS u_nk parser still works");
-    assert!(err.to_string().contains("scalar dH/dlambda parsing is unsupported"));
+    assert!(err
+        .to_string()
+        .contains("scalar dH/dlambda parsing is unsupported"));
 }
 
 #[test]

@@ -2,7 +2,10 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{DeltaFMatrix, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, work_values, ExpRow};
+use super::common::{
+    ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, work_values,
+    ExpRow,
+};
 
 #[derive(Debug, Clone)]
 pub struct ExpOptions {

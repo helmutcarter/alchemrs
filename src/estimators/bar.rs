@@ -2,7 +2,10 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{DeltaFMatrix, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, work_values, PairEstimate};
+use super::common::{
+    ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, work_values,
+    PairEstimate,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarMethod {

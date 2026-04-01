@@ -134,7 +134,10 @@ fn render_json(result: &RenderedScalarResult<'_>) -> Result<String, String> {
     let mut provenance = Map::new();
     provenance.insert("estimator".to_string(), json!(result.provenance.estimator));
     provenance.insert("temperature_k".to_string(), json!(result.temperature));
-    provenance.insert("decorrelate".to_string(), json!(result.provenance.decorrelate));
+    provenance.insert(
+        "decorrelate".to_string(),
+        json!(result.provenance.decorrelate),
+    );
     provenance.insert(
         "remove_burnin".to_string(),
         json!(result.provenance.remove_burnin),
@@ -163,12 +166,18 @@ fn render_json(result: &RenderedScalarResult<'_>) -> Result<String, String> {
             .unwrap_or(Value::Null),
     );
     provenance.insert("windows".to_string(), json!(result.sample_counts.windows));
-    provenance.insert("samples_in".to_string(), json!(result.sample_counts.samples_in));
+    provenance.insert(
+        "samples_in".to_string(),
+        json!(result.sample_counts.samples_in),
+    );
     provenance.insert(
         "samples_after_burnin".to_string(),
         json!(result.sample_counts.samples_after_burnin),
     );
-    provenance.insert("samples_kept".to_string(), json!(result.sample_counts.samples_kept));
+    provenance.insert(
+        "samples_kept".to_string(),
+        json!(result.sample_counts.samples_kept),
+    );
 
     let mut payload = Map::new();
     payload.insert("delta_f".to_string(), json!(result.delta));
@@ -197,7 +206,8 @@ fn render_json(result: &RenderedScalarResult<'_>) -> Result<String, String> {
     );
     payload.insert("provenance".to_string(), Value::Object(provenance));
 
-    let mut output = serde_json::to_string(&Value::Object(payload)).map_err(|err| err.to_string())?;
+    let mut output =
+        serde_json::to_string(&Value::Object(payload)).map_err(|err| err.to_string())?;
     output.push('\n');
     Ok(output)
 }
@@ -238,7 +248,10 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> Result<String, String> {
         format_state_csv(&result.to_state),
         result.units.to_owned(),
         option_string(result.overlap.map(|summary| summary.scalar)),
-        result.overlap.map(format_overlap_eigenvalues).unwrap_or_default(),
+        result
+            .overlap
+            .map(format_overlap_eigenvalues)
+            .unwrap_or_default(),
         result.provenance.estimator.to_string(),
         result.temperature.to_string(),
         result.provenance.decorrelate.to_string(),
@@ -247,7 +260,11 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> Result<String, String> {
         result.provenance.fast.to_string(),
         result.provenance.conservative.to_string(),
         result.provenance.nskip.to_string(),
-        result.provenance.u_nk_observable.unwrap_or_default().to_string(),
+        result
+            .provenance
+            .u_nk_observable
+            .unwrap_or_default()
+            .to_string(),
         result
             .provenance
             .lambda_components
@@ -387,7 +404,10 @@ mod tests {
         assert_eq!(value["provenance"]["temperature_k"].as_f64(), Some(300.0));
         assert_eq!(value["provenance"]["decorrelate"].as_bool(), Some(true));
         assert_eq!(value["provenance"]["remove_burnin"].as_u64(), Some(5));
-        assert_eq!(value["provenance"]["auto_equilibrate"].as_bool(), Some(false));
+        assert_eq!(
+            value["provenance"]["auto_equilibrate"].as_bool(),
+            Some(false)
+        );
         assert_eq!(value["provenance"]["fast"].as_bool(), Some(false));
         assert_eq!(value["provenance"]["conservative"].as_bool(), Some(true));
         assert_eq!(value["provenance"]["nskip"].as_u64(), Some(1));

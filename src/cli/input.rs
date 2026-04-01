@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, GromacsParseError};
 use alchemrs::{
-    CoreError,
-    extract_dhdl, extract_u_nk, extract_u_nk_with_potential,
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
-    DecorrelationOptions, DhdlSeries, UNkMatrix, UNkSeriesMethod,
+    extract_dhdl, extract_u_nk, extract_u_nk_with_potential, CoreError, DecorrelationOptions,
+    DhdlSeries, UNkMatrix, UNkSeriesMethod,
 };
-use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, GromacsParseError};
 use thiserror::Error;
 
 use crate::cli::UNkObservable;
@@ -139,8 +138,9 @@ pub fn load_windows(
                 .ok_or("u_nk observable is required for u_nk estimators")?;
             let u_nk = match observable {
                 UNkObservable::Epot => {
-                    let (mut u_nk, potential) = extract_u_nk_with_potential(&path, options.temperature)
-                        .map_err(map_cli_u_nk_error)?;
+                    let (mut u_nk, potential) =
+                        extract_u_nk_with_potential(&path, options.temperature)
+                            .map_err(map_cli_u_nk_error)?;
                     let mut potential = potential;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
@@ -172,8 +172,8 @@ pub fn load_windows(
                         UNkObservable::All => UNkSeriesMethod::All,
                         UNkObservable::Epot => unreachable!(),
                     };
-                    let mut u_nk = extract_u_nk(&path, options.temperature)
-                        .map_err(map_cli_u_nk_error)?;
+                    let mut u_nk =
+                        extract_u_nk(&path, options.temperature).map_err(map_cli_u_nk_error)?;
                     samples_in += u_nk.n_samples();
                     u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
                     if options.auto_equilibrate {
@@ -197,8 +197,7 @@ pub fn load_windows(
             windows.push(u_nk);
             continue;
         }
-        let mut u_nk = extract_u_nk(path, options.temperature)
-            .map_err(map_cli_u_nk_error)?;
+        let mut u_nk = extract_u_nk(path, options.temperature).map_err(map_cli_u_nk_error)?;
         samples_in += u_nk.n_samples();
         u_nk = trim_u_nk(u_nk, options.remove_burnin)?;
         samples_after_burnin += u_nk.n_samples();

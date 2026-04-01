@@ -342,7 +342,10 @@ mod tests {
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
-        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+        assert_eq!(
+            result.lambda_labels().unwrap(),
+            &["coul-lambda", "vdw-lambda"]
+        );
     }
 
     #[test]
@@ -353,7 +356,10 @@ mod tests {
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
-        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+        assert_eq!(
+            result.lambda_labels().unwrap(),
+            &["coul-lambda", "vdw-lambda"]
+        );
     }
 
     #[test]
@@ -364,7 +370,10 @@ mod tests {
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
-        assert_eq!(result.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+        assert_eq!(
+            result.lambda_labels().unwrap(),
+            &["coul-lambda", "vdw-lambda"]
+        );
     }
 
     #[test]

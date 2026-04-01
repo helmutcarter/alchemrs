@@ -57,8 +57,8 @@ pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 #[cfg(feature = "plotting")]
 pub use plot::{
     render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,
-    render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions,
-    ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions, TiDhdlPlotOptions,
+    render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions, ConvergencePlotOptions,
+    DeltaFStatePlotOptions, OverlapPlotOptions, TiDhdlPlotOptions,
 };
 pub use prep::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,

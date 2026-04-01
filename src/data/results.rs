@@ -107,7 +107,10 @@ impl DeltaFMatrix {
             });
         }
         if let Some(labels) = lambda_labels.as_ref() {
-            let expected = states.first().map(|state| state.lambdas().len()).unwrap_or(0);
+            let expected = states
+                .first()
+                .map(|state| state.lambdas().len())
+                .unwrap_or(0);
             if labels.len() != expected {
                 return Err(CoreError::InvalidShape {
                     expected,
@@ -184,7 +187,10 @@ impl OverlapMatrix {
             });
         }
         if let Some(labels) = lambda_labels.as_ref() {
-            let expected = states.first().map(|state| state.lambdas().len()).unwrap_or(0);
+            let expected = states
+                .first()
+                .map(|state| state.lambdas().len())
+                .unwrap_or(0);
             if labels.len() != expected {
                 return Err(CoreError::InvalidShape {
                     expected,
@@ -250,7 +256,10 @@ mod tests {
             Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]),
         )
         .unwrap();
-        assert_eq!(matrix.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+        assert_eq!(
+            matrix.lambda_labels().unwrap(),
+            &["coul-lambda", "vdw-lambda"]
+        );
     }
 
     #[test]
@@ -264,6 +273,9 @@ mod tests {
             Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]),
         )
         .unwrap();
-        assert_eq!(matrix.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+        assert_eq!(
+            matrix.lambda_labels().unwrap(),
+            &["coul-lambda", "vdw-lambda"]
+        );
     }
 }

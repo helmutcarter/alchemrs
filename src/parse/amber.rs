@@ -55,9 +55,7 @@ pub enum AmberParseError {
         u_nk_samples: usize,
         potential_samples: usize,
     },
-    #[error(
-        "missing MBAR energy entries in block {sample_idx} for lambdas {missing_lambdas:?}"
-    )]
+    #[error("missing MBAR energy entries in block {sample_idx} for lambdas {missing_lambdas:?}")]
     IncompleteMbarBlock {
         sample_idx: usize,
         missing_lambdas: Vec<f64>,

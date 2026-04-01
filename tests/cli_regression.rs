@@ -769,7 +769,9 @@ fn mbar_cli_outputs_multidimensional_gromacs_json_with_lambda_components() {
     );
     let payload = parse_json_output(&output);
 
-    let from_lambda = payload["from_lambda"].as_array().expect("from_lambda array");
+    let from_lambda = payload["from_lambda"]
+        .as_array()
+        .expect("from_lambda array");
     let to_lambda = payload["to_lambda"].as_array().expect("to_lambda array");
     assert_eq!(from_lambda.len(), 5);
     assert_eq!(to_lambda.len(), 5);
@@ -848,9 +850,7 @@ fn mbar_cli_outputs_multidimensional_gromacs_csv_with_lambda_components() {
     assert!(stdout.contains("lambda_components"));
     assert!(stdout.contains("[0;0;0.7;0;0]"));
     assert!(stdout.contains("[0;0;0.9;0;0]"));
-    assert!(stdout.contains(
-        "[mass-lambda;coul-lambda;vdw-lambda;bonded-lambda;restraint-lambda]"
-    ));
+    assert!(stdout.contains("[mass-lambda;coul-lambda;vdw-lambda;bonded-lambda;restraint-lambda]"));
     assert!(stdout.contains(",epot,"));
 }
 
@@ -873,7 +873,10 @@ fn acetamide_inputs() -> Vec<PathBuf> {
 }
 
 fn gromacs_lambda15_input() -> Vec<PathBuf> {
-    vec![repo_root().join("fixtures").join("gromacs").join("lambda_15.xvg")]
+    vec![repo_root()
+        .join("fixtures")
+        .join("gromacs")
+        .join("lambda_15.xvg")]
 }
 
 fn run_cli(args: &[&str], inputs: &[PathBuf]) -> Output {

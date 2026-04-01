@@ -78,8 +78,18 @@ fn ti_block_average_returns_requested_blocks() {
     let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
     let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
     let series = vec![
-        DhdlSeries::new(s0.clone(), vec![0.0, 1.0, 2.0, 3.0], vec![1.0, 1.2, 0.8, 1.1]).unwrap(),
-        DhdlSeries::new(s1.clone(), vec![0.0, 1.0, 2.0, 3.0], vec![2.0, 2.2, 1.8, 2.1]).unwrap(),
+        DhdlSeries::new(
+            s0.clone(),
+            vec![0.0, 1.0, 2.0, 3.0],
+            vec![1.0, 1.2, 0.8, 1.1],
+        )
+        .unwrap(),
+        DhdlSeries::new(
+            s1.clone(),
+            vec![0.0, 1.0, 2.0, 3.0],
+            vec![2.0, 2.2, 1.8, 2.1],
+        )
+        .unwrap(),
     ];
 
     let blocks = TiEstimator::default()
@@ -106,7 +116,9 @@ fn ti_block_average_requires_enough_samples_per_block() {
         .unwrap(),
     ];
 
-    let err = TiEstimator::default().block_average(&series, 3).unwrap_err();
+    let err = TiEstimator::default()
+        .block_average(&series, 3)
+        .unwrap_err();
     assert!(matches!(
         err,
         CoreError::InvalidShape {
@@ -233,8 +245,14 @@ fn real_gromacs_windows_support_mbar_block_average_after_grid_intersection() {
     let w2 = trim_window_to_states(&w2, &[1, 2]);
     let w3 = trim_window_to_states(&w3, &[0, 1]);
 
-    assert_eq!(w2.evaluated_states()[0].lambdas(), &[0.0, 0.0, 0.1, 0.0, 0.0]);
-    assert_eq!(w2.evaluated_states()[1].lambdas(), &[0.0, 0.0, 0.15, 0.0, 0.0]);
+    assert_eq!(
+        w2.evaluated_states()[0].lambdas(),
+        &[0.0, 0.0, 0.1, 0.0, 0.0]
+    );
+    assert_eq!(
+        w2.evaluated_states()[1].lambdas(),
+        &[0.0, 0.0, 0.15, 0.0, 0.0]
+    );
     assert_eq!(w3.evaluated_states(), w2.evaluated_states());
 
     let blocks = MbarEstimator::default()

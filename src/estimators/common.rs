@@ -1,7 +1,12 @@
 use crate::data::{StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-pub(crate) type CombinedWindows = (Vec<Vec<f64>>, Vec<f64>, Vec<StatePoint>, Option<Vec<String>>);
+pub(crate) type CombinedWindows = (
+    Vec<Vec<f64>>,
+    Vec<f64>,
+    Vec<StatePoint>,
+    Option<Vec<String>>,
+);
 pub(crate) type PairEstimate = (f64, f64);
 pub(crate) type ExpRow = (usize, Vec<f64>, Vec<f64>);
 
@@ -86,8 +91,7 @@ pub(crate) fn ensure_consistent_lambda_labels(
 
 pub(crate) fn states_match(a: &StatePoint, b: &StatePoint) -> bool {
     a.lambdas().len() == b.lambdas().len()
-        && a
-            .lambdas()
+        && a.lambdas()
             .iter()
             .zip(b.lambdas().iter())
             .all(|(left, right)| (*left - *right).abs() < 1e-6)

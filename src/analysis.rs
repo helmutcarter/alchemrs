@@ -1,4 +1,6 @@
-use crate::data::{DhdlSeries, DeltaFMatrix, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix};
+use crate::data::{
+    DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
+};
 use crate::error::{CoreError, Result};
 use crate::estimators::{
     mbar_log_weights_from_windows, BarEstimator, BarOptions, ExpEstimator, ExpOptions,
@@ -240,7 +242,10 @@ pub fn overlap_scalar(overlap: &OverlapMatrix) -> Result<f64> {
     Ok(1.0 - eigenvalues[1])
 }
 
-pub fn ti_convergence(series: &[DhdlSeries], options: Option<TiOptions>) -> Result<Vec<ConvergencePoint>> {
+pub fn ti_convergence(
+    series: &[DhdlSeries],
+    options: Option<TiOptions>,
+) -> Result<Vec<ConvergencePoint>> {
     if series.len() < 2 {
         return Err(CoreError::InvalidShape {
             expected: 2,
@@ -256,7 +261,10 @@ pub fn ti_convergence(series: &[DhdlSeries], options: Option<TiOptions>) -> Resu
     Ok(points)
 }
 
-pub fn bar_convergence(windows: &[UNkMatrix], options: Option<BarOptions>) -> Result<Vec<ConvergencePoint>> {
+pub fn bar_convergence(
+    windows: &[UNkMatrix],
+    options: Option<BarOptions>,
+) -> Result<Vec<ConvergencePoint>> {
     convergence_from_matrix_windows(
         windows,
         |subset| BarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
@@ -277,7 +285,10 @@ pub fn mbar_convergence(
     )
 }
 
-pub fn exp_convergence(windows: &[UNkMatrix], options: Option<ExpOptions>) -> Result<Vec<ConvergencePoint>> {
+pub fn exp_convergence(
+    windows: &[UNkMatrix],
+    options: Option<ExpOptions>,
+) -> Result<Vec<ConvergencePoint>> {
     convergence_from_matrix_windows(
         windows,
         |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
@@ -455,7 +466,12 @@ where
             .collect::<Vec<_>>();
         let trimmed = trim_windows_to_sampled_states(&subset)?;
         let result = fit(&trimmed)?;
-        points.push(block_estimate_from_matrix(block_index, n_blocks, &result, reverse)?);
+        points.push(block_estimate_from_matrix(
+            block_index,
+            n_blocks,
+            &result,
+            reverse,
+        )?);
     }
     Ok(points)
 }
@@ -568,7 +584,10 @@ fn block_length(n_samples: usize, n_blocks: usize) -> Result<usize> {
     Ok(block_len)
 }
 
-fn convergence_point_from_scalar(n_windows: usize, result: &FreeEnergyEstimate) -> Result<ConvergencePoint> {
+fn convergence_point_from_scalar(
+    n_windows: usize,
+    result: &FreeEnergyEstimate,
+) -> Result<ConvergencePoint> {
     ConvergencePoint::new(
         n_windows,
         result.delta_f(),

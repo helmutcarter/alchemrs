@@ -74,7 +74,9 @@ impl TiEstimator {
         };
 
         let uncertainty = match self.options.method {
-            IntegrationMethod::Trapezoidal => Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?),
+            IntegrationMethod::Trapezoidal => {
+                Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?)
+            }
             IntegrationMethod::Simpson => None,
         };
 
@@ -189,7 +191,11 @@ fn trapezoidal_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
     }
     let mut variance = 0.0;
     for i in 0..lambdas.len() {
-        let dl_prev = if i == 0 { 0.0 } else { lambdas[i] - lambdas[i - 1] };
+        let dl_prev = if i == 0 {
+            0.0
+        } else {
+            lambdas[i] - lambdas[i - 1]
+        };
         let dl_next = if i + 1 < lambdas.len() {
             lambdas[i + 1] - lambdas[i]
         } else {

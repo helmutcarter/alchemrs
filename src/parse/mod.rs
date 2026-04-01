@@ -1,8 +1,8 @@
+use crate::data::{DhdlSeries, UNkMatrix};
+use crate::error::{CoreError, Result as CoreResult};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use crate::data::{DhdlSeries, UNkMatrix};
-use crate::error::{CoreError, Result as CoreResult};
 
 pub mod amber;
 pub mod gromacs;
@@ -32,14 +32,19 @@ pub fn extract_u_nk_with_potential(
     temperature_k: f64,
 ) -> CoreResult<(UNkMatrix, Vec<f64>)> {
     match detect_format(path.as_ref())? {
-        ParseFormat::Amber => amber::extract_u_nk_with_potential(path, temperature_k).map_err(Into::into),
-        ParseFormat::Gromacs => gromacs::extract_u_nk_with_potential(path, temperature_k).map_err(Into::into),
+        ParseFormat::Amber => {
+            amber::extract_u_nk_with_potential(path, temperature_k).map_err(Into::into)
+        }
+        ParseFormat::Gromacs => {
+            gromacs::extract_u_nk_with_potential(path, temperature_k).map_err(Into::into)
+        }
     }
 }
 
 fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
-    let file = File::open(path)
-        .map_err(|err| CoreError::Parse(format!("failed to open input for format detection: {err}")))?;
+    let file = File::open(path).map_err(|err| {
+        CoreError::Parse(format!("failed to open input for format detection: {err}"))
+    })?;
     let mut reader = BufReader::new(file);
     let mut line = String::new();
     let is_xvg = path

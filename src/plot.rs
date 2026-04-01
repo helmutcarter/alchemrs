@@ -142,14 +142,20 @@ pub fn render_convergence_svg(
 
         chart
             .draw_series(LineSeries::new(
-                points.iter().map(|point| (point.n_windows() as i32, point.delta_f())),
+                points
+                    .iter()
+                    .map(|point| (point.n_windows() as i32, point.delta_f())),
                 &BLUE,
             ))
             .map_err(|err| CoreError::InvalidState(err.to_string()))?;
 
         chart
             .draw_series(points.iter().map(|point| {
-                Circle::new((point.n_windows() as i32, point.delta_f()), 4, BLUE.filled())
+                Circle::new(
+                    (point.n_windows() as i32, point.delta_f()),
+                    4,
+                    BLUE.filled(),
+                )
             }))
             .map_err(|err| CoreError::InvalidState(err.to_string()))?;
 
@@ -280,9 +286,7 @@ pub fn render_delta_f_state_svg(
     let adjacent = adjacent_state_values(delta_f)?;
     let labels = adjacent
         .iter()
-        .map(|(from, to, _, _)| {
-            format!("{}→{}", format_state_label(from), format_state_label(to))
-        })
+        .map(|(from, to, _, _)| format!("{}→{}", format_state_label(from), format_state_label(to)))
         .collect::<Vec<_>>();
     let (y_min, y_max) = delta_f_bounds(&adjacent);
 
@@ -493,7 +497,10 @@ pub fn render_block_average_svg(
                 let x = block.block_index() as i32 + 1;
                 chart
                     .draw_series(std::iter::once(PathElement::new(
-                        vec![(x, block.delta_f() - uncertainty), (x, block.delta_f() + uncertainty)],
+                        vec![
+                            (x, block.delta_f() - uncertainty),
+                            (x, block.delta_f() + uncertainty),
+                        ],
                         BLACK,
                     )))
                     .map_err(|err| CoreError::InvalidState(err.to_string()))?;
@@ -550,7 +557,14 @@ fn overlap_color(value: f64) -> RGBColor {
 
 fn adjacent_state_values(
     delta_f: &DeltaFMatrix,
-) -> Result<Vec<(&crate::data::StatePoint, &crate::data::StatePoint, f64, Option<f64>)>> {
+) -> Result<
+    Vec<(
+        &crate::data::StatePoint,
+        &crate::data::StatePoint,
+        f64,
+        Option<f64>,
+    )>,
+> {
     let n_states = delta_f.n_states();
     let uncertainties = delta_f.uncertainties();
     let mut values = Vec::with_capacity(n_states - 1);
@@ -560,7 +574,9 @@ fn adjacent_state_values(
             &delta_f.states()[idx],
             &delta_f.states()[idx + 1],
             delta_f.values()[matrix_idx],
-            uncertainties.map(|values| values[matrix_idx]).filter(|value| !value.is_nan()),
+            uncertainties
+                .map(|values| values[matrix_idx])
+                .filter(|value| !value.is_nan()),
         ));
     }
     Ok(values)
@@ -631,7 +647,10 @@ fn sem(values: &[f64]) -> Result<f64> {
 }
 
 fn ti_x_bounds(points: &[(f64, f64, f64)]) -> (f64, f64) {
-    let min = points.iter().map(|(lambda, _, _)| *lambda).fold(f64::INFINITY, f64::min);
+    let min = points
+        .iter()
+        .map(|(lambda, _, _)| *lambda)
+        .fold(f64::INFINITY, f64::min);
     let max = points
         .iter()
         .map(|(lambda, _, _)| *lambda)
@@ -752,12 +771,8 @@ mod tests {
     fn render_overlap_matrix_svg_returns_svg_document() {
         let state0 = StatePoint::new(vec![0.0], 300.0).unwrap();
         let state1 = StatePoint::new(vec![1.0], 300.0).unwrap();
-        let overlap = OverlapMatrix::new(
-            vec![1.0, 0.25, 0.25, 1.0],
-            2,
-            vec![state0, state1],
-        )
-        .unwrap();
+        let overlap =
+            OverlapMatrix::new(vec![1.0, 0.25, 0.25, 1.0], 2, vec![state0, state1]).unwrap();
         let svg = render_overlap_matrix_svg(
             &overlap,
             Some(OverlapPlotOptions {
@@ -794,16 +809,8 @@ mod tests {
         let state1 = StatePoint::new(vec![0.5], 300.0).unwrap();
         let state2 = StatePoint::new(vec![1.0], 300.0).unwrap();
         let matrix = DeltaFMatrix::new(
-            vec![
-                0.0, 0.8, 1.5,
-                -0.8, 0.0, 0.7,
-                -1.5, -0.7, 0.0,
-            ],
-            Some(vec![
-                0.0, 0.1, f64::NAN,
-                0.1, 0.0, 0.2,
-                f64::NAN, 0.2, 0.0,
-            ]),
+            vec![0.0, 0.8, 1.5, -0.8, 0.0, 0.7, -1.5, -0.7, 0.0],
+            Some(vec![0.0, 0.1, f64::NAN, 0.1, 0.0, 0.2, f64::NAN, 0.2, 0.0]),
             3,
             vec![state0, state1, state2],
         )

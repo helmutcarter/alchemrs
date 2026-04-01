@@ -1,8 +1,8 @@
 use alchemrs::{
-    BlockAveragePlotOptions, BlockEstimate, ConvergencePoint, ConvergencePlotOptions,
-    DeltaFMatrix, DeltaFStatePlotOptions, DhdlSeries, OverlapMatrix, OverlapPlotOptions,
-    StatePoint, TiDhdlPlotOptions, render_block_average_svg, render_convergence_svg,
-    render_delta_f_state_svg, render_overlap_matrix_svg, render_ti_dhdl_svg,
+    render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,
+    render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions, BlockEstimate,
+    ConvergencePlotOptions, ConvergencePoint, DeltaFMatrix, DeltaFStatePlotOptions, DhdlSeries,
+    OverlapMatrix, OverlapPlotOptions, StatePoint, TiDhdlPlotOptions,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,7 +15,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..ConvergencePlotOptions::default()
         }),
     )?;
-    std::fs::write("docs/src/assets/plots/mbar-convergence.svg", convergence_svg)?;
+    std::fs::write(
+        "docs/src/assets/plots/mbar-convergence.svg",
+        convergence_svg,
+    )?;
 
     let overlap_svg = render_overlap_matrix_svg(
         &overlap_matrix()?,
@@ -73,11 +76,7 @@ fn overlap_matrix() -> Result<OverlapMatrix, Box<dyn std::error::Error>> {
     let s1 = StatePoint::new(vec![0.5], 300.0)?;
     let s2 = StatePoint::new(vec![1.0], 300.0)?;
     Ok(OverlapMatrix::new(
-        vec![
-            1.00, 0.32, 0.08,
-            0.32, 1.00, 0.29,
-            0.08, 0.29, 1.00,
-        ],
+        vec![1.00, 0.32, 0.08, 0.32, 1.00, 0.29, 0.08, 0.29, 1.00],
         3,
         vec![s0, s1, s2],
     )?)
@@ -88,15 +87,17 @@ fn delta_f_matrix() -> Result<DeltaFMatrix, Box<dyn std::error::Error>> {
     let s1 = StatePoint::new(vec![0.5], 300.0)?;
     let s2 = StatePoint::new(vec![1.0], 300.0)?;
     Ok(DeltaFMatrix::new(
-        vec![
-            0.0, 0.82, 1.46,
-            -0.82, 0.0, 0.64,
-            -1.46, -0.64, 0.0,
-        ],
+        vec![0.0, 0.82, 1.46, -0.82, 0.0, 0.64, -1.46, -0.64, 0.0],
         Some(vec![
-            0.0, 0.12, f64::NAN,
-            0.12, 0.0, 0.09,
-            f64::NAN, 0.09, 0.0,
+            0.0,
+            0.12,
+            f64::NAN,
+            0.12,
+            0.0,
+            0.09,
+            f64::NAN,
+            0.09,
+            0.0,
         ]),
         3,
         vec![s0, s1, s2],

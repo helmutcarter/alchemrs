@@ -61,5 +61,8 @@ fn overlap_matrix_preserves_lambda_labels() {
     let w1 = build_window_with_labels(s1, &evaluated);
 
     let overlap = overlap_matrix(&[w0, w1], None).expect("overlap");
-    assert_eq!(overlap.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+    assert_eq!(
+        overlap.lambda_labels().unwrap(),
+        &["coul-lambda", "vdw-lambda"]
+    );
 }
