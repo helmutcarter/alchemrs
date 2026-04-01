@@ -4,6 +4,7 @@ The CLI is the `alchemrs` binary in the same package as the `alchemrs` library c
 
 Commands:
 
+- `advise-schedule`
 - `ti`
 - `bar`
 - `mbar`
@@ -48,6 +49,15 @@ For `bar`, `mbar`, `exp`, and `dexp`:
 For overlap-aware commands:
 
 - `--overlap-summary`
+
+For the lambda-schedule advisor:
+
+- `--estimator <mbar|bar>`
+- `--overlap-min <VALUE>`
+- `--block-cv-min <VALUE>`
+- `--n-blocks <N>`
+- `--no-midpoints`
+- `--report <PATH>`
 
 ## Observable selection
 
@@ -120,6 +130,26 @@ cargo run --release -- exp --temperature 300 path/to/*/prod.out
 
 cargo run --release -- dexp --temperature 300 path/to/*/prod.out
 ```
+
+### Schedule Advisor
+
+```bash
+cargo run --release -- advise-schedule \
+  --temperature 300 \
+  --decorrelate \
+  --u-nk-observable de \
+  --report schedule-report.html \
+  --output-format json \
+  path/to/*/prod.out
+```
+
+This command reports adjacent-edge diagnostics and schedule suggestions instead of a final scalar free-energy estimate.
+
+The advisor output includes neighbor-relative overlap/uncertainty context, dominant lambda components for each jump, a priority score for ranking suggestions, and proposal strategies such as focused component splits for multidimensional schedules.
+
+When `--report` is provided, the command also writes a standalone HTML report with a top priority queue, ranked suggestions, edge summaries, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown for multidimensional schedules, including normalized delta bars per component.
+
+See [Schedule Advisor](schedule-advisor.md) for the output schema and current heuristics.
 
 ## Effective settings
 

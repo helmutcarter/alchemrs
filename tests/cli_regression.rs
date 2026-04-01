@@ -5,8 +5,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 use alchemrs::{
-    decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
-    detect_equilibration_dhdl, detect_equilibration_u_nk, DecorrelationOptions, UNkSeriesMethod,
+    advise_lambda_schedule, decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
+    detect_equilibration_dhdl, detect_equilibration_u_nk, AdvisorEstimator, DecorrelationOptions,
+    ScheduleAdvisorOptions, UNkSeriesMethod,
 };
 use alchemrs::{
     overlap_eigenvalues, overlap_matrix, BarEstimator, BarMethod, BarOptions, DhdlSeries,
@@ -15,6 +16,239 @@ use alchemrs::{
 use serde_json::Value;
 
 const TEMPERATURE_K: f64 = 300.0;
+
+#[test]
+fn advise_schedule_cli_outputs_expected_json_when_decorrelating() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(
+        &[
+            "advise-schedule",
+            "--decorrelate",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    let windows = load_decorrelated_windows(&inputs);
+    let advice = advise_lambda_schedule(
+        &windows,
+        Some(ScheduleAdvisorOptions {
+            estimator: AdvisorEstimator::Mbar,
+            overlap_min: 0.03,
+            block_cv_min: 0.15,
+            n_blocks: 4,
+            suggest_midpoints: true,
+        }),
+    )
+    .expect("compute schedule advice");
+    let expected_counts = expected_u_nk_counts(&inputs, &windows);
+
+    let sample_counts = payload["sample_counts"].as_object().expect("sample_counts");
+    assert_eq!(
+        sample_counts["windows"].as_u64(),
+        Some(expected_counts.windows as u64)
+    );
+    assert_eq!(
+        sample_counts["samples_in"].as_u64(),
+        Some(expected_counts.samples_in as u64)
+    );
+    assert_eq!(
+        sample_counts["samples_after_burnin"].as_u64(),
+        Some(expected_counts.samples_after_burnin as u64)
+    );
+    assert_eq!(
+        sample_counts["samples_kept"].as_u64(),
+        Some(expected_counts.samples_kept as u64)
+    );
+
+    assert_eq!(
+        payload["provenance"]["advisor_estimator"].as_str(),
+        Some("mbar")
+    );
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(
+        payload["provenance"]["u_nk_observable"].as_str(),
+        Some("de")
+    );
+    assert_close(
+        payload["provenance"]["overlap_min"]
+            .as_f64()
+            .expect("overlap_min"),
+        0.03,
+    );
+    assert_close(
+        payload["provenance"]["block_cv_min"]
+            .as_f64()
+            .expect("block_cv_min"),
+        0.15,
+    );
+    assert_eq!(payload["provenance"]["n_blocks"].as_u64(), Some(4));
+
+    let edges = payload["edges"].as_array().expect("edges");
+    assert_eq!(edges.len(), advice.edges().len());
+    for (actual, expected) in edges.iter().zip(advice.edges().iter()) {
+        assert_eq!(
+            actual["edge_index"].as_u64(),
+            Some(expected.edge_index() as u64)
+        );
+        assert_eq!(
+            actual["from_lambda"].as_f64(),
+            Some(expected.from_state().lambdas()[0])
+        );
+        assert_eq!(
+            actual["to_lambda"].as_f64(),
+            Some(expected.to_state().lambdas()[0])
+        );
+        assert_close(
+            actual["overlap_min"].as_f64().expect("overlap_min"),
+            expected.overlap_min(),
+        );
+        if let Some(value) = expected.relative_overlap() {
+            assert_close(
+                actual["relative_overlap"]
+                    .as_f64()
+                    .expect("relative_overlap"),
+                value,
+            );
+        } else {
+            assert!(actual["relative_overlap"].is_null());
+        }
+        assert_close(
+            actual["delta_f"].as_f64().expect("delta_f"),
+            expected.delta_f(),
+        );
+        if let Some(value) = expected.relative_uncertainty() {
+            assert_close(
+                actual["relative_uncertainty"]
+                    .as_f64()
+                    .expect("relative_uncertainty"),
+                value,
+            );
+        } else {
+            assert!(actual["relative_uncertainty"].is_null());
+        }
+        assert_close(
+            actual["priority_score"].as_f64().expect("priority_score"),
+            expected.priority_score(),
+        );
+        assert_eq!(
+            actual["severity"].as_str(),
+            Some(schedule_severity_name(expected.severity()))
+        );
+        assert_eq!(
+            actual["dominant_components"],
+            Value::Array(
+                expected
+                    .dominant_components()
+                    .iter()
+                    .cloned()
+                    .map(Value::from)
+                    .collect()
+            )
+        );
+    }
+
+    let suggestions = payload["suggestions"].as_array().expect("suggestions");
+    assert_eq!(suggestions.len(), advice.suggestions().len());
+    for (actual, expected) in suggestions.iter().zip(advice.suggestions().iter()) {
+        assert_eq!(
+            actual["edge_index"].as_u64(),
+            Some(expected.edge_index() as u64)
+        );
+        assert_eq!(
+            actual["kind"].as_str(),
+            Some(schedule_suggestion_name(expected.kind()))
+        );
+        assert_eq!(actual["reason"].as_str(), Some(expected.reason()));
+        assert_close(
+            actual["priority_score"].as_f64().expect("priority_score"),
+            expected.priority_score(),
+        );
+        assert_eq!(
+            actual["focus_components"],
+            Value::Array(
+                expected
+                    .focus_components()
+                    .iter()
+                    .cloned()
+                    .map(Value::from)
+                    .collect()
+            )
+        );
+        assert_eq!(
+            actual["proposal_strategy"],
+            expected
+                .proposal_strategy()
+                .map(schedule_proposal_strategy_name)
+                .map(Value::from)
+                .unwrap_or(Value::Null)
+        );
+        assert_eq!(
+            actual["proposed_lambda"],
+            expected
+                .proposed_state()
+                .map(|state| Value::from(state.lambdas()[0]))
+                .unwrap_or(Value::Null)
+        );
+    }
+}
+
+#[test]
+fn advise_schedule_cli_writes_html_report() {
+    let inputs = acetamide_inputs();
+    let report_path = unique_output_path("advise-schedule-report.html");
+    let report_path_string = report_path.to_string_lossy().to_string();
+
+    let output = run_cli(
+        &[
+            "advise-schedule",
+            "--decorrelate",
+            "--report",
+            &report_path_string,
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+
+    let payload = parse_json_output(&output);
+    assert!(payload["edges"].is_array());
+
+    let written = fs::read_to_string(&report_path).expect("read HTML report");
+    assert!(written.contains("Lambda Schedule Report"));
+    assert!(written.contains("Suggestions"));
+    assert!(written.contains("Edges"));
+    assert!(written.contains("priority"));
+    assert!(written.contains("<svg"));
+
+    fs::remove_file(&report_path).expect("remove HTML report");
+}
+
+fn schedule_severity_name(severity: alchemrs::EdgeSeverity) -> &'static str {
+    match severity {
+        alchemrs::EdgeSeverity::Healthy => "healthy",
+        alchemrs::EdgeSeverity::Monitor => "monitor",
+        alchemrs::EdgeSeverity::AddSampling => "add_sampling",
+        alchemrs::EdgeSeverity::AddWindow => "add_window",
+    }
+}
+
+fn schedule_suggestion_name(kind: alchemrs::SuggestionKind) -> &'static str {
+    match kind {
+        alchemrs::SuggestionKind::NoChange => "no_change",
+        alchemrs::SuggestionKind::ExtendSampling => "extend_sampling",
+        alchemrs::SuggestionKind::InsertWindow => "insert_window",
+    }
+}
+
+fn schedule_proposal_strategy_name(strategy: alchemrs::ProposalStrategy) -> &'static str {
+    match strategy {
+        alchemrs::ProposalStrategy::Midpoint => "midpoint",
+        alchemrs::ProposalStrategy::FocusedSplit => "focused_split",
+    }
+}
 
 #[test]
 fn mbar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {

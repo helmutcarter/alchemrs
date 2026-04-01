@@ -8,6 +8,7 @@
 - [Preprocessing](preprocessing.md)
 - [Estimators](estimators.md)
 - [Overlap Diagnostics](overlap.md)
+- [Schedule Advisor](schedule-advisor.md)
 - [Plotting](plotting.md)
 - [CLI Guide](cli.md)
 - [Outputs and Provenance](outputs.md)

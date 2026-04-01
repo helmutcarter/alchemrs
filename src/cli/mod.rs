@@ -74,6 +74,9 @@ pub enum Command {
         /// Write output to a file instead of stdout
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Write an HTML advisor report to a file
+        #[arg(long)]
+        report: Option<PathBuf>,
     },
     Ti {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)

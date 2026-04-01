@@ -27,6 +27,7 @@ pub fn run(command: Command) -> CliResult<()> {
             no_midpoints,
             output_format,
             output,
+            report,
         } => advise::run(
             inputs,
             AnalysisInputOptions {
@@ -47,6 +48,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 suggest_midpoints: !no_midpoints,
                 output_format,
                 output_path: output,
+                report_path: report,
             },
         ),
         Command::Ti {

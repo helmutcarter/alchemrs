@@ -47,6 +47,15 @@ mdbook serve docs
 
 The `alchemrs` binary provides a command-line workflow.
 
+Commands:
+
+- `advise-schedule`
+- `ti`
+- `bar`
+- `mbar`
+- `exp`
+- `dexp`
+
 ### Build
 It can either be invoked through cargo:
 ```bash
@@ -120,6 +129,31 @@ Example JSON output:
 ```
 
 For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `DeltaFMatrix`, and `OverlapMatrix` all preserve parser-derived lambda component names when available through `.lambda_labels()`.
+
+### Schedule advisor
+
+The CLI also includes a lambda-schedule advisor for `u_nk` workflows. It analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window.
+
+```bash
+alchemrs advise-schedule \
+  --temperature 300 \
+  --decorrelate \
+  --u-nk-observable de \
+  --report schedule-report.html \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+Useful advisor-specific flags:
+
+- `--estimator <mbar|bar>`
+- `--overlap-min <VALUE>`
+- `--block-cv-min <VALUE>`
+- `--n-blocks <N>`
+- `--no-midpoints`
+- `--report <PATH>`
+
+The JSON output includes `sample_counts`, `provenance`, `edges`, and `suggestions`. Edge diagnostics now include neighbor-relative metrics, dominant changing components, and a priority score. Insert-window suggestions can emit either a full midpoint or a component-focused split proposal for multidimensional schedules. When `--report` is provided, the CLI also writes a standalone HTML report with a top priority queue, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown that marks which lambda components are bisected, held at the source state, or unchanged, plus normalized delta bars so the dominant jump is obvious at a glance.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 

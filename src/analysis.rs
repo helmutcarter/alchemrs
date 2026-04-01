@@ -72,6 +72,12 @@ pub enum SuggestionKind {
     InsertWindow,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProposalStrategy {
+    Midpoint,
+    FocusedSplit,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AdjacentEdgeDiagnostic {
     edge_index: usize,
@@ -87,7 +93,26 @@ pub struct AdjacentEdgeDiagnostic {
     block_mean: Option<f64>,
     block_stddev: Option<f64>,
     block_cv: Option<f64>,
+    relative_overlap: Option<f64>,
+    relative_uncertainty: Option<f64>,
+    dominant_components: Vec<String>,
+    priority_score: f64,
     severity: EdgeSeverity,
+}
+
+#[derive(Debug, Clone)]
+struct EdgeMetrics {
+    edge_index: usize,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    lambda_labels: Option<Vec<String>>,
+    overlap_forward: f64,
+    overlap_reverse: f64,
+    delta_f: f64,
+    uncertainty: Option<f64>,
+    block_mean: Option<f64>,
+    block_stddev: Option<f64>,
+    block_cv: Option<f64>,
 }
 
 impl AdjacentEdgeDiagnostic {
@@ -104,6 +129,10 @@ impl AdjacentEdgeDiagnostic {
         block_mean: Option<f64>,
         block_stddev: Option<f64>,
         block_cv: Option<f64>,
+        relative_overlap: Option<f64>,
+        relative_uncertainty: Option<f64>,
+        dominant_components: Vec<String>,
+        priority_score: f64,
         severity: EdgeSeverity,
     ) -> Result<Self> {
         if !overlap_forward.is_finite() || !overlap_reverse.is_finite() {
@@ -144,6 +173,25 @@ impl AdjacentEdgeDiagnostic {
                 ));
             }
         }
+        if let Some(value) = relative_overlap {
+            if !value.is_finite() {
+                return Err(CoreError::NonFiniteValue(
+                    "relative_overlap must be finite".to_string(),
+                ));
+            }
+        }
+        if let Some(value) = relative_uncertainty {
+            if !value.is_finite() {
+                return Err(CoreError::NonFiniteValue(
+                    "relative_uncertainty must be finite".to_string(),
+                ));
+            }
+        }
+        if !priority_score.is_finite() {
+            return Err(CoreError::NonFiniteValue(
+                "priority_score must be finite".to_string(),
+            ));
+        }
         let lambda_delta = to_state
             .lambdas()
             .iter()
@@ -164,6 +212,10 @@ impl AdjacentEdgeDiagnostic {
             block_mean,
             block_stddev,
             block_cv,
+            relative_overlap,
+            relative_uncertainty,
+            dominant_components,
+            priority_score,
             severity,
         })
     }
@@ -220,6 +272,22 @@ impl AdjacentEdgeDiagnostic {
         self.block_cv
     }
 
+    pub fn relative_overlap(&self) -> Option<f64> {
+        self.relative_overlap
+    }
+
+    pub fn relative_uncertainty(&self) -> Option<f64> {
+        self.relative_uncertainty
+    }
+
+    pub fn dominant_components(&self) -> &[String] {
+        &self.dominant_components
+    }
+
+    pub fn priority_score(&self) -> f64 {
+        self.priority_score
+    }
+
     pub fn severity(&self) -> EdgeSeverity {
         self.severity
     }
@@ -232,6 +300,9 @@ pub struct ScheduleSuggestion {
     from_state: StatePoint,
     to_state: StatePoint,
     proposed_state: Option<StatePoint>,
+    focus_components: Vec<String>,
+    proposal_strategy: Option<ProposalStrategy>,
+    priority_score: f64,
     reason: String,
 }
 
@@ -242,6 +313,9 @@ impl ScheduleSuggestion {
         from_state: StatePoint,
         to_state: StatePoint,
         proposed_state: Option<StatePoint>,
+        focus_components: Vec<String>,
+        proposal_strategy: Option<ProposalStrategy>,
+        priority_score: f64,
         reason: String,
     ) -> Self {
         Self {
@@ -250,6 +324,9 @@ impl ScheduleSuggestion {
             from_state,
             to_state,
             proposed_state,
+            focus_components,
+            proposal_strategy,
+            priority_score,
             reason,
         }
     }
@@ -272,6 +349,18 @@ impl ScheduleSuggestion {
 
     pub fn proposed_state(&self) -> Option<&StatePoint> {
         self.proposed_state.as_ref()
+    }
+
+    pub fn focus_components(&self) -> &[String] {
+        &self.focus_components
+    }
+
+    pub fn proposal_strategy(&self) -> Option<ProposalStrategy> {
+        self.proposal_strategy
+    }
+
+    pub fn priority_score(&self) -> f64 {
+        self.priority_score
     }
 
     pub fn reason(&self) -> &str {
@@ -597,8 +686,7 @@ pub fn advise_lambda_schedule(
     let n_states = overlap.n_states();
     let labels = overlap.lambda_labels().map(|values| values.to_vec());
 
-    let mut edges = Vec::with_capacity(n_states - 1);
-    let mut suggestions = Vec::new();
+    let mut metrics = Vec::with_capacity(n_states - 1);
     for edge_index in 0..(n_states - 1) {
         let pair_windows = trim_windows_to_sampled_states(&[
             ordered[edge_index].clone(),
@@ -608,23 +696,71 @@ pub fn advise_lambda_schedule(
         let block_stats = pair_block_stats(&pair_windows, options)?;
         let overlap_forward = overlap.values()[edge_index * n_states + edge_index + 1];
         let overlap_reverse = overlap.values()[(edge_index + 1) * n_states + edge_index];
+        metrics.push(EdgeMetrics {
+            edge_index,
+            from_state: pair_result.states()[0].clone(),
+            to_state: pair_result.states()[1].clone(),
+            lambda_labels: labels.clone(),
+            overlap_forward,
+            overlap_reverse,
+            delta_f: pair_result.values()[1],
+            uncertainty: pair_result.uncertainties().map(|values| values[1]),
+            block_mean: block_stats.map(|(mean, _, _)| mean),
+            block_stddev: block_stats.map(|(_, stddev, _)| stddev),
+            block_cv: block_stats.map(|(_, _, cv)| cv),
+        });
+    }
+
+    let overlap_mins = metrics
+        .iter()
+        .map(|edge| edge.overlap_forward.min(edge.overlap_reverse))
+        .collect::<Vec<_>>();
+    let uncertainties = metrics
+        .iter()
+        .map(|edge| edge.uncertainty)
+        .collect::<Vec<_>>();
+
+    let mut edges = Vec::with_capacity(metrics.len());
+    let mut suggestions = Vec::new();
+    for metric in metrics {
+        let relative_overlap = neighbor_relative_value(&overlap_mins, metric.edge_index);
+        let relative_uncertainty = neighbor_relative_option(&uncertainties, metric.edge_index);
+        let priority_score = edge_priority_score(
+            metric.overlap_forward.min(metric.overlap_reverse),
+            metric.block_cv,
+            metric.uncertainty,
+            relative_overlap,
+            relative_uncertainty,
+            &options,
+        );
+        let dominant_components = dominant_component_names(
+            &metric.from_state,
+            &metric.to_state,
+            metric.lambda_labels.as_deref(),
+        );
         let severity = classify_edge(
-            overlap_forward.min(overlap_reverse),
-            block_stats.map(|(_, _, cv)| cv),
+            metric.overlap_forward.min(metric.overlap_reverse),
+            metric.block_cv,
+            relative_overlap,
+            relative_uncertainty,
             &options,
         );
         let diagnostic = AdjacentEdgeDiagnostic::new(
-            edge_index,
-            pair_result.states()[0].clone(),
-            pair_result.states()[1].clone(),
-            labels.clone(),
-            overlap_forward,
-            overlap_reverse,
-            pair_result.values()[1],
-            pair_result.uncertainties().map(|values| values[1]),
-            block_stats.map(|(mean, _, _)| mean),
-            block_stats.map(|(_, stddev, _)| stddev),
-            block_stats.map(|(_, _, cv)| cv),
+            metric.edge_index,
+            metric.from_state,
+            metric.to_state,
+            metric.lambda_labels,
+            metric.overlap_forward,
+            metric.overlap_reverse,
+            metric.delta_f,
+            metric.uncertainty,
+            metric.block_mean,
+            metric.block_stddev,
+            metric.block_cv,
+            relative_overlap,
+            relative_uncertainty,
+            dominant_components,
+            priority_score,
             severity,
         )?;
 
@@ -634,6 +770,12 @@ pub fn advise_lambda_schedule(
         edges.push(diagnostic);
     }
 
+    suggestions.sort_by(|left, right| {
+        right
+            .priority_score()
+            .partial_cmp(&left.priority_score())
+            .unwrap_or(Ordering::Equal)
+    });
     Ok(ScheduleAdvice::new(edges, suggestions))
 }
 
@@ -1018,17 +1160,143 @@ fn pair_block_stats(
     Ok(Some((mean, stddev, cv)))
 }
 
+fn neighbor_relative_value(values: &[f64], index: usize) -> Option<f64> {
+    let neighbors = neighbor_values(values, index);
+    if neighbors.is_empty() {
+        return None;
+    }
+    let mean = neighbors.iter().sum::<f64>() / neighbors.len() as f64;
+    if mean.abs() <= 1.0e-12 {
+        None
+    } else {
+        Some(values[index] / mean)
+    }
+}
+
+fn neighbor_relative_option(values: &[Option<f64>], index: usize) -> Option<f64> {
+    let current = values[index]?;
+    let neighbors = neighbor_optional_values(values, index);
+    if neighbors.is_empty() {
+        return None;
+    }
+    let mean = neighbors.iter().sum::<f64>() / neighbors.len() as f64;
+    if mean.abs() <= 1.0e-12 {
+        None
+    } else {
+        Some(current / mean)
+    }
+}
+
+fn neighbor_values(values: &[f64], index: usize) -> Vec<f64> {
+    let mut neighbors = Vec::with_capacity(2);
+    if index > 0 {
+        neighbors.push(values[index - 1]);
+    }
+    if index + 1 < values.len() {
+        neighbors.push(values[index + 1]);
+    }
+    neighbors
+}
+
+fn neighbor_optional_values(values: &[Option<f64>], index: usize) -> Vec<f64> {
+    let mut neighbors = Vec::with_capacity(2);
+    if index > 0 {
+        if let Some(value) = values[index - 1] {
+            neighbors.push(value);
+        }
+    }
+    if index + 1 < values.len() {
+        if let Some(value) = values[index + 1] {
+            neighbors.push(value);
+        }
+    }
+    neighbors
+}
+
+fn dominant_component_names(
+    from_state: &StatePoint,
+    to_state: &StatePoint,
+    lambda_labels: Option<&[String]>,
+) -> Vec<String> {
+    dominant_component_indices(from_state, to_state)
+        .into_iter()
+        .map(|index| {
+            lambda_labels
+                .and_then(|labels| labels.get(index).cloned())
+                .unwrap_or_else(|| format!("lambda[{index}]"))
+        })
+        .collect()
+}
+
+fn dominant_component_indices(from_state: &StatePoint, to_state: &StatePoint) -> Vec<usize> {
+    let deltas = from_state
+        .lambdas()
+        .iter()
+        .zip(to_state.lambdas().iter())
+        .map(|(from, to)| (to - from).abs())
+        .collect::<Vec<_>>();
+    let max_delta = deltas.iter().copied().fold(0.0, f64::max);
+    if max_delta <= 1.0e-12 {
+        return Vec::new();
+    }
+
+    deltas
+        .iter()
+        .enumerate()
+        .filter_map(|(index, delta)| {
+            if *delta >= max_delta * 0.8 {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn edge_priority_score(
+    overlap_min: f64,
+    block_cv: Option<f64>,
+    uncertainty: Option<f64>,
+    relative_overlap: Option<f64>,
+    relative_uncertainty: Option<f64>,
+    options: &ScheduleAdvisorOptions,
+) -> f64 {
+    let mut score = 0.0;
+    if options.overlap_min > 0.0 {
+        score += ((options.overlap_min - overlap_min) / options.overlap_min).max(0.0) * 3.0;
+    }
+    if let Some(value) = relative_overlap {
+        score += (1.0 - value).max(0.0) * 2.0;
+    }
+    if let Some(value) = block_cv {
+        score += (value / options.block_cv_min.max(1.0e-12) - 1.0).max(0.0);
+    }
+    if let Some(value) = relative_uncertainty {
+        score += (value - 1.0).max(0.0) * 0.5;
+    } else if uncertainty.is_some() {
+        score += 0.1;
+    }
+    score.max(0.0)
+}
+
 fn classify_edge(
     overlap_min: f64,
     block_cv: Option<f64>,
+    relative_overlap: Option<f64>,
+    relative_uncertainty: Option<f64>,
     options: &ScheduleAdvisorOptions,
 ) -> EdgeSeverity {
-    if overlap_min < options.overlap_min {
+    let localized_overlap_gap = relative_overlap.is_some_and(|value| value < 0.85);
+    if overlap_min < options.overlap_min && (localized_overlap_gap || relative_overlap.is_none()) {
         EdgeSeverity::AddWindow
-    } else if block_cv.is_some_and(|value| value >= options.block_cv_min) {
+    } else if block_cv.is_some_and(|value| value >= options.block_cv_min)
+        || relative_uncertainty.is_some_and(|value| value >= 1.5)
+    {
         EdgeSeverity::AddSampling
     } else if (options.overlap_min > 0.0 && overlap_min < options.overlap_min * 1.5)
+        || relative_overlap.is_some_and(|value| value < 0.95)
         || block_cv.is_some_and(|value| value >= options.block_cv_min * 0.75)
+        || relative_uncertainty.is_some_and(|value| value >= 1.2)
     {
         EdgeSeverity::Monitor
     } else {
@@ -1042,22 +1310,24 @@ fn schedule_suggestion(
 ) -> Result<Option<ScheduleSuggestion>> {
     let suggestion = match diagnostic.severity() {
         EdgeSeverity::AddWindow => {
-            let midpoint = if options.suggest_midpoints {
-                Some(midpoint_state(
-                    diagnostic.from_state(),
-                    diagnostic.to_state(),
-                )?)
+            let (proposal_state, proposal_strategy) = if options.suggest_midpoints {
+                let (state, strategy) = proposed_insert_state(diagnostic)?;
+                (Some(state), Some(strategy))
             } else {
-                None
+                (None, None)
             };
             Some(ScheduleSuggestion::new(
                 SuggestionKind::InsertWindow,
                 diagnostic.edge_index(),
                 diagnostic.from_state().clone(),
                 diagnostic.to_state().clone(),
-                midpoint,
+                proposal_state,
+                diagnostic.dominant_components().to_vec(),
+                proposal_strategy,
+                diagnostic.priority_score(),
                 format!(
-                    "adjacent overlap {:.6} is below threshold {:.6}",
+                    "{} overlap {:.6} is below threshold {:.6}",
+                    focus_component_prefix(diagnostic),
                     diagnostic.overlap_min(),
                     options.overlap_min
                 ),
@@ -1069,8 +1339,12 @@ fn schedule_suggestion(
             diagnostic.from_state().clone(),
             diagnostic.to_state().clone(),
             None,
+            diagnostic.dominant_components().to_vec(),
+            None,
+            diagnostic.priority_score(),
             format!(
-                "block coefficient of variation {:.6} exceeds threshold {:.6}",
+                "{} block coefficient of variation {:.6} exceeds threshold {:.6}",
+                focus_component_prefix(diagnostic),
                 diagnostic.block_cv().unwrap_or_default(),
                 options.block_cv_min
             ),
@@ -1088,6 +1362,66 @@ fn midpoint_state(from_state: &StatePoint, to_state: &StatePoint) -> Result<Stat
         .map(|(from, to)| 0.5 * (from + to))
         .collect::<Vec<_>>();
     StatePoint::new(lambdas, from_state.temperature_k())
+}
+
+fn proposed_insert_state(
+    diagnostic: &AdjacentEdgeDiagnostic,
+) -> Result<(StatePoint, ProposalStrategy)> {
+    let dominant = dominant_component_indices(diagnostic.from_state(), diagnostic.to_state());
+    let changed = changed_component_indices(diagnostic.from_state(), diagnostic.to_state());
+    if dominant.len() == 1 && changed.len() > 1 {
+        let focus_index = dominant[0];
+        let lambdas = diagnostic
+            .from_state()
+            .lambdas()
+            .iter()
+            .zip(diagnostic.to_state().lambdas().iter())
+            .enumerate()
+            .map(|(index, (from, to))| {
+                if index == focus_index {
+                    0.5 * (from + to)
+                } else {
+                    *from
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok((
+            StatePoint::new(lambdas, diagnostic.from_state().temperature_k())?,
+            ProposalStrategy::FocusedSplit,
+        ))
+    } else {
+        Ok((
+            midpoint_state(diagnostic.from_state(), diagnostic.to_state())?,
+            ProposalStrategy::Midpoint,
+        ))
+    }
+}
+
+fn focus_component_prefix(diagnostic: &AdjacentEdgeDiagnostic) -> String {
+    if diagnostic.dominant_components().is_empty() {
+        "adjacent edge".to_string()
+    } else {
+        format!(
+            "components [{}]:",
+            diagnostic.dominant_components().join(", ")
+        )
+    }
+}
+
+fn changed_component_indices(from_state: &StatePoint, to_state: &StatePoint) -> Vec<usize> {
+    from_state
+        .lambdas()
+        .iter()
+        .zip(to_state.lambdas().iter())
+        .enumerate()
+        .filter_map(|(index, (from, to))| {
+            if (to - from).abs() > 1.0e-12 {
+                Some(index)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn convergence_point_from_scalar(
@@ -1197,7 +1531,10 @@ fn block_estimate_from_matrix(
 
 #[cfg(test)]
 mod tests {
-    use super::{advise_lambda_schedule, AdvisorEstimator, EdgeSeverity, ScheduleAdvisorOptions};
+    use super::{
+        advise_lambda_schedule, AdvisorEstimator, EdgeSeverity, ProposalStrategy,
+        ScheduleAdvisorOptions,
+    };
     use crate::data::{StatePoint, UNkMatrix};
 
     fn build_window(
@@ -1222,6 +1559,30 @@ mod tests {
         .unwrap()
     }
 
+    fn build_window_with_labels(
+        sampled_lambdas: Vec<f64>,
+        rows: &[[f64; 3]],
+        evaluated_states: &[StatePoint],
+        labels: Vec<String>,
+    ) -> UNkMatrix {
+        let n_samples = rows.len();
+        let data = rows
+            .iter()
+            .flat_map(|row| row.iter().copied())
+            .collect::<Vec<_>>();
+        let time = (0..n_samples).map(|idx| idx as f64).collect::<Vec<_>>();
+        UNkMatrix::new_with_labels(
+            n_samples,
+            3,
+            data,
+            time,
+            Some(StatePoint::new(sampled_lambdas, 298.0).unwrap()),
+            evaluated_states.to_vec(),
+            Some(labels),
+        )
+        .unwrap()
+    }
+
     #[test]
     fn advise_lambda_schedule_sorts_windows_and_suggests_midpoints() {
         let states = vec![
@@ -1233,30 +1594,30 @@ mod tests {
             build_window(
                 1.0,
                 &[
-                    [2.8, 0.2, 0.0],
-                    [3.0, 0.3, 0.0],
+                    [3.0, 0.1, 0.0],
+                    [3.1, 0.1, 0.0],
                     [2.9, 0.2, 0.0],
-                    [3.1, 0.4, 0.0],
+                    [3.0, 0.1, 0.0],
                 ],
                 &states,
             ),
             build_window(
                 0.0,
                 &[
-                    [0.0, 0.2, 2.8],
-                    [0.0, 0.3, 3.0],
-                    [0.0, 0.2, 2.9],
-                    [0.0, 0.4, 3.1],
+                    [0.0, 2.0, 3.0],
+                    [0.0, 2.1, 3.1],
+                    [0.0, 1.9, 2.9],
+                    [0.0, 2.0, 3.0],
                 ],
                 &states,
             ),
             build_window(
                 0.5,
                 &[
-                    [0.2, 0.0, 0.2],
-                    [0.3, 0.0, 0.3],
-                    [0.2, 0.0, 0.2],
-                    [0.4, 0.0, 0.4],
+                    [2.0, 0.0, 0.1],
+                    [2.1, 0.0, 0.1],
+                    [1.9, 0.0, 0.2],
+                    [2.0, 0.0, 0.1],
                 ],
                 &states,
             ),
@@ -1278,7 +1639,7 @@ mod tests {
         assert_eq!(advice.edges()[0].from_state().lambdas(), &[0.0]);
         assert_eq!(advice.edges()[0].to_state().lambdas(), &[0.5]);
         assert_eq!(advice.edges()[0].severity(), EdgeSeverity::AddWindow);
-        assert_eq!(advice.suggestions().len(), 2);
+        assert_eq!(advice.suggestions().len(), 1);
         assert_eq!(
             advice.suggestions()[0].proposed_state().unwrap().lambdas(),
             &[0.25]
@@ -1296,30 +1657,30 @@ mod tests {
             build_window(
                 0.0,
                 &[
-                    [0.0, 0.2, 2.8],
-                    [0.0, 0.3, 3.0],
-                    [0.0, 0.2, 2.9],
-                    [0.0, 0.4, 3.1],
+                    [0.0, 0.1, 0.2],
+                    [0.0, 0.1, 0.2],
+                    [0.0, 0.1, 0.2],
+                    [0.0, 0.1, 0.2],
                 ],
                 &states,
             ),
             build_window(
                 0.5,
                 &[
-                    [0.2, 0.0, 0.2],
-                    [0.3, 0.0, 0.3],
-                    [0.2, 0.0, 0.2],
-                    [0.4, 0.0, 0.4],
+                    [0.1, 0.0, 0.1],
+                    [0.1, 0.0, 0.1],
+                    [0.1, 0.0, 0.1],
+                    [0.1, 0.0, 0.1],
                 ],
                 &states,
             ),
             build_window(
                 1.0,
                 &[
-                    [2.8, 0.2, 0.0],
-                    [3.0, 0.3, 0.0],
-                    [2.9, 0.2, 0.0],
-                    [3.1, 0.4, 0.0],
+                    [0.2, 0.1, 0.0],
+                    [0.2, 0.1, 0.0],
+                    [0.2, 0.1, 0.0],
+                    [0.2, 0.1, 0.0],
                 ],
                 &states,
             ),
@@ -1343,5 +1704,78 @@ mod tests {
             .edges()
             .iter()
             .all(|edge| edge.severity() == EdgeSeverity::Healthy));
+    }
+
+    #[test]
+    fn advise_lambda_schedule_reports_dominant_multidimensional_components() {
+        let states = vec![
+            StatePoint::new(vec![0.0, 0.0], 298.0).unwrap(),
+            StatePoint::new(vec![0.8, 0.1], 298.0).unwrap(),
+            StatePoint::new(vec![1.0, 1.0], 298.0).unwrap(),
+        ];
+        let labels = vec!["coul-lambda".to_string(), "vdw-lambda".to_string()];
+        let windows = vec![
+            build_window_with_labels(
+                vec![0.0, 0.0],
+                &[
+                    [0.0, 2.0, 3.0],
+                    [0.0, 2.1, 3.1],
+                    [0.0, 1.9, 2.9],
+                    [0.0, 2.0, 3.0],
+                ],
+                &states,
+                labels.clone(),
+            ),
+            build_window_with_labels(
+                vec![0.8, 0.1],
+                &[
+                    [2.0, 0.0, 0.1],
+                    [2.1, 0.0, 0.1],
+                    [1.9, 0.0, 0.2],
+                    [2.0, 0.0, 0.1],
+                ],
+                &states,
+                labels.clone(),
+            ),
+            build_window_with_labels(
+                vec![1.0, 1.0],
+                &[
+                    [3.0, 0.1, 0.0],
+                    [3.1, 0.1, 0.0],
+                    [2.9, 0.2, 0.0],
+                    [3.0, 0.1, 0.0],
+                ],
+                &states,
+                labels.clone(),
+            ),
+        ];
+
+        let advice = advise_lambda_schedule(
+            &windows,
+            Some(ScheduleAdvisorOptions {
+                estimator: AdvisorEstimator::Mbar,
+                overlap_min: 0.99,
+                block_cv_min: 1.0e30,
+                n_blocks: 4,
+                suggest_midpoints: true,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(
+            advice.edges()[0].dominant_components(),
+            &["coul-lambda".to_string()]
+        );
+        let suggestion = advice
+            .suggestions()
+            .iter()
+            .find(|suggestion| suggestion.edge_index() == 0)
+            .expect("edge 0 suggestion");
+        assert_eq!(suggestion.focus_components(), &["coul-lambda".to_string()]);
+        assert_eq!(
+            suggestion.proposal_strategy(),
+            Some(ProposalStrategy::FocusedSplit)
+        );
+        assert_eq!(suggestion.proposed_state().unwrap().lambdas(), &[0.4, 0.0]);
     }
 }
