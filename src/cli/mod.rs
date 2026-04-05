@@ -360,6 +360,7 @@ pub enum Command {
 pub enum TiMethod {
     Trapezoidal,
     Simpson,
+    GaussianQuadrature,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -374,6 +375,7 @@ impl From<TiMethod> for IntegrationMethod {
         match method {
             TiMethod::Trapezoidal => IntegrationMethod::Trapezoidal,
             TiMethod::Simpson => IntegrationMethod::Simpson,
+            TiMethod::GaussianQuadrature => IntegrationMethod::GaussianQuadrature,
         }
     }
 }
@@ -471,6 +473,23 @@ mod tests {
         ] {
             let cli = Cli::parse_from(args);
             assert!(!command_conservative(cli.command));
+        }
+    }
+
+    #[test]
+    fn ti_command_accepts_gaussian_quadrature_method() {
+        let cli = Cli::parse_from([
+            "alchemrs",
+            "ti",
+            "--method",
+            "gaussian-quadrature",
+            "window.out",
+        ]);
+        match cli.command {
+            Command::Ti { method, .. } => {
+                assert!(matches!(method, super::TiMethod::GaussianQuadrature));
+            }
+            _ => panic!("expected ti command"),
         }
     }
 

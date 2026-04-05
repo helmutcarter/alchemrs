@@ -194,6 +194,59 @@ mod tests {
     }
 
     #[test]
+    fn ti_gaussian_quadrature_integrates_over_full_unit_interval() {
+        let l0 = 0.21132486540518713;
+        let l1 = 0.7886751345948129;
+        let s0 = StatePoint::new(vec![l0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![l1], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![l0.powi(3), l0.powi(3)]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![l1.powi(3), l1.powi(3)]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::GaussianQuadrature,
+            parallel: false,
+        });
+        let result = estimator.fit(&[d0, d1]).unwrap().result().unwrap();
+        assert!((result.delta_f() - 0.25).abs() < 1e-12);
+        assert_eq!(result.uncertainty(), Some(0.0));
+        assert_eq!(result.from_state().lambdas(), &[0.0]);
+        assert_eq!(result.to_state().lambdas(), &[1.0]);
+    }
+
+    #[test]
+    fn ti_gaussian_quadrature_rejects_nonquadrature_schedule() {
+        let s0 = StatePoint::new(vec![0.25], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.75], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::GaussianQuadrature,
+            parallel: false,
+        });
+        let err = estimator.fit(&[d0, d1]).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
+    fn ti_gaussian_quadrature_rejects_unsupported_window_count() {
+        let series = (0..17)
+            .map(|idx| {
+                DhdlSeries::new(
+                    StatePoint::new(vec![idx as f64 / 16.0], 300.0).unwrap(),
+                    vec![0.0, 1.0],
+                    vec![idx as f64, idx as f64],
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::GaussianQuadrature,
+            parallel: false,
+        });
+        let err = estimator.fit(&series).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
     fn mbar_requires_windows() {
         let estimator = MbarEstimator::default();
         let err = estimator.fit(&[]).unwrap_err();
@@ -222,6 +275,42 @@ mod tests {
 
         assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
         assert_eq!(serial.uncertainty(), parallel.uncertainty());
+    }
+
+    #[test]
+    fn ti_gaussian_quadrature_parallel_matches_serial() {
+        let l0 = 0.21132486540518713;
+        let l1 = 0.7886751345948129;
+        let d0 = DhdlSeries::new(
+            StatePoint::new(vec![l0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![l0, l0 + 0.1, l0 + 0.2],
+        )
+        .unwrap();
+        let d1 = DhdlSeries::new(
+            StatePoint::new(vec![l1], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![l1, l1 + 0.1, l1 + 0.2],
+        )
+        .unwrap();
+
+        let serial = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::GaussianQuadrature,
+            parallel: false,
+        })
+        .estimate(&[d0.clone(), d1.clone()])
+        .unwrap();
+        let parallel = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::GaussianQuadrature,
+            parallel: true,
+        })
+        .estimate(&[d0, d1])
+        .unwrap();
+
+        assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
+        assert_eq!(serial.uncertainty(), parallel.uncertainty());
+        assert_eq!(serial.from_state().lambdas(), &[0.0]);
+        assert_eq!(serial.to_state().lambdas(), &[1.0]);
     }
 
     #[test]

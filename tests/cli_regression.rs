@@ -837,6 +837,28 @@ fn ti_cli_rejects_u_nk_observable_with_explanatory_error() {
 }
 
 #[test]
+fn ti_cli_rejects_nonquadrature_schedule_for_gaussian_quadrature() {
+    let inputs = acetamide_inputs();
+    let output = run_cli_failure(
+        &[
+            "ti",
+            "--method",
+            "gaussian-quadrature",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+
+    assert!(!output.status.success(), "expected command to fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("use trapezoidal TI for arbitrary schedules"),
+        "unexpected stderr:\n{stderr}"
+    );
+}
+
+#[test]
 fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let inputs = acetamide_inputs();
     let output = run_cli(

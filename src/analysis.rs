@@ -804,15 +804,40 @@ pub fn ti_convergence(
     series: &[DhdlSeries],
     options: Option<TiOptions>,
 ) -> Result<Vec<ConvergencePoint>> {
-    if series.len() < 2 {
+    let options = options.unwrap_or_default();
+    if matches!(
+        options.method,
+        crate::estimators::IntegrationMethod::GaussianQuadrature
+    ) {
+        // Prefix subsets of an n-point Gauss-Legendre schedule are not themselves valid
+        // quadrature schedules, so TI convergence does not have a sound interpretation here.
+        return Err(CoreError::Unsupported(
+            "TI convergence is unsupported for Gaussian quadrature because prefix windows are not valid quadrature schedules".to_string(),
+        ));
+    }
+
+    let start = match options.method {
+        crate::estimators::IntegrationMethod::Trapezoidal => 2,
+        crate::estimators::IntegrationMethod::Simpson => 3,
+        crate::estimators::IntegrationMethod::GaussianQuadrature => unreachable!(),
+    };
+    if series.len() < start {
         return Err(CoreError::InvalidShape {
-            expected: 2,
+            expected: start,
             found: series.len(),
         });
     }
-    let estimator = TiEstimator::new(options.unwrap_or_default());
-    let mut points = Vec::with_capacity(series.len() - 1);
-    for end in 2..=series.len() {
+
+    let estimator = TiEstimator::new(options);
+    let mut points = Vec::with_capacity(series.len() - start + 1);
+    for end in start..=series.len() {
+        if matches!(
+            estimator.options.method,
+            crate::estimators::IntegrationMethod::Simpson
+        ) && (end & 1) == 0
+        {
+            continue;
+        }
         let result = estimator.estimate(&series[..end])?;
         points.push(convergence_point_from_scalar(end, &result)?);
     }
@@ -1184,9 +1209,15 @@ pub(crate) fn ti_block_average(
     n_blocks: usize,
     options: Option<TiOptions>,
 ) -> Result<Vec<BlockEstimate>> {
-    if series.len() < 2 {
+    let options = options.unwrap_or_default();
+    let minimum_windows = match options.method {
+        crate::estimators::IntegrationMethod::Trapezoidal => 2,
+        crate::estimators::IntegrationMethod::Simpson => 3,
+        crate::estimators::IntegrationMethod::GaussianQuadrature => 1,
+    };
+    if series.len() < minimum_windows {
         return Err(CoreError::InvalidShape {
-            expected: 2,
+            expected: minimum_windows,
             found: series.len(),
         });
     }
@@ -1197,7 +1228,7 @@ pub(crate) fn ti_block_average(
         });
     }
 
-    let estimator = TiEstimator::new(options.unwrap_or_default());
+    let estimator = TiEstimator::new(options);
     let blocked = series
         .iter()
         .map(|item| split_dhdl_series(item, n_blocks))

@@ -183,7 +183,7 @@ CSV columns include estimator parameters after the result fields:
 delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept
 ```
 
-### TI (trapezoidal)
+### TI
 
 ```bash
 alchemrs ti \
@@ -192,6 +192,9 @@ alchemrs ti \
   --remove-burnin 125 \
   /path/to/*/prod.out
 ```
+
+`ti` also supports `--method simpson` and `--method gaussian-quadrature`.
+Gaussian quadrature is only valid when the sampled lambda windows are the supported Gauss-Legendre nodes on `[0, 1]` for a `1..=16` window schedule. For arbitrary lambda schedules, use trapezoidal TI.
 
 ### BAR
 

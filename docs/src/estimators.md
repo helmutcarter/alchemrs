@@ -21,7 +21,7 @@ Types:
 - `TiEstimator`
 - `TiFit`
 - `TiOptions`
-- `IntegrationMethod::{Trapezoidal, Simpson}`
+- `IntegrationMethod::{Trapezoidal, Simpson, GaussianQuadrature}`
 
 Input:
 
@@ -31,14 +31,22 @@ Behavior:
 
 - sorts windows by lambda
 - computes the mean `dH/dlambda` for each window
-- integrates across lambda using trapezoidal or Simpson integration
+- integrates across lambda using trapezoidal, Simpson, or Gaussian quadrature
 - `fit(...)` returns `TiFit`
 - `result()` materializes the `FreeEnergyEstimate`
 
 Current uncertainty behavior:
 
 - trapezoidal mode reports an uncertainty estimate
+- Gaussian quadrature reports an uncertainty estimate from the quadrature weights and per-window SEMs
 - Simpson mode currently returns no uncertainty
+
+Gaussian quadrature behavior:
+
+- only supports one-dimensional lambda schedules
+- only supports Gauss-Legendre schedules with `1..=16` sampled windows
+- validates that the sampled lambdas match the supported quadrature nodes
+- reports the free energy over the full `[0, 1]` interval, so `result().from_state()` is `lambda=0` and `result().to_state()` is `lambda=1` even though the sampled windows are interior quadrature nodes
 
 ## BAR
 

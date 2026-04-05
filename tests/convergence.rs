@@ -1,6 +1,6 @@
 use alchemrs::{
     bar_convergence, dexp_convergence, mbar_convergence, ti_convergence, CoreError, DhdlSeries,
-    MbarOptions, StatePoint, UNkMatrix,
+    IntegrationMethod, MbarOptions, StatePoint, TiOptions, UNkMatrix,
 };
 
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint]) -> UNkMatrix {
@@ -147,4 +147,34 @@ fn ti_convergence_returns_prefix_series() {
     assert_eq!(points[1].from_state().lambdas(), s0.lambdas());
     assert_eq!(points[1].to_state().lambdas(), s2.lambdas());
     assert!(points[1].lambda_labels().is_none());
+}
+
+#[test]
+fn ti_convergence_rejects_gaussian_quadrature() {
+    let l0 = 0.21132486540518713;
+    let l1 = 0.7886751345948129;
+    let series = vec![
+        DhdlSeries::new(
+            StatePoint::new(vec![l0], 300.0).unwrap(),
+            vec![0.0, 1.0],
+            vec![1.0, 1.0],
+        )
+        .unwrap(),
+        DhdlSeries::new(
+            StatePoint::new(vec![l1], 300.0).unwrap(),
+            vec![0.0, 1.0],
+            vec![2.0, 2.0],
+        )
+        .unwrap(),
+    ];
+
+    let err = ti_convergence(
+        &series,
+        Some(TiOptions {
+            method: IntegrationMethod::GaussianQuadrature,
+            parallel: false,
+        }),
+    )
+    .unwrap_err();
+    assert!(matches!(err, CoreError::Unsupported(_)));
 }
