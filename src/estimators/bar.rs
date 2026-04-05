@@ -1,9 +1,9 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{DeltaFMatrix, UNkMatrix};
+use crate::data::{find_state_index_exact, DeltaFMatrix, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, work_values,
+    ensure_consistent_lambda_labels, ensure_consistent_states, work_values,
     PairEstimate,
 };
 
@@ -64,7 +64,7 @@ impl BarEstimator {
             let sampled = window.sampled_state().ok_or_else(|| {
                 CoreError::InvalidState("sampled_state required for BAR".to_string())
             })?;
-            let idx = find_state_index(&eval_states, sampled)?;
+            let idx = find_state_index_exact(&eval_states, sampled)?;
             if window_by_index[idx].is_some() {
                 return Err(CoreError::InvalidState(
                     "multiple windows for same sampled_state".to_string(),

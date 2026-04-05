@@ -1,4 +1,4 @@
-use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
+use crate::data::{find_scalar_lambda_state_index_exact, DhdlSeries, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -413,7 +413,8 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
                 });
             }
             let sampled_lambda = sampled.lambdas()[0];
-            let index = find_state_index(u_nk.evaluated_states(), sampled_lambda)?;
+            let index =
+                find_scalar_lambda_state_index_exact(u_nk.evaluated_states(), sampled_lambda)?;
             let other_index = if index + 1 < n_states {
                 index + 1
             } else {
@@ -437,17 +438,6 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
         )));
     }
     Ok(series)
-}
-
-fn find_state_index(states: &[StatePoint], lambda: f64) -> Result<usize> {
-    for (idx, state) in states.iter().enumerate() {
-        if state.lambdas().len() == 1 && (state.lambdas()[0] - lambda).abs() < 1e-6 {
-            return Ok(idx);
-        }
-    }
-    Err(CoreError::InvalidState(
-        "sampled_state not found in evaluated_states".to_string(),
-    ))
 }
 
 fn has_duplicates(time: &[f64]) -> bool {
@@ -665,6 +655,7 @@ fn best_equilibration_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data::StatePoint;
 
     #[test]
     fn decorrelate_dhdl_drops_duplicates() {

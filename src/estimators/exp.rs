@@ -1,9 +1,9 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{DeltaFMatrix, UNkMatrix};
+use crate::data::{find_state_index_exact, DeltaFMatrix, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, work_values,
+    ensure_consistent_lambda_labels, ensure_consistent_states, work_values,
     ExpRow,
 };
 
@@ -47,7 +47,7 @@ impl ExpEstimator {
             let sampled = window.sampled_state().ok_or_else(|| {
                 CoreError::InvalidState("sampled_state required for EXP".to_string())
             })?;
-            let idx = find_state_index(&states, sampled)?;
+            let idx = find_state_index_exact(&states, sampled)?;
             if window_map[idx].is_some() {
                 return Err(CoreError::InvalidState(
                     "multiple windows for same sampled_state".to_string(),

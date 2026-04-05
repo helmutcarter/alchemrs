@@ -1,4 +1,4 @@
-use crate::data::{StatePoint, UNkMatrix};
+use crate::data::{find_state_index_exact, state_points_match_exact, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 pub(crate) type CombinedWindows = (
@@ -14,7 +14,7 @@ pub(crate) fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<Stat
     let first = windows[0].evaluated_states();
     let first_temperature = first[0].temperature_k();
     for state in first {
-        if (state.temperature_k() - first_temperature).abs() > 1e-6 {
+        if state.temperature_k() != first_temperature {
             return Err(CoreError::InvalidState(
                 "evaluated_states temperatures differ within a window".to_string(),
             ));
@@ -35,12 +35,12 @@ pub(crate) fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<Stat
                     found: b.lambdas().len(),
                 });
             }
-            if (a.temperature_k() - b.temperature_k()).abs() > 1e-6 {
+            if a.temperature_k() != b.temperature_k() {
                 return Err(CoreError::InvalidState(
                     "evaluated_states temperatures differ between windows".to_string(),
                 ));
             }
-            if !states_match(a, b) {
+            if !state_points_match_exact(a, b) {
                 return Err(CoreError::InvalidState(
                     "evaluated_states differ between windows".to_string(),
                 ));
@@ -57,12 +57,12 @@ pub(crate) fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<Stat
                 found: sampled.lambdas().len(),
             });
         }
-        if (sampled.temperature_k() - first_temperature).abs() > 1e-6 {
+        if sampled.temperature_k() != first_temperature {
             return Err(CoreError::InvalidState(
                 "sampled_state temperature differs from evaluated_states".to_string(),
             ));
         }
-        if find_state_index(first, sampled).is_err() {
+        if find_state_index_exact(first, sampled).is_err() {
             return Err(CoreError::InvalidState(
                 "sampled_state not found in evaluated_states".to_string(),
             ));
@@ -87,27 +87,6 @@ pub(crate) fn ensure_consistent_lambda_labels(
         }
     }
     Ok(first)
-}
-
-pub(crate) fn states_match(a: &StatePoint, b: &StatePoint) -> bool {
-    a.lambdas().len() == b.lambdas().len()
-        && a.lambdas()
-            .iter()
-            .zip(b.lambdas().iter())
-            .all(|(left, right)| (*left - *right).abs() < 1e-6)
-}
-
-pub(crate) fn find_state_index(states: &[StatePoint], target: &StatePoint) -> Result<usize> {
-    for (idx, state) in states.iter().enumerate() {
-        if states_match(state, target)
-            && (state.temperature_k() - target.temperature_k()).abs() < 1e-6
-        {
-            return Ok(idx);
-        }
-    }
-    Err(CoreError::InvalidState(
-        "sampled_state not found in evaluated_states".to_string(),
-    ))
 }
 
 pub(crate) fn work_values(window: &UNkMatrix, idx_a: usize, idx_b: usize) -> Result<Vec<f64>> {

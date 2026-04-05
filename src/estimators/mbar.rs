@@ -1,9 +1,9 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{DeltaFMatrix, StatePoint, UNkMatrix};
+use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, find_state_index, CombinedWindows,
+    ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows,
 };
 
 #[derive(Debug, Clone)]
@@ -128,7 +128,7 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
         let sampled = window.sampled_state().ok_or_else(|| {
             CoreError::InvalidState("sampled_state required for MBAR".to_string())
         })?;
-        let idx = find_state_index(&states, sampled)?;
+        let idx = find_state_index_exact(&states, sampled)?;
         n_k[idx] += window.n_samples() as f64;
         offsets.push(total_samples);
         total_samples += window.n_samples();

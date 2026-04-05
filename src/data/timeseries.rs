@@ -1,4 +1,4 @@
-use crate::data::StatePoint;
+use crate::data::{find_state_index_exact, StatePoint};
 use crate::error::{ensure_finite, ensure_finite_or_positive_infinity, CoreError, Result};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -116,6 +116,13 @@ impl UNkMatrix {
                 found: time_ps.len(),
             });
         }
+        if let Some(sampled) = sampled_state.as_ref() {
+            if find_state_index_exact(&evaluated_states, sampled).is_err() {
+                return Err(CoreError::InvalidState(
+                    "sampled_state not found in evaluated_states".to_string(),
+                ));
+            }
+        }
         ensure_finite_or_positive_infinity("u_nk", &data)?;
         ensure_finite("time", &time_ps)?;
         for idx in 1..time_ps.len() {
@@ -216,6 +223,19 @@ mod tests {
                 expected: 1,
                 found: 0
             }
+        ));
+    }
+
+    #[test]
+    fn unk_matrix_rejects_sampled_state_missing_from_grid_exactly() {
+        let sampled = StatePoint::new(vec![0.1 + 0.2], 300.0).unwrap();
+        let evaluated = StatePoint::new(vec![0.3], 300.0).unwrap();
+        let err = UNkMatrix::new(1, 1, vec![0.0], vec![0.0], Some(sampled), vec![evaluated])
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::InvalidState(message)
+                if message == "sampled_state not found in evaluated_states"
         ));
     }
 

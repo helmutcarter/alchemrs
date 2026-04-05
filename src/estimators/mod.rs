@@ -41,6 +41,21 @@ mod tests {
         evaluated_lambdas: [f64; 2],
         evaluated_temperature: f64,
     ) -> UNkMatrix {
+        try_make_window(
+            sampled_lambda,
+            sampled_temperature,
+            evaluated_lambdas,
+            evaluated_temperature,
+        )
+        .unwrap()
+    }
+
+    fn try_make_window(
+        sampled_lambda: f64,
+        sampled_temperature: f64,
+        evaluated_lambdas: [f64; 2],
+        evaluated_temperature: f64,
+    ) -> crate::error::Result<UNkMatrix> {
         let sampled_state = StatePoint::new(vec![sampled_lambda], sampled_temperature).unwrap();
         let evaluated_states = evaluated_lambdas
             .into_iter()
@@ -48,7 +63,7 @@ mod tests {
             .collect::<Vec<_>>();
         let data = vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4];
         let time = vec![0.0, 1.0, 2.0];
-        UNkMatrix::new(3, 2, data, time, Some(sampled_state), evaluated_states).unwrap()
+        UNkMatrix::new(3, 2, data, time, Some(sampled_state), evaluated_states)
     }
 
     fn make_two_state_windows_with_positive_infinity() -> Vec<UNkMatrix> {
@@ -273,7 +288,7 @@ mod tests {
     fn bar_rejects_mismatched_evaluated_state_grid() {
         let windows = vec![
             make_window(0.0, 300.0, [0.0, 1.0], 300.0),
-            make_window(1.0, 300.0, [0.0, 2.0], 300.0),
+            make_window(2.0, 300.0, [0.0, 2.0], 300.0),
         ];
 
         let err = BarEstimator::default().fit(&windows).unwrap_err();
@@ -283,26 +298,16 @@ mod tests {
     }
 
     #[test]
-    fn mbar_rejects_sampled_state_temperature_mismatch() {
-        let windows = vec![
-            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
-            make_window(1.0, 310.0, [0.0, 1.0], 300.0),
-        ];
-
-        let err = MbarEstimator::default().fit(&windows).unwrap_err();
+    fn window_construction_rejects_sampled_state_temperature_mismatch() {
+        let err = try_make_window(1.0, 310.0, [0.0, 1.0], 300.0).unwrap_err();
         assert!(
-            matches!(err, CoreError::InvalidState(message) if message == "sampled_state temperature differs from evaluated_states")
+            matches!(err, CoreError::InvalidState(message) if message == "sampled_state not found in evaluated_states")
         );
     }
 
     #[test]
-    fn exp_rejects_sampled_state_missing_from_grid() {
-        let windows = vec![
-            make_window(0.0, 300.0, [0.0, 1.0], 300.0),
-            make_window(0.5, 300.0, [0.0, 1.0], 300.0),
-        ];
-
-        let err = ExpEstimator::default().fit(&windows).unwrap_err();
+    fn window_construction_rejects_sampled_state_missing_from_grid() {
+        let err = try_make_window(0.5, 300.0, [0.0, 1.0], 300.0).unwrap_err();
         assert!(
             matches!(err, CoreError::InvalidState(message) if message == "sampled_state not found in evaluated_states")
         );

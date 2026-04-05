@@ -1,5 +1,6 @@
 use crate::data::{
-    DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
+    find_state_index_exact, state_points_match_exact, DeltaFMatrix, DhdlSeries,
+    FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
 };
 use crate::error::{CoreError, Result};
 use crate::estimators::{
@@ -1372,17 +1373,7 @@ fn trim_windows_to_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix
     for window in windows {
         let indices = states
             .iter()
-            .map(|state| {
-                window
-                    .evaluated_states()
-                    .iter()
-                    .position(|candidate| candidate == state)
-                    .ok_or_else(|| {
-                        CoreError::InvalidState(
-                            "sampled_state not found in evaluated_states".to_string(),
-                        )
-                    })
-            })
+            .map(|state| find_state_index_exact(window.evaluated_states(), state))
             .collect::<Result<Vec<_>>>()?;
 
         let mut data = Vec::with_capacity(window.n_samples() * states.len());
@@ -1529,7 +1520,14 @@ fn sort_windows_by_sampled_state(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix>
         )
     });
     for idx in 1..ordered.len() {
-        if ordered[idx - 1].sampled_state() == ordered[idx].sampled_state() {
+        if state_points_match_exact(
+            ordered[idx - 1]
+                .sampled_state()
+                .expect("sampled_state checked above"),
+            ordered[idx]
+                .sampled_state()
+                .expect("sampled_state checked above"),
+        ) {
             return Err(CoreError::InvalidState(
                 "multiple windows for same sampled_state".to_string(),
             ));
@@ -1542,7 +1540,7 @@ fn sort_dhdl_series_by_state(series: &[DhdlSeries]) -> Result<Vec<DhdlSeries>> {
     let mut ordered = series.to_vec();
     ordered.sort_by(|left, right| compare_state_points(left.state(), right.state()));
     for idx in 1..ordered.len() {
-        if ordered[idx - 1].state() == ordered[idx].state() {
+        if state_points_match_exact(ordered[idx - 1].state(), ordered[idx].state()) {
             return Err(CoreError::InvalidState(
                 "multiple DhdlSeries for same lambda state".to_string(),
             ));
@@ -1562,7 +1560,9 @@ fn compare_state_points(left: &StatePoint, right: &StatePoint) -> Ordering {
             other => return other,
         }
     }
-    Ordering::Equal
+    left.temperature_k()
+        .partial_cmp(&right.temperature_k())
+        .unwrap_or(Ordering::Equal)
 }
 
 fn extract_scalar_lambda(state: &StatePoint, operation: &'static str) -> Result<f64> {
