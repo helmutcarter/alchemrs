@@ -86,6 +86,12 @@ impl UNkMatrix {
         evaluated_states: Vec<StatePoint>,
         lambda_labels: Option<Vec<String>>,
     ) -> Result<Self> {
+        if n_states == 0 {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
         let expected = n_samples
             .checked_mul(n_states)
             .ok_or(CoreError::InvalidShape {
@@ -199,6 +205,18 @@ mod tests {
         let err = UNkMatrix::new(2, 2, vec![1.0, 2.0, 3.0], vec![0.0, 1.0], None, vec![state])
             .unwrap_err();
         assert!(matches!(err, CoreError::InvalidShape { .. }));
+    }
+
+    #[test]
+    fn unk_matrix_rejects_empty_state_grid() {
+        let err = UNkMatrix::new(0, 0, vec![], vec![], None, vec![]).unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::InvalidShape {
+                expected: 1,
+                found: 0
+            }
+        ));
     }
 
     #[test]
