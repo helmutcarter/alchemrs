@@ -24,7 +24,7 @@
 //! let (u_nk, epot) = extract_u_nk_with_potential("prod.out", 300.0)?;
 //! let u_nk = decorrelate_u_nk_with_observable(&u_nk, &epot, &DecorrelationOptions::default())?;
 //! let fit = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
-//! let result = fit.delta_f_matrix_with_uncertainty()?;
+//! let result = fit.result_with_uncertainty()?;
 //!
 //! println!("delta_f = {}", result.values()[result.n_states() - 1]);
 //! if let Some(labels) = fit.lambda_labels() {
@@ -55,9 +55,9 @@ pub use data::{
     DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
 };
 pub use error::{CoreError, Result};
-pub use estimators::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
-pub use estimators::{ExpEstimator, ExpOptions, MbarEstimator, MbarFit, MbarOptions};
-pub use estimators::{IntegrationMethod, TiEstimator, TiOptions};
+pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions, BarUncertainty};
+pub use estimators::{ExpEstimator, ExpFit, ExpOptions, MbarEstimator, MbarFit, MbarOptions};
+pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 #[cfg(feature = "plotting")]
 pub use plot::{

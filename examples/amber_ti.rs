@@ -19,7 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let estimator = TiEstimator::new(TiOptions::default());
-    let result = estimator.fit(&series)?;
+    let fit = estimator.fit(&series)?;
+    let result = fit.result()?;
     println!(
         "TI dG = {:.6} (from lambda={:.4} to lambda={:.4})",
         result.delta_f(),

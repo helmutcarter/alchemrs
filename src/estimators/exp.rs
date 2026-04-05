@@ -1,5 +1,5 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{find_state_index_exact, DeltaFMatrix, UNkMatrix};
+use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 use super::common::{
@@ -8,16 +8,12 @@ use super::common::{
 
 #[derive(Debug, Clone)]
 pub struct ExpOptions {
-    pub compute_uncertainty: bool,
     pub parallel: bool,
 }
 
 impl Default for ExpOptions {
     fn default() -> Self {
-        Self {
-            compute_uncertainty: true,
-            parallel: false,
-        }
+        Self { parallel: false }
     }
 }
 
@@ -26,12 +22,20 @@ pub struct ExpEstimator {
     pub options: ExpOptions,
 }
 
+#[derive(Debug, Clone)]
+pub struct ExpFit {
+    values: Vec<f64>,
+    uncertainties: Vec<f64>,
+    states: Vec<StatePoint>,
+    lambda_labels: Option<Vec<String>>,
+}
+
 impl ExpEstimator {
     pub fn new(options: ExpOptions) -> Self {
         Self { options }
     }
 
-    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<ExpFit> {
         if windows.is_empty() {
             return Err(CoreError::InvalidShape {
                 expected: 1,
@@ -64,11 +68,7 @@ impl ExpEstimator {
         }
 
         let mut values = vec![0.0; n_states * n_states];
-        let mut uncertainties = if self.options.compute_uncertainty {
-            Some(vec![0.0; n_states * n_states])
-        } else {
-            None
-        };
+        let mut uncertainties = vec![0.0; n_states * n_states];
 
         if self.options.parallel {
             use rayon::prelude::*;
@@ -82,9 +82,7 @@ impl ExpEstimator {
                         let work = work_values(window, i, j)?;
                         let delta = exp_delta_f(&work)?;
                         row.push(delta);
-                        if self.options.compute_uncertainty {
-                            row_unc.push(exp_uncertainty(&work)?);
-                        }
+                        row_unc.push(exp_uncertainty(&work)?);
                     }
                     Ok((i, row, row_unc))
                 })
@@ -94,10 +92,8 @@ impl ExpEstimator {
                 for (j, value) in row.into_iter().enumerate() {
                     values[i * n_states + j] = value;
                 }
-                if let Some(ref mut unc) = uncertainties {
-                    for (j, value) in row_unc.into_iter().enumerate() {
-                        unc[i * n_states + j] = value;
-                    }
+                for (j, value) in row_unc.into_iter().enumerate() {
+                    uncertainties[i * n_states + j] = value;
                 }
             }
         } else {
@@ -107,15 +103,26 @@ impl ExpEstimator {
                     let work = work_values(window, i, j)?;
                     let delta = exp_delta_f(&work)?;
                     values[i * n_states + j] = delta;
-                    if let Some(ref mut unc) = uncertainties {
-                        unc[i * n_states + j] = exp_uncertainty(&work)?;
-                    }
+                    uncertainties[i * n_states + j] = exp_uncertainty(&work)?;
                 }
             }
         }
 
         let lambda_labels = ensure_consistent_lambda_labels(windows)?;
-        DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
+        Ok(ExpFit {
+            values,
+            uncertainties,
+            states,
+            lambda_labels,
+        })
+    }
+
+    pub fn estimate(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        self.fit(windows)?.result()
+    }
+
+    pub fn estimate_with_uncertainty(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        self.fit(windows)?.result_with_uncertainty()
     }
 
     pub fn block_average(
@@ -132,6 +139,40 @@ impl ExpEstimator {
         n_blocks: usize,
     ) -> Result<Vec<BlockEstimate>> {
         analysis::dexp_block_average(windows, n_blocks, Some(self.options.clone()))
+    }
+}
+
+impl ExpFit {
+    pub fn n_states(&self) -> usize {
+        self.states.len()
+    }
+
+    pub fn states(&self) -> &[StatePoint] {
+        &self.states
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.lambda_labels.as_deref()
+    }
+
+    pub fn result(&self) -> Result<DeltaFMatrix> {
+        DeltaFMatrix::new_with_labels(
+            self.values.clone(),
+            None,
+            self.n_states(),
+            self.states.clone(),
+            self.lambda_labels.clone(),
+        )
+    }
+
+    pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
+        DeltaFMatrix::new_with_labels(
+            self.values.clone(),
+            Some(self.uncertainties.clone()),
+            self.n_states(),
+            self.states.clone(),
+            self.lambda_labels.clone(),
+        )
     }
 }
 

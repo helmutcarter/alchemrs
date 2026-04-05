@@ -34,9 +34,9 @@ pub fn run(
     });
     let fit = estimator.fit(&windows)?;
     let result = if run_options.no_uncertainty {
-        fit.delta_f_matrix()?
+        fit.result()?
     } else {
-        fit.delta_f_matrix_with_uncertainty()?
+        fit.result_with_uncertainty()?
     };
     let overlap = if run_options.overlap_summary {
         Some(summarize_overlap_matrix(&fit.overlap_matrix()?)?)

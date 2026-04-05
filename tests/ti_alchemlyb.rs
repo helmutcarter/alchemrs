@@ -59,7 +59,8 @@ fn ti_matches_alchemlyb_all_windows() {
     }
 
     let estimator = TiEstimator::default();
-    let result = estimator.fit(&series).expect("TI fit");
+    let fit = estimator.fit(&series).expect("TI fit");
+    let result = fit.result().expect("TI result");
 
     let expected_path =
         format!("{base}/fixtures/amber/acetamide_tiny/ti_0.0_1.0.delta_f_sigma.txt");

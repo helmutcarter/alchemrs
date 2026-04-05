@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     let estimator = MbarEstimator::new(MbarOptions::default());
     let fit = estimator.fit(windows)?;
-    let result = fit.delta_f_matrix_with_uncertainty()?;
+    let result = fit.result_with_uncertainty()?;
     let delta_index = result.n_states() - 1;
     let delta_f = result.values()[delta_index];
     let uncertainty = result.uncertainties().map(|values| values[delta_index]);

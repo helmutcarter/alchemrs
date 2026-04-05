@@ -71,11 +71,11 @@ impl MbarEstimator {
     }
 
     pub fn estimate(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
-        self.fit(windows)?.delta_f_matrix()
+        self.fit(windows)?.result()
     }
 
     pub fn estimate_with_uncertainty(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
-        self.fit(windows)?.delta_f_matrix_with_uncertainty()
+        self.fit(windows)?.result_with_uncertainty()
     }
 
     pub fn block_average(
@@ -119,6 +119,14 @@ impl MbarFit {
     pub fn log_weights(&self) -> &[f64] {
         self.log_weights
             .get_or_init(|| mbar_log_weights(&self.prepared.u_kn, &self.prepared.n_k, &self.f_k))
+    }
+
+    pub fn result(&self) -> Result<DeltaFMatrix> {
+        self.delta_f_matrix()
+    }
+
+    pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
+        self.delta_f_matrix_with_uncertainty()
     }
 
     pub fn delta_f_matrix(&self) -> Result<DeltaFMatrix> {

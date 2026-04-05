@@ -17,7 +17,7 @@ use alchemrs::{
 let (u_nk, epot) = extract_u_nk_with_potential("prod.out", 300.0)?;
 let u_nk = decorrelate_u_nk_with_observable(&u_nk, &epot, &DecorrelationOptions::default())?;
 let fit = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
-let result = fit.delta_f_matrix_with_uncertainty()?;
+let result = fit.result_with_uncertainty()?;
 if let Some(labels) = fit.lambda_labels() {
     println!("lambda components = {:?}", labels);
 }

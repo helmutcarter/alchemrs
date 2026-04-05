@@ -22,7 +22,8 @@ pub fn run(
         method: method.into(),
         parallel,
     });
-    let result = estimator.fit(&series)?;
+    let fit = estimator.fit(&series)?;
+    let result = fit.result()?;
 
     print_scalar_result(
         &ScalarResult {

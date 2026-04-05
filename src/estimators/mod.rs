@@ -4,10 +4,10 @@ mod exp;
 mod mbar;
 mod ti;
 
-pub use bar::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
-pub use exp::{ExpEstimator, ExpOptions};
+pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions, BarUncertainty};
+pub use exp::{ExpEstimator, ExpFit, ExpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions};
-pub use ti::{IntegrationMethod, TiEstimator, TiOptions};
+pub use ti::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
 #[cfg(test)]
 mod tests {
@@ -155,7 +155,7 @@ mod tests {
         let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
         let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
         let estimator = TiEstimator::default();
-        let result = estimator.fit(&[d0, d1]).unwrap();
+        let result = estimator.fit(&[d0, d1]).unwrap().result().unwrap();
         assert!((result.delta_f() - 1.0).abs() < 1e-12);
         assert_eq!(result.uncertainty(), Some(0.0));
     }
@@ -172,7 +172,7 @@ mod tests {
             method: IntegrationMethod::Simpson,
             parallel: false,
         });
-        let result = estimator.fit(&[d0, d1, d2]).unwrap();
+        let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
         assert!((result.delta_f() - 1.0).abs() < 1e-12);
         assert_eq!(result.uncertainty(), None);
     }
@@ -211,13 +211,13 @@ mod tests {
             method: IntegrationMethod::Trapezoidal,
             parallel: false,
         })
-        .fit(&[d0.clone(), d1.clone()])
+        .estimate(&[d0.clone(), d1.clone()])
         .unwrap();
         let parallel = TiEstimator::new(TiOptions {
             method: IntegrationMethod::Trapezoidal,
             parallel: true,
         })
-        .fit(&[d0, d1])
+        .estimate(&[d0, d1])
         .unwrap();
 
         assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
@@ -231,13 +231,13 @@ mod tests {
             parallel: false,
             ..BarOptions::default()
         })
-        .fit(&windows)
+        .estimate(&windows)
         .unwrap();
         let parallel = BarEstimator::new(BarOptions {
             parallel: true,
             ..BarOptions::default()
         })
-        .fit(&windows)
+        .estimate(&windows)
         .unwrap();
 
         assert_eq!(serial.values(), parallel.values());
@@ -251,13 +251,13 @@ mod tests {
             parallel: false,
             ..ExpOptions::default()
         })
-        .fit(&windows)
+        .estimate_with_uncertainty(&windows)
         .unwrap();
         let parallel = ExpEstimator::new(ExpOptions {
             parallel: true,
             ..ExpOptions::default()
         })
-        .fit(&windows)
+        .estimate_with_uncertainty(&windows)
         .unwrap();
 
         assert_eq!(serial.values(), parallel.values());
@@ -354,9 +354,13 @@ mod tests {
 
     #[test]
     fn exp_supports_multidimensional_lambda_states() {
-        let result = ExpEstimator::default()
+        let fit = ExpEstimator::default()
             .fit(&make_multidimensional_windows())
             .unwrap();
+        let result = fit.result_with_uncertainty().unwrap();
+        assert_eq!(fit.n_states(), 2);
+        assert_eq!(fit.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(fit.states()[1].lambdas(), &[1.0, 0.0]);
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
@@ -368,9 +372,13 @@ mod tests {
 
     #[test]
     fn bar_supports_multidimensional_lambda_states() {
-        let result = BarEstimator::default()
+        let fit = BarEstimator::default()
             .fit(&make_multidimensional_windows())
             .unwrap();
+        let result = fit.result().unwrap();
+        assert_eq!(fit.n_states(), 2);
+        assert_eq!(fit.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(fit.states()[1].lambdas(), &[1.0, 0.0]);
         assert_eq!(result.n_states(), 2);
         assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
@@ -383,14 +391,16 @@ mod tests {
     #[test]
     fn exp_supports_positive_infinity_work_values() {
         let windows = make_two_state_windows_with_positive_infinity();
-        let result = ExpEstimator::default().fit(&windows).unwrap();
+        let result = ExpEstimator::default()
+            .estimate_with_uncertainty(&windows)
+            .unwrap();
         assert!(result.values().iter().all(|value| value.is_finite()));
     }
 
     #[test]
     fn bar_supports_positive_infinity_work_values() {
         let windows = make_two_state_windows_with_positive_infinity();
-        let result = BarEstimator::default().fit(&windows).unwrap();
+        let result = BarEstimator::default().estimate(&windows).unwrap();
         assert!(result.values().iter().all(|value| value.is_finite()));
         assert!(result
             .uncertainties()
@@ -430,7 +440,7 @@ mod tests {
     #[test]
     fn bar_adjacent_uncertainty_matches_solver_sigma() {
         let windows = make_two_state_windows();
-        let result = BarEstimator::default().fit(&windows).unwrap();
+        let result = BarEstimator::default().estimate(&windows).unwrap();
 
         let w_f = work_values(&windows[0], 0, 1).unwrap();
         let w_r = work_values(&windows[1], 0, 1)

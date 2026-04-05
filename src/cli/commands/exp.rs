@@ -53,10 +53,14 @@ fn run(
         None
     };
     let estimator = ExpEstimator::new(ExpOptions {
-        compute_uncertainty: !run_options.no_uncertainty,
         parallel: run_options.parallel,
     });
-    let result = estimator.fit(&windows)?;
+    let fit = estimator.fit(&windows)?;
+    let result = if run_options.no_uncertainty {
+        fit.result()?
+    } else {
+        fit.result_with_uncertainty()?
+    };
     let n_states = result.n_states();
     let delta_index = if reverse {
         (n_states - 1) * n_states

@@ -57,7 +57,10 @@ fn exp_matches_pymbar_matrix() {
     }
 
     let estimator = ExpEstimator::default();
-    let result = estimator.fit(&windows).expect("EXP fit");
+    let fit = estimator.fit(&windows).expect("EXP fit");
+    let result = fit
+        .result_with_uncertainty()
+        .expect("EXP result with uncertainty");
 
     let expected_delta_path = format!("{base}/fixtures/amber/acetamide_tiny/exp_matrix.txt");
     let expected_sigma_path = format!("{base}/fixtures/amber/acetamide_tiny/exp_sigma.txt");

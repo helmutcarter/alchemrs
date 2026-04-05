@@ -642,7 +642,8 @@ fn bar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
         parallel: false,
         ..BarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit BAR");
+    let fit = estimator.fit(&windows).expect("fit BAR");
+    let result = fit.result().expect("BAR result");
     let delta_index = result.n_states() - 1;
     let expected_overlap = compute_overlap_summary(&windows);
     let expected_counts = expected_u_nk_counts(&inputs, &windows);
@@ -732,7 +733,8 @@ fn ti_cli_outputs_expected_json_when_decorrelating() {
         parallel: false,
         ..TiOptions::default()
     });
-    let result = estimator.fit(&series).expect("fit TI");
+    let fit = estimator.fit(&series).expect("fit TI");
+    let result = fit.result().expect("TI result");
     let expected_counts = expected_dhdl_counts(&inputs, &series);
 
     assert_close(
@@ -787,7 +789,8 @@ fn ti_cli_outputs_expected_json_when_auto_equilibrating() {
         parallel: false,
         ..TiOptions::default()
     });
-    let result = estimator.fit(&series).expect("fit TI");
+    let fit = estimator.fit(&series).expect("fit TI");
+    let result = fit.result().expect("TI result");
     let expected_counts = expected_dhdl_counts_after_auto_equilibration(&inputs, &series);
 
     assert_close(
@@ -849,11 +852,11 @@ fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let payload = parse_json_output(&output);
 
     let windows = load_decorrelated_windows(&inputs);
-    let estimator = ExpEstimator::new(ExpOptions {
-        compute_uncertainty: true,
-        parallel: false,
-    });
-    let result = estimator.fit(&windows).expect("fit EXP");
+    let estimator = ExpEstimator::new(ExpOptions { parallel: false });
+    let fit = estimator.fit(&windows).expect("fit EXP");
+    let result = fit
+        .result_with_uncertainty()
+        .expect("EXP result with uncertainty");
     let delta_index = result.n_states() - 1;
     let expected_overlap = compute_overlap_summary(&windows);
     let expected_counts = expected_u_nk_counts(&inputs, &windows);
@@ -902,11 +905,11 @@ fn dexp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let payload = parse_json_output(&output);
 
     let windows = load_decorrelated_windows(&inputs);
-    let estimator = ExpEstimator::new(ExpOptions {
-        compute_uncertainty: true,
-        parallel: false,
-    });
-    let result = estimator.fit(&windows).expect("fit DEXP");
+    let estimator = ExpEstimator::new(ExpOptions { parallel: false });
+    let fit = estimator.fit(&windows).expect("fit DEXP");
+    let result = fit
+        .result_with_uncertainty()
+        .expect("DEXP result with uncertainty");
     let n_states = result.n_states();
     let delta_index = (n_states - 1) * n_states;
     let expected_overlap = compute_overlap_summary(&windows);

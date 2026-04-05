@@ -25,7 +25,8 @@ fn run_ti(paths: &[String], temperature_k: f64) -> Result<(), Box<dyn std::error
     }
 
     let estimator = TiEstimator::new(TiOptions::default());
-    let result = estimator.fit(&series)?;
+    let fit = estimator.fit(&series)?;
+    let result = fit.result()?;
     println!("TI dG = {:.6}", result.delta_f());
     Ok(())
 }
@@ -56,7 +57,7 @@ fn load_windows(
 fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     let estimator = MbarEstimator::new(MbarOptions::default());
     let fit = estimator.fit(windows)?;
-    let result = fit.delta_f_matrix_with_uncertainty()?;
+    let result = fit.result_with_uncertainty()?;
     let delta_index = result.n_states() - 1;
     println!("MBAR dG = {:.6}", result.values()[delta_index]);
     if let Some(labels) = fit.lambda_labels() {

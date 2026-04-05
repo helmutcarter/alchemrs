@@ -1,5 +1,5 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{find_state_index_exact, DeltaFMatrix, UNkMatrix};
+use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 use super::common::{
@@ -44,12 +44,20 @@ pub struct BarEstimator {
     pub options: BarOptions,
 }
 
+#[derive(Debug, Clone)]
+pub struct BarFit {
+    values: Vec<f64>,
+    uncertainties: Vec<f64>,
+    states: Vec<StatePoint>,
+    lambda_labels: Option<Vec<String>>,
+}
+
 impl BarEstimator {
     pub fn new(options: BarOptions) -> Self {
         Self { options }
     }
 
-    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<BarFit> {
         if windows.len() < 2 {
             return Err(CoreError::InvalidShape {
                 expected: 2,
@@ -168,7 +176,16 @@ impl BarEstimator {
             }
         }
 
-        DeltaFMatrix::new_with_labels(adelta, Some(ad_delta), n_states, eval_states, lambda_labels)
+        Ok(BarFit {
+            values: adelta,
+            uncertainties: ad_delta,
+            states: eval_states,
+            lambda_labels,
+        })
+    }
+
+    pub fn estimate(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        self.fit(windows)?.result()
     }
 
     pub fn block_average(
@@ -177,6 +194,30 @@ impl BarEstimator {
         n_blocks: usize,
     ) -> Result<Vec<BlockEstimate>> {
         analysis::bar_block_average(windows, n_blocks, Some(self.options.clone()))
+    }
+}
+
+impl BarFit {
+    pub fn n_states(&self) -> usize {
+        self.states.len()
+    }
+
+    pub fn states(&self) -> &[StatePoint] {
+        &self.states
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.lambda_labels.as_deref()
+    }
+
+    pub fn result(&self) -> Result<DeltaFMatrix> {
+        DeltaFMatrix::new_with_labels(
+            self.values.clone(),
+            Some(self.uncertainties.clone()),
+            self.n_states(),
+            self.states.clone(),
+            self.lambda_labels.clone(),
+        )
     }
 }
 

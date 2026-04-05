@@ -124,7 +124,7 @@ let windows = vec![
     extract_u_nk("lambda1.out", 300.0)?,
 ];
 let fit = MbarEstimator::new(MbarOptions::default()).fit(&windows)?;
-let delta_f = fit.delta_f_matrix_with_uncertainty()?;
+let delta_f = fit.result_with_uncertainty()?;
 let svg = render_delta_f_state_svg(
     &delta_f,
     Some(DeltaFStatePlotOptions {

@@ -40,7 +40,8 @@ pub fn run(
         parallel: run_options.parallel,
         ..BarOptions::default()
     });
-    let result = estimator.fit(&windows)?;
+    let fit = estimator.fit(&windows)?;
+    let result = fit.result()?;
     let delta_index = result.n_states() - 1;
 
     print_scalar_result(

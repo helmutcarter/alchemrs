@@ -19,6 +19,7 @@ If those invariants are violated, the estimators fail early.
 Types:
 
 - `TiEstimator`
+- `TiFit`
 - `TiOptions`
 - `IntegrationMethod::{Trapezoidal, Simpson}`
 
@@ -31,6 +32,8 @@ Behavior:
 - sorts windows by lambda
 - computes the mean `dH/dlambda` for each window
 - integrates across lambda using trapezoidal or Simpson integration
+- `fit(...)` returns `TiFit`
+- `result()` materializes the `FreeEnergyEstimate`
 
 Current uncertainty behavior:
 
@@ -42,6 +45,7 @@ Current uncertainty behavior:
 Types:
 
 - `BarEstimator`
+- `BarFit`
 - `BarOptions`
 - `BarMethod::{FalsePosition, SelfConsistentIteration, Bisection}`
 
@@ -53,7 +57,8 @@ Behavior:
 
 - expects windows mapped to sampled states on one evaluated-state grid
 - computes work values between adjacent states
-- fills a full pairwise `DeltaFMatrix`
+- `fit(...)` returns `BarFit`
+- `result()` materializes the full pairwise `DeltaFMatrix`
 - preserves `lambda_labels()` from the input windows when available
 
 Important limitation:
@@ -90,8 +95,8 @@ Behavior:
 
 Typical usage:
 
-- `fit(...).delta_f_matrix()`
-- `fit(...).delta_f_matrix_with_uncertainty()`
+- `fit(...).result()`
+- `fit(...).result_with_uncertainty()`
 - `fit(...).overlap_matrix()`
 - `fit(...).overlap_scalar()`
 
@@ -102,6 +107,7 @@ The analysis layer uses MBAR-derived log weights to compute overlap diagnostics.
 Types:
 
 - `ExpEstimator`
+- `ExpFit`
 - `ExpOptions`
 
 Input:
@@ -111,7 +117,9 @@ Input:
 Behavior:
 
 - computes exponential averaging from each sampled-state window to all evaluated states
-- returns a full pairwise `DeltaFMatrix`
+- `fit(...)` returns `ExpFit`
+- `result()` materializes the full pairwise `DeltaFMatrix`
+- `result_with_uncertainty()` includes uncertainty estimates
 - preserves `lambda_labels()` from the input windows when available
 
 CLI direction conventions:
@@ -126,3 +134,13 @@ CLI direction conventions:
 Some estimators support a `parallel` option and use Rayon-backed parallel loops internally.
 
 Parallelism affects performance, not the conceptual API.
+
+## Common API shape
+
+The estimator interfaces follow one shared pattern:
+
+- `fit(...) -> Fit`
+- `estimate(...) -> primary result`
+- `Fit::result() -> primary result`
+
+Estimators with an explicit uncertainty split also expose `estimate_with_uncertainty()` and `Fit::result_with_uncertainty()`.

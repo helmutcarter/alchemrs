@@ -28,12 +28,21 @@ pub struct TiEstimator {
     pub options: TiOptions,
 }
 
+#[derive(Debug, Clone)]
+pub struct TiFit {
+    delta_f: f64,
+    uncertainty: Option<f64>,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    method: IntegrationMethod,
+}
+
 impl TiEstimator {
     pub fn new(options: TiOptions) -> Self {
         Self { options }
     }
 
-    pub fn fit(&self, series: &[DhdlSeries]) -> Result<FreeEnergyEstimate> {
+    pub fn fit(&self, series: &[DhdlSeries]) -> Result<TiFit> {
         if series.len() < 2 {
             return Err(CoreError::InvalidShape {
                 expected: 2,
@@ -82,7 +91,17 @@ impl TiEstimator {
 
         let from_state = points.first().unwrap().3.clone();
         let to_state = points.last().unwrap().3.clone();
-        FreeEnergyEstimate::new(delta_f, uncertainty, from_state, to_state)
+        Ok(TiFit {
+            delta_f,
+            uncertainty,
+            from_state,
+            to_state,
+            method: self.options.method,
+        })
+    }
+
+    pub fn estimate(&self, series: &[DhdlSeries]) -> Result<FreeEnergyEstimate> {
+        self.fit(series)?.result()
     }
 
     pub fn block_average(
@@ -91,6 +110,37 @@ impl TiEstimator {
         n_blocks: usize,
     ) -> Result<Vec<BlockEstimate>> {
         analysis::ti_block_average(series, n_blocks, Some(self.options.clone()))
+    }
+}
+
+impl TiFit {
+    pub fn method(&self) -> IntegrationMethod {
+        self.method
+    }
+
+    pub fn delta_f(&self) -> f64 {
+        self.delta_f
+    }
+
+    pub fn uncertainty(&self) -> Option<f64> {
+        self.uncertainty
+    }
+
+    pub fn from_state(&self) -> &StatePoint {
+        &self.from_state
+    }
+
+    pub fn to_state(&self) -> &StatePoint {
+        &self.to_state
+    }
+
+    pub fn result(&self) -> Result<FreeEnergyEstimate> {
+        FreeEnergyEstimate::new(
+            self.delta_f,
+            self.uncertainty,
+            self.from_state.clone(),
+            self.to_state.clone(),
+        )
     }
 }
 

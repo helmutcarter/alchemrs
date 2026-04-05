@@ -813,7 +813,7 @@ pub fn ti_convergence(
     let estimator = TiEstimator::new(options.unwrap_or_default());
     let mut points = Vec::with_capacity(series.len() - 1);
     for end in 2..=series.len() {
-        let result = estimator.fit(&series[..end])?;
+        let result = estimator.estimate(&series[..end])?;
         points.push(convergence_point_from_scalar(end, &result)?);
     }
     Ok(points)
@@ -825,7 +825,7 @@ pub fn bar_convergence(
 ) -> Result<Vec<ConvergencePoint>> {
     convergence_from_matrix_windows(
         windows,
-        |subset| BarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| BarEstimator::new(options.clone().unwrap_or_default()).estimate(subset),
         false,
         2,
     )
@@ -852,7 +852,9 @@ pub fn exp_convergence(
 ) -> Result<Vec<ConvergencePoint>> {
     convergence_from_matrix_windows(
         windows,
-        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| {
+            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+        },
         false,
         2,
     )
@@ -864,7 +866,9 @@ pub fn dexp_convergence(
 ) -> Result<Vec<ConvergencePoint>> {
     convergence_from_matrix_windows(
         windows,
-        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| {
+            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+        },
         true,
         2,
     )
@@ -1187,7 +1191,7 @@ pub(crate) fn ti_block_average(
             .iter()
             .map(|chunks| chunks[block_index].clone())
             .collect::<Vec<_>>();
-        let result = estimator.fit(&block)?;
+        let result = estimator.estimate(&block)?;
         points.push(block_estimate_from_scalar(block_index, n_blocks, &result)?);
     }
     Ok(points)
@@ -1218,7 +1222,7 @@ pub(crate) fn bar_block_average(
     block_average_from_windows(
         windows,
         n_blocks,
-        |subset| BarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| BarEstimator::new(options.clone().unwrap_or_default()).estimate(subset),
         false,
         2,
     )
@@ -1232,7 +1236,9 @@ pub(crate) fn exp_block_average(
     block_average_from_windows(
         windows,
         n_blocks,
-        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| {
+            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+        },
         false,
         2,
     )
@@ -1246,7 +1252,9 @@ pub(crate) fn dexp_block_average(
     block_average_from_windows(
         windows,
         n_blocks,
-        |subset| ExpEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| {
+            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+        },
         true,
         2,
     )
@@ -1634,7 +1642,7 @@ fn extract_scalar_lambda(state: &StatePoint, operation: &'static str) -> Result<
 fn fit_pair(windows: &[UNkMatrix], estimator: AdvisorEstimator) -> Result<DeltaFMatrix> {
     match estimator {
         AdvisorEstimator::Mbar => MbarEstimator::default().estimate_with_uncertainty(windows),
-        AdvisorEstimator::Bar => BarEstimator::default().fit(windows),
+        AdvisorEstimator::Bar => BarEstimator::default().estimate(windows),
     }
 }
 
