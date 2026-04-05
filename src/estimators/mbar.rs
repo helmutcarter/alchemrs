@@ -1,6 +1,7 @@
 use crate::analysis::{self, BlockEstimate};
 use crate::data::{find_state_index_exact, DeltaFMatrix, OverlapMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
+use rayon::prelude::*;
 use std::sync::OnceLock;
 
 use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows};
@@ -41,6 +42,7 @@ struct PreparedMbar {
 pub struct MbarFit {
     prepared: PreparedMbar,
     f_k: Vec<f64>,
+    parallel: bool,
     log_weights: OnceLock<Vec<f64>>,
 }
 
@@ -65,9 +67,10 @@ impl MbarEstimator {
             &mut f_k,
             self.options.tolerance,
             self.options.max_iterations,
+            self.options.parallel,
         )?;
 
-        Ok(MbarFit::new(prepared, f_k))
+        Ok(MbarFit::new(prepared, f_k, self.options.parallel))
     }
 
     pub fn estimate(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
@@ -88,10 +91,11 @@ impl MbarEstimator {
 }
 
 impl MbarFit {
-    fn new(prepared: PreparedMbar, f_k: Vec<f64>) -> Self {
+    fn new(prepared: PreparedMbar, f_k: Vec<f64>, parallel: bool) -> Self {
         Self {
             prepared,
             f_k,
+            parallel,
             log_weights: OnceLock::new(),
         }
     }
@@ -117,8 +121,14 @@ impl MbarFit {
     }
 
     pub fn log_weights(&self) -> &[f64] {
-        self.log_weights
-            .get_or_init(|| mbar_log_weights(&self.prepared.u_kn, &self.prepared.n_k, &self.f_k))
+        self.log_weights.get_or_init(|| {
+            mbar_log_weights(
+                &self.prepared.u_kn,
+                &self.prepared.n_k,
+                &self.f_k,
+                self.parallel,
+            )
+        })
     }
 
     pub fn result(&self) -> Result<DeltaFMatrix> {
@@ -126,7 +136,12 @@ impl MbarFit {
     }
 
     pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
-        let uncertainties = mbar_uncertainty(&self.prepared.u_kn, &self.prepared.n_k, &self.f_k)?;
+        let uncertainties = mbar_uncertainty(
+            &self.prepared.u_kn,
+            &self.prepared.n_k,
+            &self.f_k,
+            self.parallel,
+        )?;
         self.delta_f_matrix_inner(Some(uncertainties))
     }
 
@@ -273,6 +288,7 @@ fn mbar_solve(
     f_k: &mut [f64],
     tolerance: f64,
     max_iterations: usize,
+    parallel: bool,
 ) -> Result<()> {
     let n_states = u_kn.len();
     if n_states == 0 {
@@ -289,54 +305,10 @@ fn mbar_solve(
 
     let mut log_denominator = vec![0.0; n_samples];
     for _ in 0..max_iterations {
-        for n in 0..n_samples {
-            let mut max_arg = f64::NEG_INFINITY;
-            for k in 0..n_states {
-                if n_k[k] == 0.0 {
-                    continue;
-                }
-                let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
-                if val > max_arg {
-                    max_arg = val;
-                }
-            }
-            let mut sum = 0.0;
-            for k in 0..n_states {
-                if n_k[k] == 0.0 {
-                    continue;
-                }
-                let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
-                sum += (val - max_arg).exp();
-            }
-            log_denominator[n] = max_arg + sum.ln();
-            if !log_denominator[n].is_finite() {
-                return Err(CoreError::NonFiniteValue(format!(
-                    "MBAR denominator became non-finite at sample {n}"
-                )));
-            }
-        }
+        fill_log_denominator(u_kn, &ln_n_k, f_k, &mut log_denominator, parallel)?;
 
         let mut f_new = vec![0.0; n_states];
-        for k in 0..n_states {
-            let mut max_arg = f64::NEG_INFINITY;
-            for n in 0..n_samples {
-                let val = -log_denominator[n] - u_kn[k][n];
-                if val > max_arg {
-                    max_arg = val;
-                }
-            }
-            let mut sum = 0.0;
-            for n in 0..n_samples {
-                let val = -log_denominator[n] - u_kn[k][n];
-                sum += (val - max_arg).exp();
-            }
-            f_new[k] = -(max_arg + sum.ln());
-            if !f_new[k].is_finite() {
-                return Err(CoreError::NonFiniteValue(format!(
-                    "MBAR free energy became non-finite for state {k}"
-                )));
-            }
-        }
+        fill_free_energies(u_kn, &log_denominator, &mut f_new, parallel)?;
         let shift = f_new[0];
         for value in f_new.iter_mut().take(n_states) {
             *value -= shift;
@@ -358,17 +330,27 @@ fn mbar_solve(
     Err(CoreError::ConvergenceFailure)
 }
 
-fn mbar_uncertainty(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f64>> {
+fn mbar_uncertainty(
+    u_kn: &[Vec<f64>],
+    n_k: &[f64],
+    f_k: &[f64],
+    parallel: bool,
+) -> Result<Vec<f64>> {
     use nalgebra::{DMatrix, SymmetricEigen};
 
     let n_states = u_kn.len();
     let n_samples = u_kn[0].len();
 
-    let log_w = mbar_log_weights(u_kn, n_k, f_k);
-    let mut w_data = Vec::with_capacity(n_samples * n_states);
-    for n in 0..n_samples {
-        for k in 0..n_states {
-            w_data.push(log_w[n * n_states + k].exp());
+    let log_w = mbar_log_weights(u_kn, n_k, f_k, parallel);
+    let mut w_data = vec![0.0; n_samples * n_states];
+    if parallel {
+        w_data
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(idx, slot)| *slot = log_w[idx].exp());
+    } else {
+        for (idx, slot) in w_data.iter_mut().enumerate() {
+            *slot = log_w[idx].exp();
         }
     }
     let w = DMatrix::from_row_slice(n_samples, n_states, &w_data);
@@ -410,7 +392,7 @@ fn mbar_uncertainty(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f
     Ok(uncertainties)
 }
 
-fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
+fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64], parallel: bool) -> Vec<f64> {
     let n_states = u_kn.len();
     let n_samples = u_kn[0].len();
     let ln_n_k: Vec<f64> = n_k
@@ -419,31 +401,150 @@ fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
         .collect();
 
     let mut log_w = vec![0.0; n_samples * n_states];
-    for n in 0..n_samples {
-        let mut max_arg = f64::NEG_INFINITY;
-        for k in 0..n_states {
-            if n_k[k] == 0.0 {
-                continue;
-            }
-            let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
-            if val > max_arg {
-                max_arg = val;
-            }
-        }
-        let mut sum = 0.0;
-        for k in 0..n_states {
-            if n_k[k] == 0.0 {
-                continue;
-            }
-            let val = f_k[k] - u_kn[k][n] + ln_n_k[k];
-            sum += (val - max_arg).exp();
-        }
-        let log_denom = max_arg + sum.ln();
-        for k in 0..n_states {
-            log_w[n * n_states + k] = f_k[k] - u_kn[k][n] - log_denom;
+    if parallel {
+        log_w
+            .par_chunks_mut(n_states)
+            .enumerate()
+            .for_each(|(n, row)| fill_log_weights_row(u_kn, &ln_n_k, f_k, n, row));
+    } else {
+        for (n, row) in log_w.chunks_mut(n_states).enumerate() {
+            fill_log_weights_row(u_kn, &ln_n_k, f_k, n, row);
         }
     }
     log_w
+}
+
+fn fill_log_denominator(
+    u_kn: &[Vec<f64>],
+    ln_n_k: &[f64],
+    f_k: &[f64],
+    log_denominator: &mut [f64],
+    parallel: bool,
+) -> Result<()> {
+    if parallel {
+        log_denominator
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(n, slot)| -> Result<()> {
+                *slot = checked_log_denominator_for_sample(u_kn, ln_n_k, f_k, n)?;
+                Ok(())
+            })?;
+    } else {
+        for (n, slot) in log_denominator.iter_mut().enumerate() {
+            *slot = checked_log_denominator_for_sample(u_kn, ln_n_k, f_k, n)?;
+        }
+    }
+    Ok(())
+}
+
+fn fill_free_energies(
+    u_kn: &[Vec<f64>],
+    log_denominator: &[f64],
+    f_new: &mut [f64],
+    parallel: bool,
+) -> Result<()> {
+    if parallel {
+        f_new
+            .par_iter_mut()
+            .enumerate()
+            .try_for_each(|(k, slot)| -> Result<()> {
+                *slot = checked_free_energy_for_state(u_kn, log_denominator, k)?;
+                Ok(())
+            })?;
+    } else {
+        for (k, slot) in f_new.iter_mut().enumerate() {
+            *slot = checked_free_energy_for_state(u_kn, log_denominator, k)?;
+        }
+    }
+    Ok(())
+}
+
+fn checked_log_denominator_for_sample(
+    u_kn: &[Vec<f64>],
+    ln_n_k: &[f64],
+    f_k: &[f64],
+    sample_idx: usize,
+) -> Result<f64> {
+    let value = log_denominator_for_sample(u_kn, ln_n_k, f_k, sample_idx);
+    if !value.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "MBAR denominator became non-finite at sample {sample_idx}"
+        )));
+    }
+    Ok(value)
+}
+
+fn log_denominator_for_sample(
+    u_kn: &[Vec<f64>],
+    ln_n_k: &[f64],
+    f_k: &[f64],
+    sample_idx: usize,
+) -> f64 {
+    let n_states = u_kn.len();
+    let mut max_arg = f64::NEG_INFINITY;
+    for k in 0..n_states {
+        if !ln_n_k[k].is_finite() {
+            continue;
+        }
+        let val = f_k[k] - u_kn[k][sample_idx] + ln_n_k[k];
+        if val > max_arg {
+            max_arg = val;
+        }
+    }
+    let mut sum = 0.0;
+    for k in 0..n_states {
+        if !ln_n_k[k].is_finite() {
+            continue;
+        }
+        let val = f_k[k] - u_kn[k][sample_idx] + ln_n_k[k];
+        sum += (val - max_arg).exp();
+    }
+    max_arg + sum.ln()
+}
+
+fn checked_free_energy_for_state(
+    u_kn: &[Vec<f64>],
+    log_denominator: &[f64],
+    state_idx: usize,
+) -> Result<f64> {
+    let value = free_energy_for_state(u_kn, log_denominator, state_idx);
+    if !value.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "MBAR free energy became non-finite for state {state_idx}"
+        )));
+    }
+    Ok(value)
+}
+
+fn free_energy_for_state(u_kn: &[Vec<f64>], log_denominator: &[f64], state_idx: usize) -> f64 {
+    let n_samples = u_kn[0].len();
+    let mut max_arg = f64::NEG_INFINITY;
+    for n in 0..n_samples {
+        let val = -log_denominator[n] - u_kn[state_idx][n];
+        if val > max_arg {
+            max_arg = val;
+        }
+    }
+    let mut sum = 0.0;
+    for n in 0..n_samples {
+        let val = -log_denominator[n] - u_kn[state_idx][n];
+        sum += (val - max_arg).exp();
+    }
+    -(max_arg + sum.ln())
+}
+
+fn fill_log_weights_row(
+    u_kn: &[Vec<f64>],
+    ln_n_k: &[f64],
+    f_k: &[f64],
+    sample_idx: usize,
+    row: &mut [f64],
+) {
+    let n_states = u_kn.len();
+    let log_denom = log_denominator_for_sample(u_kn, ln_n_k, f_k, sample_idx);
+    for k in 0..n_states {
+        row[k] = f_k[k] - u_kn[k][sample_idx] - log_denom;
+    }
 }
 
 fn pseudoinverse(matrix: &nalgebra::DMatrix<f64>, tol: f64) -> Result<nalgebra::DMatrix<f64>> {

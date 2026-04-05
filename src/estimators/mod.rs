@@ -285,6 +285,30 @@ mod tests {
     }
 
     #[test]
+    fn mbar_parallel_fit_derived_outputs_match_serial() {
+        let windows = make_two_state_windows();
+        let serial = MbarEstimator::new(MbarOptions {
+            parallel: false,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let parallel = MbarEstimator::new(MbarOptions {
+            parallel: true,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_eq!(serial.free_energies(), parallel.free_energies());
+        assert_eq!(serial.log_weights(), parallel.log_weights());
+
+        let serial_overlap = serial.overlap_matrix().unwrap();
+        let parallel_overlap = parallel.overlap_matrix().unwrap();
+        assert_eq!(serial_overlap.values(), parallel_overlap.values());
+    }
+
+    #[test]
     fn bar_rejects_mismatched_evaluated_state_grid() {
         let windows = vec![
             make_window(0.0, 300.0, [0.0, 1.0], 300.0),
