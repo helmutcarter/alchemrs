@@ -4,7 +4,7 @@ use alchemrs::{MbarEstimator, MbarOptions};
 
 use crate::cli::input::{load_windows, AnalysisInputOptions};
 use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
-use crate::cli::overlap::summarize_overlap;
+use crate::cli::overlap::summarize_overlap_matrix;
 use crate::cli::{OutputFormat, OutputUnits};
 use crate::CliResult;
 
@@ -26,28 +26,23 @@ pub fn run(
 ) -> CliResult<()> {
     let loaded = load_windows(inputs, input_options)?;
     let windows = loaded.windows;
-    let overlap = if run_options.overlap_summary {
-        Some(summarize_overlap(
-            &windows,
-            Some(MbarOptions {
-                max_iterations: run_options.max_iterations,
-                tolerance: run_options.tolerance,
-                compute_uncertainty: false,
-                parallel: run_options.parallel,
-                ..MbarOptions::default()
-            }),
-        )?)
-    } else {
-        None
-    };
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: run_options.max_iterations,
         tolerance: run_options.tolerance,
-        compute_uncertainty: !run_options.no_uncertainty,
         parallel: run_options.parallel,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows)?;
+    let fit = estimator.fit(&windows)?;
+    let result = if run_options.no_uncertainty {
+        fit.delta_f_matrix()?
+    } else {
+        fit.delta_f_matrix_with_uncertainty()?
+    };
+    let overlap = if run_options.overlap_summary {
+        Some(summarize_overlap_matrix(&fit.overlap_matrix()?)?)
+    } else {
+        None
+    };
     let delta_index = result.n_states() - 1;
 
     print_scalar_result(

@@ -6,7 +6,7 @@ mod ti;
 
 pub use bar::{BarEstimator, BarMethod, BarOptions, BarUncertainty};
 pub use exp::{ExpEstimator, ExpOptions};
-pub use mbar::{mbar_log_weights_from_windows, MbarEstimator, MbarOptions};
+pub use mbar::{MbarEstimator, MbarFit, MbarOptions};
 pub use ti::{IntegrationMethod, TiEstimator, TiOptions};
 
 #[cfg(test)]
@@ -271,13 +271,13 @@ mod tests {
             parallel: false,
             ..MbarOptions::default()
         })
-        .fit(&windows)
+        .estimate_with_uncertainty(&windows)
         .unwrap();
         let parallel = MbarEstimator::new(MbarOptions {
             parallel: true,
             ..MbarOptions::default()
         })
-        .fit(&windows)
+        .estimate_with_uncertainty(&windows)
         .unwrap();
 
         assert_eq!(serial.values(), parallel.values());
@@ -341,16 +341,15 @@ mod tests {
 
     #[test]
     fn mbar_supports_multidimensional_lambda_states() {
-        let result = MbarEstimator::default()
+        let fit = MbarEstimator::default()
             .fit(&make_multidimensional_windows())
             .unwrap();
+        let result = fit.delta_f_matrix_with_uncertainty().unwrap();
+        assert_eq!(fit.n_states(), 2);
+        assert_eq!(fit.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(fit.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(fit.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
         assert_eq!(result.n_states(), 2);
-        assert_eq!(result.states()[0].lambdas(), &[0.0, 0.0]);
-        assert_eq!(result.states()[1].lambdas(), &[1.0, 0.0]);
-        assert_eq!(
-            result.lambda_labels().unwrap(),
-            &["coul-lambda", "vdw-lambda"]
-        );
     }
 
     #[test]
@@ -456,12 +455,9 @@ mod tests {
     #[test]
     fn mbar_supports_positive_infinity_reduced_potentials() {
         let windows = make_two_state_windows_with_positive_infinity();
-        let result = MbarEstimator::new(MbarOptions {
-            compute_uncertainty: false,
-            ..MbarOptions::default()
-        })
-        .fit(&windows)
-        .unwrap();
+        let result = MbarEstimator::new(MbarOptions::default())
+            .estimate(&windows)
+            .unwrap();
         assert!(result.values().iter().all(|value| value.is_finite()));
     }
 }

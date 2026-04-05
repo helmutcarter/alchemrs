@@ -8,7 +8,7 @@ The top-level `alchemrs` crate re-exports the main types and functions needed fo
 use alchemrs::{
     DecorrelationOptions, MbarEstimator, MbarOptions, TiEstimator, TiOptions,
     decorrelate_dhdl, decorrelate_u_nk_with_observable, extract_dhdl,
-    extract_u_nk_with_potential, mbar_convergence, overlap_matrix, overlap_scalar,
+    extract_u_nk_with_potential, mbar_convergence,
 };
 ```
 
@@ -37,7 +37,6 @@ fn run_ti(paths: &[String], temperature_k: f64) -> Result<(), Box<dyn std::error
 use alchemrs::{
     DecorrelationOptions, MbarEstimator, MbarOptions, UNkMatrix,
     decorrelate_u_nk_with_observable, extract_u_nk_with_potential,
-    overlap_matrix, overlap_scalar,
 };
 
 fn load_windows(
@@ -56,15 +55,16 @@ fn load_windows(
 
 fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     let estimator = MbarEstimator::new(MbarOptions::default());
-    let result = estimator.fit(windows)?;
+    let fit = estimator.fit(windows)?;
+    let result = fit.delta_f_matrix_with_uncertainty()?;
     let delta_index = result.n_states() - 1;
     println!("MBAR dG = {:.6}", result.values()[delta_index]);
-    if let Some(labels) = result.lambda_labels() {
+    if let Some(labels) = fit.lambda_labels() {
         println!("lambda components = {:?}", labels);
     }
 
-    let overlap = overlap_matrix(windows, Some(MbarOptions::default()))?;
-    println!("overlap = {:.6}", overlap_scalar(&overlap)?);
+    let overlap = fit.overlap_matrix()?;
+    println!("overlap = {:.6}", fit.overlap_scalar()?);
     if let Some(labels) = overlap.lambda_labels() {
         println!("overlap components = {:?}", labels);
     }

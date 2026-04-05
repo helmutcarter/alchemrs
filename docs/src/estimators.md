@@ -75,7 +75,6 @@ Important options:
 - `max_iterations`
 - `tolerance`
 - `initial_f_k`
-- `compute_uncertainty`
 - `parallel`
 
 Input:
@@ -86,10 +85,17 @@ Behavior:
 
 - combines windows into a shared reduced-energy representation
 - solves for free energies iteratively
-- returns a full `DeltaFMatrix`
+- returns an `MbarFit` that can derive a `DeltaFMatrix`, overlap diagnostics, and MBAR log weights without resolving the same window set
 - preserves `lambda_labels()` from the input windows when available
 
-The analysis crate uses MBAR-derived log weights to compute overlap diagnostics.
+Typical usage:
+
+- `fit(...).delta_f_matrix()`
+- `fit(...).delta_f_matrix_with_uncertainty()`
+- `fit(...).overlap_matrix()`
+- `fit(...).overlap_scalar()`
+
+The analysis layer uses MBAR-derived log weights to compute overlap diagnostics.
 
 ## EXP and DEXP
 

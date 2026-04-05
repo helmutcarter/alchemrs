@@ -1,8 +1,8 @@
 use std::env;
 
 use alchemrs::{
-    decorrelate_u_nk_with_observable, extract_u_nk_with_potential, overlap_matrix, overlap_scalar,
-    DecorrelationOptions, MbarEstimator, MbarOptions, UNkMatrix,
+    decorrelate_u_nk_with_observable, extract_u_nk_with_potential, DecorrelationOptions,
+    MbarEstimator, MbarOptions, UNkMatrix,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,12 +28,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     let estimator = MbarEstimator::new(MbarOptions::default());
-    let result = estimator.fit(windows)?;
+    let fit = estimator.fit(windows)?;
+    let result = fit.delta_f_matrix_with_uncertainty()?;
     let delta_index = result.n_states() - 1;
     let delta_f = result.values()[delta_index];
     let uncertainty = result.uncertainties().map(|values| values[delta_index]);
-    let overlap = overlap_matrix(windows, Some(MbarOptions::default()))?;
-    let overlap = overlap_scalar(&overlap)?;
+    let overlap = fit.overlap_scalar()?;
 
     match uncertainty {
         Some(sigma) => println!(

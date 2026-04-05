@@ -4,8 +4,8 @@ use crate::data::{
 };
 use crate::error::{CoreError, Result};
 use crate::estimators::{
-    mbar_log_weights_from_windows, BarEstimator, BarOptions, ExpEstimator, ExpOptions,
-    MbarEstimator, MbarOptions, TiEstimator, TiOptions,
+    BarEstimator, BarOptions, ExpEstimator, ExpOptions, MbarEstimator, MbarOptions, TiEstimator,
+    TiOptions,
 };
 use nalgebra::{DMatrix, Schur};
 use std::cmp::Ordering;
@@ -761,50 +761,9 @@ pub fn overlap_matrix(
     windows: &[UNkMatrix],
     options: Option<MbarOptions>,
 ) -> Result<OverlapMatrix> {
-    let options = options.unwrap_or_default();
-    let lambda_labels = windows
-        .first()
-        .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec()));
-    let (log_w, n_k, states) = mbar_log_weights_from_windows(windows, &options)?;
-    let n_states = states.len();
-    if log_w.len() % n_states != 0 {
-        return Err(CoreError::InvalidShape {
-            expected: n_states,
-            found: log_w.len(),
-        });
-    }
-    let n_samples = log_w.len() / n_states;
-
-    let mut wtw = vec![0.0; n_states * n_states];
-    let mut weights = vec![0.0; n_states];
-    for n in 0..n_samples {
-        let base = n * n_states;
-        for i in 0..n_states {
-            weights[i] = log_w[base + i].exp();
-        }
-        for i in 0..n_states {
-            let wi = weights[i];
-            let row_offset = i * n_states;
-            for j in i..n_states {
-                let idx = row_offset + j;
-                wtw[idx] = wi.mul_add(weights[j], wtw[idx]);
-            }
-        }
-    }
-
-    let mut values = vec![0.0; n_states * n_states];
-    for i in 0..n_states {
-        for j in 0..n_states {
-            let upper_idx = if i <= j {
-                i * n_states + j
-            } else {
-                j * n_states + i
-            };
-            values[i * n_states + j] = wtw[upper_idx] * n_k[j];
-        }
-    }
-
-    OverlapMatrix::new_with_labels(values, n_states, states, lambda_labels)
+    MbarEstimator::new(options.unwrap_or_default())
+        .fit(windows)?
+        .overlap_matrix()
 }
 
 pub fn overlap_eigenvalues(overlap: &OverlapMatrix) -> Result<Vec<f64>> {
@@ -878,7 +837,10 @@ pub fn mbar_convergence(
 ) -> Result<Vec<ConvergencePoint>> {
     convergence_from_matrix_windows(
         windows,
-        |subset| MbarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| {
+            MbarEstimator::new(options.clone().unwrap_or_default())
+                .estimate_with_uncertainty(subset)
+        },
         false,
         1,
     )
@@ -1239,7 +1201,10 @@ pub(crate) fn mbar_block_average(
     block_average_from_windows(
         windows,
         n_blocks,
-        |subset| MbarEstimator::new(options.clone().unwrap_or_default()).fit(subset),
+        |subset| {
+            MbarEstimator::new(options.clone().unwrap_or_default())
+                .estimate_with_uncertainty(subset)
+        },
         false,
         1,
     )
@@ -1668,7 +1633,7 @@ fn extract_scalar_lambda(state: &StatePoint, operation: &'static str) -> Result<
 
 fn fit_pair(windows: &[UNkMatrix], estimator: AdvisorEstimator) -> Result<DeltaFMatrix> {
     match estimator {
-        AdvisorEstimator::Mbar => MbarEstimator::default().fit(windows),
+        AdvisorEstimator::Mbar => MbarEstimator::default().estimate_with_uncertainty(windows),
         AdvisorEstimator::Bar => BarEstimator::default().fit(windows),
     }
 }

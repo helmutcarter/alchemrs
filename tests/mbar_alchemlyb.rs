@@ -59,7 +59,9 @@ fn mbar_matches_alchemlyb_all_windows() {
     }
 
     let estimator = MbarEstimator::default();
-    let result = estimator.fit(&windows).expect("MBAR fit");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("MBAR fit");
 
     let expected_path =
         format!("{base}/fixtures/amber/acetamide_tiny/mbar_0.0_1.0.delta_f_sigma.txt");

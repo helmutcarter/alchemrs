@@ -455,11 +455,12 @@ fn mbar_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: 10_000,
         tolerance: 1.0e-7,
-        compute_uncertainty: true,
         parallel: false,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit MBAR");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_overlap = compute_overlap_summary(&windows);
     let expected_counts = expected_u_nk_counts(&inputs, &windows);
@@ -539,11 +540,12 @@ fn mbar_cli_outputs_expected_json_when_auto_equilibrating() {
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: 10_000,
         tolerance: 1.0e-7,
-        compute_uncertainty: true,
         parallel: false,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit MBAR");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_counts = expected_u_nk_counts_after_auto_equilibration(&inputs, &windows);
 
@@ -594,11 +596,12 @@ fn mbar_cli_accepts_nonconservative_decorrelation() {
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: 10_000,
         tolerance: 1.0e-7,
-        compute_uncertainty: true,
         parallel: false,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit MBAR");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_counts = expected_u_nk_counts(&inputs, &windows);
 
@@ -1025,11 +1028,12 @@ fn mbar_cli_auto_equilibrates_before_decorrelating() {
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: 10_000,
         tolerance: 1.0e-7,
-        compute_uncertainty: true,
         parallel: false,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit MBAR");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_counts = expected_u_nk_counts_after_auto_equilibration_and_decorrelation(
         &inputs,
@@ -1075,11 +1079,12 @@ fn mbar_cli_supports_epot_observable_for_u_nk_preprocessing() {
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: 10_000,
         tolerance: 1.0e-7,
-        compute_uncertainty: true,
         parallel: false,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit MBAR");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_counts = expected_u_nk_counts(&inputs, &windows);
 
@@ -1121,11 +1126,12 @@ fn mbar_cli_supports_all_observable_for_u_nk_preprocessing() {
     let estimator = MbarEstimator::new(MbarOptions {
         max_iterations: 10_000,
         tolerance: 1.0e-7,
-        compute_uncertainty: true,
         parallel: false,
         ..MbarOptions::default()
     });
-    let result = estimator.fit(&windows).expect("fit MBAR");
+    let result = estimator
+        .estimate_with_uncertainty(&windows)
+        .expect("fit MBAR");
     let delta_index = result.n_states() - 1;
     let expected_counts = expected_u_nk_counts(&inputs, &windows);
 

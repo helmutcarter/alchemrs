@@ -1,6 +1,7 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
+use crate::data::{find_state_index_exact, DeltaFMatrix, OverlapMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
+use std::sync::OnceLock;
 
 use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows};
 
@@ -9,7 +10,6 @@ pub struct MbarOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
     pub initial_f_k: Option<Vec<f64>>,
-    pub compute_uncertainty: bool,
     pub parallel: bool,
 }
 
@@ -19,7 +19,6 @@ impl Default for MbarOptions {
             max_iterations: 10_000,
             tolerance: 1.0e-7,
             initial_f_k: None,
-            compute_uncertainty: true,
             parallel: false,
         }
     }
@@ -30,42 +29,53 @@ pub struct MbarEstimator {
     pub options: MbarOptions,
 }
 
+#[derive(Debug, Clone)]
+struct PreparedMbar {
+    u_kn: Vec<Vec<f64>>,
+    n_k: Vec<f64>,
+    states: Vec<StatePoint>,
+    lambda_labels: Option<Vec<String>>,
+}
+
+#[derive(Debug)]
+pub struct MbarFit {
+    prepared: PreparedMbar,
+    f_k: Vec<f64>,
+    log_weights: OnceLock<Vec<f64>>,
+}
+
 impl MbarEstimator {
     pub fn new(options: MbarOptions) -> Self {
         Self { options }
     }
 
-    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<MbarFit> {
         if windows.is_empty() {
             return Err(CoreError::InvalidShape {
                 expected: 1,
                 found: 0,
             });
         }
-        let (u_kn, n_k, states, lambda_labels) = combine_windows(windows)?;
-        let mut f_k = initial_f_k(&self.options, states.len())?;
+        let prepared = PreparedMbar::from_windows(windows)?;
+        let mut f_k = initial_f_k(&self.options, prepared.states.len())?;
 
         mbar_solve(
-            &u_kn,
-            &n_k,
+            &prepared.u_kn,
+            &prepared.n_k,
             &mut f_k,
             self.options.tolerance,
             self.options.max_iterations,
         )?;
 
-        let n_states = states.len();
-        let mut values = vec![0.0; n_states * n_states];
-        for i in 0..n_states {
-            for j in 0..n_states {
-                values[i * n_states + j] = f_k[j] - f_k[i];
-            }
-        }
-        let uncertainties = if self.options.compute_uncertainty {
-            Some(mbar_uncertainty(&u_kn, &n_k, &f_k)?)
-        } else {
-            None
-        };
-        DeltaFMatrix::new_with_labels(values, uncertainties, n_states, states, lambda_labels)
+        Ok(MbarFit::new(prepared, f_k))
+    }
+
+    pub fn estimate(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        self.fit(windows)?.delta_f_matrix()
+    }
+
+    pub fn estimate_with_uncertainty(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
+        self.fit(windows)?.delta_f_matrix_with_uncertainty()
     }
 
     pub fn block_average(
@@ -77,27 +87,134 @@ impl MbarEstimator {
     }
 }
 
-pub fn mbar_log_weights_from_windows(
-    windows: &[UNkMatrix],
-    options: &MbarOptions,
-) -> Result<(Vec<f64>, Vec<f64>, Vec<StatePoint>)> {
-    if windows.is_empty() {
-        return Err(CoreError::InvalidShape {
-            expected: 1,
-            found: 0,
-        });
+impl MbarFit {
+    fn new(prepared: PreparedMbar, f_k: Vec<f64>) -> Self {
+        Self {
+            prepared,
+            f_k,
+            log_weights: OnceLock::new(),
+        }
     }
-    let (u_kn, n_k, states, _lambda_labels) = combine_windows(windows)?;
-    let mut f_k = initial_f_k(options, states.len())?;
-    mbar_solve(
-        &u_kn,
-        &n_k,
-        &mut f_k,
-        options.tolerance,
-        options.max_iterations,
-    )?;
-    let log_weights = mbar_log_weights(&u_kn, &n_k, &f_k)?;
-    Ok((log_weights, n_k, states))
+
+    pub fn n_states(&self) -> usize {
+        self.prepared.states.len()
+    }
+
+    pub fn states(&self) -> &[StatePoint] {
+        &self.prepared.states
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.prepared.lambda_labels.as_deref()
+    }
+
+    pub fn free_energies(&self) -> &[f64] {
+        &self.f_k
+    }
+
+    pub fn state_counts(&self) -> &[f64] {
+        &self.prepared.n_k
+    }
+
+    pub fn log_weights(&self) -> &[f64] {
+        self.log_weights
+            .get_or_init(|| mbar_log_weights(&self.prepared.u_kn, &self.prepared.n_k, &self.f_k))
+    }
+
+    pub fn delta_f_matrix(&self) -> Result<DeltaFMatrix> {
+        self.delta_f_matrix_inner(None)
+    }
+
+    pub fn delta_f_matrix_with_uncertainty(&self) -> Result<DeltaFMatrix> {
+        let uncertainties = mbar_uncertainty(&self.prepared.u_kn, &self.prepared.n_k, &self.f_k)?;
+        self.delta_f_matrix_inner(Some(uncertainties))
+    }
+
+    pub fn overlap_matrix(&self) -> Result<OverlapMatrix> {
+        let n_states = self.prepared.states.len();
+        let log_w = self.log_weights();
+        if log_w.len() % n_states != 0 {
+            return Err(CoreError::InvalidShape {
+                expected: n_states,
+                found: log_w.len(),
+            });
+        }
+        let n_samples = log_w.len() / n_states;
+        let mut wtw = vec![0.0; n_states * n_states];
+        let mut weights = vec![0.0; n_states];
+        for n in 0..n_samples {
+            let base = n * n_states;
+            for i in 0..n_states {
+                weights[i] = log_w[base + i].exp();
+            }
+            for i in 0..n_states {
+                let wi = weights[i];
+                let row_offset = i * n_states;
+                for j in i..n_states {
+                    let idx = row_offset + j;
+                    wtw[idx] = wi.mul_add(weights[j], wtw[idx]);
+                }
+            }
+        }
+
+        let mut values = vec![0.0; n_states * n_states];
+        for i in 0..n_states {
+            for j in 0..n_states {
+                let upper_idx = if i <= j {
+                    i * n_states + j
+                } else {
+                    j * n_states + i
+                };
+                values[i * n_states + j] = wtw[upper_idx] * self.prepared.n_k[j];
+            }
+        }
+
+        OverlapMatrix::new_with_labels(
+            values,
+            n_states,
+            self.prepared.states.clone(),
+            self.prepared.lambda_labels.clone(),
+        )
+    }
+
+    pub fn overlap_eigenvalues(&self) -> Result<Vec<f64>> {
+        let overlap = self.overlap_matrix()?;
+        analysis::overlap_eigenvalues(&overlap)
+    }
+
+    pub fn overlap_scalar(&self) -> Result<f64> {
+        let overlap = self.overlap_matrix()?;
+        analysis::overlap_scalar(&overlap)
+    }
+
+    fn delta_f_matrix_inner(&self, uncertainties: Option<Vec<f64>>) -> Result<DeltaFMatrix> {
+        let n_states = self.prepared.states.len();
+        let mut values = vec![0.0; n_states * n_states];
+        for i in 0..n_states {
+            for j in 0..n_states {
+                values[i * n_states + j] = self.f_k[j] - self.f_k[i];
+            }
+        }
+        DeltaFMatrix::new_with_labels(
+            values,
+            uncertainties,
+            n_states,
+            self.prepared.states.clone(),
+            self.prepared.lambda_labels.clone(),
+        )
+    }
+}
+
+impl PreparedMbar {
+    fn from_windows(windows: &[UNkMatrix]) -> Result<Self> {
+        let (u_kn, n_k, states, lambda_labels) = combine_windows(windows)?;
+        Ok(Self {
+            u_kn,
+            n_k,
+            states,
+            lambda_labels,
+        })
+    }
 }
 
 fn initial_f_k(options: &MbarOptions, n_states: usize) -> Result<Vec<f64>> {
@@ -247,7 +364,7 @@ fn mbar_uncertainty(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f
     let n_states = u_kn.len();
     let n_samples = u_kn[0].len();
 
-    let log_w = mbar_log_weights(u_kn, n_k, f_k)?;
+    let log_w = mbar_log_weights(u_kn, n_k, f_k);
     let mut w_data = Vec::with_capacity(n_samples * n_states);
     for n in 0..n_samples {
         for k in 0..n_states {
@@ -293,7 +410,7 @@ fn mbar_uncertainty(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f
     Ok(uncertainties)
 }
 
-fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f64>> {
+fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
     let n_states = u_kn.len();
     let n_samples = u_kn[0].len();
     let ln_n_k: Vec<f64> = n_k
@@ -326,7 +443,7 @@ fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64]) -> Result<Vec<f
             log_w[n * n_states + k] = f_k[k] - u_kn[k][n] - log_denom;
         }
     }
-    Ok(log_w)
+    log_w
 }
 
 fn pseudoinverse(matrix: &nalgebra::DMatrix<f64>, tol: f64) -> Result<nalgebra::DMatrix<f64>> {

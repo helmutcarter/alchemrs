@@ -89,7 +89,7 @@ Overlap heatmaps can be rendered directly from the diagnostics layer:
 
 ```rust
 use alchemrs::{
-    MbarOptions, OverlapPlotOptions, extract_u_nk, overlap_matrix, render_overlap_matrix_svg,
+    MbarEstimator, MbarOptions, OverlapPlotOptions, extract_u_nk, render_overlap_matrix_svg,
 };
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -97,7 +97,8 @@ let windows = vec![
     extract_u_nk("lambda0.out", 300.0)?,
     extract_u_nk("lambda1.out", 300.0)?,
 ];
-let overlap = overlap_matrix(&windows, Some(MbarOptions::default()))?;
+let fit = MbarEstimator::new(MbarOptions::default()).fit(&windows)?;
+let overlap = fit.overlap_matrix()?;
 let svg = render_overlap_matrix_svg(
     &overlap,
     Some(OverlapPlotOptions {
@@ -122,7 +123,8 @@ let windows = vec![
     extract_u_nk("lambda0.out", 300.0)?,
     extract_u_nk("lambda1.out", 300.0)?,
 ];
-let delta_f = MbarEstimator::new(MbarOptions::default()).fit(&windows)?;
+let fit = MbarEstimator::new(MbarOptions::default()).fit(&windows)?;
+let delta_f = fit.delta_f_matrix_with_uncertainty()?;
 let svg = render_delta_f_state_svg(
     &delta_f,
     Some(DeltaFStatePlotOptions {

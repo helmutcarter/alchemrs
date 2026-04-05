@@ -1,4 +1,6 @@
-use alchemrs::{overlap_eigenvalues, overlap_matrix, CoreError, MbarOptions, UNkMatrix};
+use alchemrs::{
+    overlap_eigenvalues, overlap_matrix, CoreError, MbarOptions, OverlapMatrix, UNkMatrix,
+};
 
 use crate::cli::output::OverlapSummary;
 use crate::CliResult;
@@ -8,7 +10,11 @@ pub fn summarize_overlap(
     options: Option<MbarOptions>,
 ) -> CliResult<OverlapSummary> {
     let overlap = overlap_matrix(windows, options)?;
-    let eigenvalues = overlap_eigenvalues(&overlap)?;
+    summarize_overlap_matrix(&overlap)
+}
+
+pub fn summarize_overlap_matrix(overlap: &OverlapMatrix) -> CliResult<OverlapSummary> {
+    let eigenvalues = overlap_eigenvalues(overlap)?;
     if eigenvalues.len() < 2 {
         return Err(CoreError::InvalidShape {
             expected: 2,
