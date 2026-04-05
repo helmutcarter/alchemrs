@@ -4,7 +4,7 @@ mod exp;
 mod mbar;
 mod ti;
 
-pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions, BarUncertainty};
+pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{ExpEstimator, ExpFit, ExpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions};
 pub use ti::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
@@ -344,7 +344,7 @@ mod tests {
         let fit = MbarEstimator::default()
             .fit(&make_multidimensional_windows())
             .unwrap();
-        let result = fit.delta_f_matrix_with_uncertainty().unwrap();
+        let result = fit.result_with_uncertainty().unwrap();
         assert_eq!(fit.n_states(), 2);
         assert_eq!(fit.states()[0].lambdas(), &[0.0, 0.0]);
         assert_eq!(fit.states()[1].lambdas(), &[1.0, 0.0]);

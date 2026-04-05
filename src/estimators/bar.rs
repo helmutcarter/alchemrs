@@ -13,17 +13,11 @@ pub enum BarMethod {
     Bisection,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BarUncertainty {
-    Bar,
-}
-
 #[derive(Debug, Clone)]
 pub struct BarOptions {
     pub maximum_iterations: usize,
     pub relative_tolerance: f64,
     pub method: BarMethod,
-    pub uncertainty: BarUncertainty,
     pub parallel: bool,
 }
 
@@ -33,7 +27,6 @@ impl Default for BarOptions {
             maximum_iterations: 10_000,
             relative_tolerance: 1.0e-7,
             method: BarMethod::FalsePosition,
-            uncertainty: BarUncertainty::Bar,
             parallel: false,
         }
     }
