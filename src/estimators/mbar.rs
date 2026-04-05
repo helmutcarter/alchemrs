@@ -122,18 +122,10 @@ impl MbarFit {
     }
 
     pub fn result(&self) -> Result<DeltaFMatrix> {
-        self.delta_f_matrix()
-    }
-
-    pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
-        self.delta_f_matrix_with_uncertainty()
-    }
-
-    pub fn delta_f_matrix(&self) -> Result<DeltaFMatrix> {
         self.delta_f_matrix_inner(None)
     }
 
-    pub fn delta_f_matrix_with_uncertainty(&self) -> Result<DeltaFMatrix> {
+    pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
         let uncertainties = mbar_uncertainty(&self.prepared.u_kn, &self.prepared.n_k, &self.f_k)?;
         self.delta_f_matrix_inner(Some(uncertainties))
     }
