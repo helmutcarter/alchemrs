@@ -194,6 +194,116 @@ mod tests {
     }
 
     #[test]
+    fn ti_cubic_spline_integrates_nonuniform_schedule() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::CubicSpline,
+            parallel: false,
+        });
+        let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
+        assert!((result.delta_f() - 0.625).abs() < 1e-12);
+        assert_eq!(result.uncertainty(), Some(0.0));
+    }
+
+    #[test]
+    fn ti_cubic_spline_propagates_uncertainty_from_spline_weights() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0, 2.0], vec![0.0, 0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0, 2.0], vec![1.0, 2.0, 0.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0, 2.0], vec![0.0, 0.0, 0.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::CubicSpline,
+            parallel: false,
+        });
+        let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
+        let expected_sigma = 0.625_f64 / 3.0_f64.sqrt();
+        assert!((result.uncertainty().unwrap() - expected_sigma).abs() < 1e-12);
+    }
+
+    #[test]
+    fn ti_cubic_spline_rejects_duplicate_lambda_points() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::CubicSpline,
+            parallel: false,
+        });
+        let err = estimator.fit(&[d0, d1]).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
+    fn ti_pchip_integrates_piecewise_cubic_hermite_schedule() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Pchip,
+            parallel: false,
+        });
+        let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
+        assert!((result.delta_f() - (2.0 / 3.0)).abs() < 1e-12);
+        assert_eq!(result.uncertainty(), Some(0.0));
+    }
+
+    #[test]
+    fn ti_akima_integrates_piecewise_cubic_hermite_schedule() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0], vec![0.0, 0.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Akima,
+            parallel: false,
+        });
+        let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
+        assert!((result.delta_f() - (2.0 / 3.0)).abs() < 1e-12);
+        assert_eq!(result.uncertainty(), Some(0.0));
+    }
+
+    #[test]
+    fn ti_pchip_rejects_duplicate_lambda_points() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Pchip,
+            parallel: false,
+        });
+        let err = estimator.fit(&[d0, d1]).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
+    fn ti_akima_rejects_duplicate_lambda_points() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Akima,
+            parallel: false,
+        });
+        let err = estimator.fit(&[d0, d1]).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
     fn ti_gaussian_quadrature_integrates_over_full_unit_interval() {
         let l0 = 0.21132486540518713;
         let l1 = 0.7886751345948129;
@@ -271,6 +381,120 @@ mod tests {
             parallel: true,
         })
         .estimate(&[d0, d1])
+        .unwrap();
+
+        assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
+        assert_eq!(serial.uncertainty(), parallel.uncertainty());
+    }
+
+    #[test]
+    fn ti_cubic_spline_parallel_matches_serial() {
+        let d0 = DhdlSeries::new(
+            StatePoint::new(vec![0.0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 0.1, 0.2],
+        )
+        .unwrap();
+        let d1 = DhdlSeries::new(
+            StatePoint::new(vec![0.5], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![1.0, 1.1, 1.2],
+        )
+        .unwrap();
+        let d2 = DhdlSeries::new(
+            StatePoint::new(vec![1.0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 0.1, 0.2],
+        )
+        .unwrap();
+
+        let serial = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::CubicSpline,
+            parallel: false,
+        })
+        .estimate(&[d0.clone(), d1.clone(), d2.clone()])
+        .unwrap();
+        let parallel = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::CubicSpline,
+            parallel: true,
+        })
+        .estimate(&[d0, d1, d2])
+        .unwrap();
+
+        assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
+        assert_eq!(serial.uncertainty(), parallel.uncertainty());
+    }
+
+    #[test]
+    fn ti_pchip_parallel_matches_serial() {
+        let d0 = DhdlSeries::new(
+            StatePoint::new(vec![0.0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 0.1, 0.2],
+        )
+        .unwrap();
+        let d1 = DhdlSeries::new(
+            StatePoint::new(vec![0.5], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![1.0, 1.1, 1.2],
+        )
+        .unwrap();
+        let d2 = DhdlSeries::new(
+            StatePoint::new(vec![1.0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 0.1, 0.2],
+        )
+        .unwrap();
+
+        let serial = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Pchip,
+            parallel: false,
+        })
+        .estimate(&[d0.clone(), d1.clone(), d2.clone()])
+        .unwrap();
+        let parallel = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Pchip,
+            parallel: true,
+        })
+        .estimate(&[d0, d1, d2])
+        .unwrap();
+
+        assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);
+        assert_eq!(serial.uncertainty(), parallel.uncertainty());
+    }
+
+    #[test]
+    fn ti_akima_parallel_matches_serial() {
+        let d0 = DhdlSeries::new(
+            StatePoint::new(vec![0.0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 0.1, 0.2],
+        )
+        .unwrap();
+        let d1 = DhdlSeries::new(
+            StatePoint::new(vec![0.5], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![1.0, 1.1, 1.2],
+        )
+        .unwrap();
+        let d2 = DhdlSeries::new(
+            StatePoint::new(vec![1.0], 300.0).unwrap(),
+            vec![0.0, 1.0, 2.0],
+            vec![0.0, 0.1, 0.2],
+        )
+        .unwrap();
+
+        let serial = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Akima,
+            parallel: false,
+        })
+        .estimate(&[d0.clone(), d1.clone(), d2.clone()])
+        .unwrap();
+        let parallel = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Akima,
+            parallel: true,
+        })
+        .estimate(&[d0, d1, d2])
         .unwrap();
 
         assert!((serial.delta_f() - parallel.delta_f()).abs() < 1e-12);

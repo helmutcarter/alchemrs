@@ -21,7 +21,7 @@ Types:
 - `TiEstimator`
 - `TiFit`
 - `TiOptions`
-- `IntegrationMethod::{Trapezoidal, Simpson, GaussianQuadrature}`
+- `IntegrationMethod::{Trapezoidal, Simpson, CubicSpline, Pchip, Akima, GaussianQuadrature}`
 
 Input:
 
@@ -31,15 +31,22 @@ Behavior:
 
 - sorts windows by lambda
 - computes the mean `dH/dlambda` for each window
-- integrates across lambda using trapezoidal, Simpson, or Gaussian quadrature
+- integrates across lambda using trapezoidal, Simpson, a natural cubic spline, PCHIP, Akima interpolation, or Gaussian quadrature
 - `fit(...)` returns `TiFit`
 - `result()` materializes the `FreeEnergyEstimate`
 
 Current uncertainty behavior:
 
 - trapezoidal mode reports an uncertainty estimate
+- cubic-spline mode reports an uncertainty estimate by propagating the implied spline-integration weights through the per-window SEMs
+- PCHIP and Akima report an uncertainty estimate by numerically differentiating the integrated result with respect to the window means and propagating the per-window SEMs through that Jacobian
 - Gaussian quadrature reports an uncertainty estimate from the quadrature weights and per-window SEMs
 - Simpson mode currently returns no uncertainty
+
+Interpolation references:
+
+- `Pchip` follows the piecewise-cubic Hermite shape-preserving literature of Fritsch and Carlson, *Monotone Piecewise Cubic Interpolation*, SIAM Journal on Numerical Analysis 17(2), 1980, DOI: <https://doi.org/10.1137/0717021>, and Fritsch and Butland, *A Method for Constructing Local Monotone Piecewise Cubic Interpolants*, SIAM Journal on Scientific and Statistical Computing 5(2), 1984, DOI: <https://doi.org/10.1137/0905021>
+- `Akima` follows Akima, *A New Method of Interpolation and Smooth Curve Fitting Based on Local Procedures*, Journal of the ACM 17(4), 1970, DOI: <https://doi.org/10.1145/321607.321609>
 
 Gaussian quadrature behavior:
 

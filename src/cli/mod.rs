@@ -360,6 +360,9 @@ pub enum Command {
 pub enum TiMethod {
     Trapezoidal,
     Simpson,
+    CubicSpline,
+    Pchip,
+    Akima,
     GaussianQuadrature,
 }
 
@@ -375,6 +378,9 @@ impl From<TiMethod> for IntegrationMethod {
         match method {
             TiMethod::Trapezoidal => IntegrationMethod::Trapezoidal,
             TiMethod::Simpson => IntegrationMethod::Simpson,
+            TiMethod::CubicSpline => IntegrationMethod::CubicSpline,
+            TiMethod::Pchip => IntegrationMethod::Pchip,
+            TiMethod::Akima => IntegrationMethod::Akima,
             TiMethod::GaussianQuadrature => IntegrationMethod::GaussianQuadrature,
         }
     }
@@ -488,6 +494,39 @@ mod tests {
         match cli.command {
             Command::Ti { method, .. } => {
                 assert!(matches!(method, super::TiMethod::GaussianQuadrature));
+            }
+            _ => panic!("expected ti command"),
+        }
+    }
+
+    #[test]
+    fn ti_command_accepts_cubic_spline_method() {
+        let cli = Cli::parse_from(["alchemrs", "ti", "--method", "cubic-spline", "window.out"]);
+        match cli.command {
+            Command::Ti { method, .. } => {
+                assert!(matches!(method, super::TiMethod::CubicSpline));
+            }
+            _ => panic!("expected ti command"),
+        }
+    }
+
+    #[test]
+    fn ti_command_accepts_pchip_method() {
+        let cli = Cli::parse_from(["alchemrs", "ti", "--method", "pchip", "window.out"]);
+        match cli.command {
+            Command::Ti { method, .. } => {
+                assert!(matches!(method, super::TiMethod::Pchip));
+            }
+            _ => panic!("expected ti command"),
+        }
+    }
+
+    #[test]
+    fn ti_command_accepts_akima_method() {
+        let cli = Cli::parse_from(["alchemrs", "ti", "--method", "akima", "window.out"]);
+        match cli.command {
+            Command::Ti { method, .. } => {
+                assert!(matches!(method, super::TiMethod::Akima));
             }
             _ => panic!("expected ti command"),
         }

@@ -193,7 +193,7 @@ alchemrs ti \
   /path/to/*/prod.out
 ```
 
-`ti` also supports `--method simpson` and `--method gaussian-quadrature`.
+`ti` also supports `--method simpson`, `--method cubic-spline`, `--method pchip`, `--method akima`, and `--method gaussian-quadrature`.
 Gaussian quadrature is only valid when the sampled lambda windows are the supported Gauss-Legendre nodes on `[0, 1]` for a `1..=16` window schedule. For arbitrary lambda schedules, use trapezoidal TI.
 
 ### BAR

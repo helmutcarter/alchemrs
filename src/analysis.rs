@@ -819,6 +819,9 @@ pub fn ti_convergence(
     let start = match options.method {
         crate::estimators::IntegrationMethod::Trapezoidal => 2,
         crate::estimators::IntegrationMethod::Simpson => 3,
+        crate::estimators::IntegrationMethod::CubicSpline => 2,
+        crate::estimators::IntegrationMethod::Pchip => 2,
+        crate::estimators::IntegrationMethod::Akima => 2,
         crate::estimators::IntegrationMethod::GaussianQuadrature => unreachable!(),
     };
     if series.len() < start {
@@ -1213,6 +1216,9 @@ pub(crate) fn ti_block_average(
     let minimum_windows = match options.method {
         crate::estimators::IntegrationMethod::Trapezoidal => 2,
         crate::estimators::IntegrationMethod::Simpson => 3,
+        crate::estimators::IntegrationMethod::CubicSpline => 2,
+        crate::estimators::IntegrationMethod::Pchip => 2,
+        crate::estimators::IntegrationMethod::Akima => 2,
         crate::estimators::IntegrationMethod::GaussianQuadrature => 1,
     };
     if series.len() < minimum_windows {

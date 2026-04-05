@@ -6,10 +6,14 @@ use crate::error::{CoreError, Result};
 pub enum IntegrationMethod {
     Trapezoidal,
     Simpson,
+    CubicSpline,
+    Pchip,
+    Akima,
     GaussianQuadrature,
 }
 
 const GAUSSIAN_QUADRATURE_LAMBDA_ABS_TOL: f64 = 1.0e-5;
+const NONLINEAR_TI_UNCERTAINTY_MIN_STEP: f64 = 1.0e-6;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TiOptions {
@@ -84,6 +88,9 @@ impl TiEstimator {
         let delta_f = match self.options.method {
             IntegrationMethod::Trapezoidal => integrate_trapezoidal(&lambdas, &values)?,
             IntegrationMethod::Simpson => integrate_simpson(&lambdas, &values)?,
+            IntegrationMethod::CubicSpline => integrate_cubic_spline(&lambdas, &values)?,
+            IntegrationMethod::Pchip => integrate_pchip(&lambdas, &values)?,
+            IntegrationMethod::Akima => integrate_akima(&lambdas, &values)?,
             IntegrationMethod::GaussianQuadrature => {
                 integrate_gaussian_quadrature(&lambdas, &values)?
             }
@@ -94,6 +101,11 @@ impl TiEstimator {
                 Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?)
             }
             IntegrationMethod::Simpson => None,
+            IntegrationMethod::CubicSpline => {
+                Some(cubic_spline_uncertainty(&lambdas, &sem2_values)?)
+            }
+            IntegrationMethod::Pchip => Some(pchip_uncertainty(&lambdas, &values, &sem2_values)?),
+            IntegrationMethod::Akima => Some(akima_uncertainty(&lambdas, &values, &sem2_values)?),
             IntegrationMethod::GaussianQuadrature => {
                 Some(gaussian_quadrature_uncertainty(&lambdas, &sem2_values)?)
             }
@@ -167,6 +179,9 @@ fn minimum_ti_windows(method: IntegrationMethod) -> usize {
     match method {
         IntegrationMethod::Trapezoidal => 2,
         IntegrationMethod::Simpson => 3,
+        IntegrationMethod::CubicSpline => 2,
+        IntegrationMethod::Pchip => 2,
+        IntegrationMethod::Akima => 2,
         IntegrationMethod::GaussianQuadrature => 1,
     }
 }
@@ -275,6 +290,104 @@ fn integrate_gaussian_quadrature(lambdas: &[f64], values: &[f64]) -> Result<f64>
         .sum())
 }
 
+fn integrate_cubic_spline(lambdas: &[f64], values: &[f64]) -> Result<f64> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if lambdas.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: lambdas.len(),
+        });
+    }
+
+    // Natural cubic splines set the endpoint second derivatives to zero and
+    // integrate the resulting piecewise cubic exactly on each interval.
+    let second_derivatives = natural_cubic_second_derivatives(lambdas, values)?;
+    let mut total = 0.0;
+    for i in 0..(lambdas.len() - 1) {
+        let h = lambdas[i + 1] - lambdas[i];
+        total += h * (values[i] + values[i + 1]) * 0.5
+            - (h * h * h) * (second_derivatives[i] + second_derivatives[i + 1]) / 24.0;
+    }
+    Ok(total)
+}
+
+fn integrate_pchip(lambdas: &[f64], values: &[f64]) -> Result<f64> {
+    let derivatives = pchip_derivatives(lambdas, values)?;
+    integrate_cubic_hermite(lambdas, values, &derivatives, "PCHIP")
+}
+
+fn integrate_akima(lambdas: &[f64], values: &[f64]) -> Result<f64> {
+    let derivatives = akima_derivatives(lambdas, values)?;
+    integrate_cubic_hermite(lambdas, values, &derivatives, "Akima")
+}
+
+fn cubic_spline_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
+    if lambdas.len() != sem2.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: sem2.len(),
+        });
+    }
+
+    // For a fixed lambda grid, the natural cubic-spline integral is a linear
+    // functional of the window means. Reusing those implied weights lets us
+    // propagate the per-window SEMs with the same independence assumption used
+    // by the other TI uncertainty estimates.
+    let weights = cubic_spline_weights(lambdas)?;
+    let variance: f64 = weights
+        .iter()
+        .zip(sem2.iter())
+        .map(|(weight, sem2)| weight * weight * sem2)
+        .sum();
+    Ok(variance.sqrt())
+}
+
+fn pchip_uncertainty(lambdas: &[f64], values: &[f64], sem2: &[f64]) -> Result<f64> {
+    nonlinear_ti_uncertainty(lambdas, values, sem2, "PCHIP", integrate_pchip)
+}
+
+fn akima_uncertainty(lambdas: &[f64], values: &[f64], sem2: &[f64]) -> Result<f64> {
+    nonlinear_ti_uncertainty(lambdas, values, sem2, "Akima", integrate_akima)
+}
+
+fn integrate_cubic_hermite(
+    lambdas: &[f64],
+    values: &[f64],
+    derivatives: &[f64],
+    method_name: &str,
+) -> Result<f64> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if lambdas.len() != derivatives.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: derivatives.len(),
+        });
+    }
+
+    let mut total = 0.0;
+    for i in 0..(lambdas.len() - 1) {
+        let h = lambdas[i + 1] - lambdas[i];
+        if h <= 0.0 {
+            return Err(CoreError::Unsupported(format!(
+                "{method_name} integration requires strictly increasing lambda spacing"
+            )));
+        }
+        total += h * (values[i] + values[i + 1]) * 0.5
+            + (h * h) * (derivatives[i] - derivatives[i + 1]) / 12.0;
+    }
+    Ok(total)
+}
+
 fn gaussian_quadrature_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
     if lambdas.len() != sem2.len() {
         return Err(CoreError::InvalidShape {
@@ -321,6 +434,251 @@ fn trapezoidal_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
         variance += (coeff * coeff) * sem2[i] * 0.25;
     }
     Ok(variance.sqrt())
+}
+
+fn natural_cubic_second_derivatives(lambdas: &[f64], values: &[f64]) -> Result<Vec<f64>> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if lambdas.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: lambdas.len(),
+        });
+    }
+
+    let n = lambdas.len();
+    let mut intervals = Vec::with_capacity(n - 1);
+    for i in 0..(n - 1) {
+        let width = lambdas[i + 1] - lambdas[i];
+        if width <= 0.0 {
+            return Err(CoreError::Unsupported(
+                "Cubic spline integration requires strictly increasing lambda spacing".to_string(),
+            ));
+        }
+        intervals.push(width);
+    }
+
+    if n == 2 {
+        return Ok(vec![0.0, 0.0]);
+    }
+
+    let interior = n - 2;
+    let mut lower = vec![0.0; interior];
+    let mut diag = vec![0.0; interior];
+    let mut upper = vec![0.0; interior];
+    let mut rhs = vec![0.0; interior];
+
+    for row in 0..interior {
+        let i = row + 1;
+        let h_prev = intervals[i - 1];
+        let h_next = intervals[i];
+        lower[row] = if row == 0 { 0.0 } else { h_prev };
+        diag[row] = 2.0 * (h_prev + h_next);
+        upper[row] = if row + 1 == interior { 0.0 } else { h_next };
+        rhs[row] =
+            6.0 * (((values[i + 1] - values[i]) / h_next) - ((values[i] - values[i - 1]) / h_prev));
+    }
+
+    for row in 1..interior {
+        let factor = lower[row] / diag[row - 1];
+        diag[row] -= factor * upper[row - 1];
+        rhs[row] -= factor * rhs[row - 1];
+    }
+
+    let mut second = vec![0.0; n];
+    second[n - 2] = rhs[interior - 1] / diag[interior - 1];
+    for row in (0..(interior - 1)).rev() {
+        second[row + 1] = (rhs[row] - upper[row] * second[row + 2]) / diag[row];
+    }
+    Ok(second)
+}
+
+fn pchip_derivatives(lambdas: &[f64], values: &[f64]) -> Result<Vec<f64>> {
+    let (intervals, slopes) = interval_widths_and_slopes(lambdas, values, "PCHIP")?;
+    if values.len() == 2 {
+        return Ok(vec![slopes[0], slopes[0]]);
+    }
+
+    let mut derivatives = vec![0.0; values.len()];
+    for k in 1..(values.len() - 1) {
+        let left = slopes[k - 1];
+        let right = slopes[k];
+        if left == 0.0 || right == 0.0 || left.signum() != right.signum() {
+            derivatives[k] = 0.0;
+        } else {
+            let w1 = 2.0 * intervals[k] + intervals[k - 1];
+            let w2 = intervals[k] + 2.0 * intervals[k - 1];
+            derivatives[k] = (w1 + w2) / (w1 / left + w2 / right);
+        }
+    }
+
+    derivatives[0] = pchip_edge_derivative(intervals[0], intervals[1], slopes[0], slopes[1]);
+    let last = values.len() - 1;
+    derivatives[last] = pchip_edge_derivative(
+        intervals[last - 1],
+        intervals[last - 2],
+        slopes[last - 1],
+        slopes[last - 2],
+    );
+    Ok(derivatives)
+}
+
+fn pchip_edge_derivative(h0: f64, h1: f64, m0: f64, m1: f64) -> f64 {
+    let derivative = ((2.0 * h0 + h1) * m0 - h0 * m1) / (h0 + h1);
+    if derivative.signum() != m0.signum() {
+        0.0
+    } else if m0.signum() != m1.signum() && derivative.abs() > 3.0 * m0.abs() {
+        3.0 * m0
+    } else {
+        derivative
+    }
+}
+
+fn akima_derivatives(lambdas: &[f64], values: &[f64]) -> Result<Vec<f64>> {
+    let (_intervals, slopes) = interval_widths_and_slopes(lambdas, values, "Akima")?;
+    if values.len() == 2 {
+        return Ok(vec![slopes[0], slopes[0]]);
+    }
+
+    let n = values.len();
+    let mut extended = vec![0.0; n + 3];
+    for (idx, slope) in slopes.iter().enumerate() {
+        extended[idx + 2] = *slope;
+    }
+    extended[1] = 2.0 * extended[2] - extended[3];
+    extended[0] = 2.0 * extended[1] - extended[2];
+    extended[n + 1] = 2.0 * extended[n] - extended[n - 1];
+    extended[n + 2] = 2.0 * extended[n + 1] - extended[n];
+
+    let mut derivatives = (0..n)
+        .map(|idx| 0.5 * (extended[idx + 3] + extended[idx]))
+        .collect::<Vec<_>>();
+    let dm = extended
+        .windows(2)
+        .map(|pair| (pair[1] - pair[0]).abs())
+        .collect::<Vec<_>>();
+    let f1 = &dm[2..];
+    let f2 = &dm[..n];
+    let break_mult = 1.0e-9;
+    let f12_max = f1
+        .iter()
+        .zip(f2.iter())
+        .map(|(left, right)| left + right)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    for idx in 0..n {
+        let f12 = f1[idx] + f2[idx];
+        if f12 > break_mult * f12_max {
+            derivatives[idx] =
+                extended[idx + 1] + (f2[idx] / f12) * (extended[idx + 2] - extended[idx + 1]);
+        }
+    }
+
+    Ok(derivatives)
+}
+
+fn cubic_spline_weights(lambdas: &[f64]) -> Result<Vec<f64>> {
+    if lambdas.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: lambdas.len(),
+        });
+    }
+
+    let mut weights = Vec::with_capacity(lambdas.len());
+    let mut basis = vec![0.0; lambdas.len()];
+    for basis_index in 0..lambdas.len() {
+        basis.fill(0.0);
+        basis[basis_index] = 1.0;
+        weights.push(integrate_cubic_spline(lambdas, &basis)?);
+    }
+    Ok(weights)
+}
+
+fn nonlinear_ti_uncertainty(
+    lambdas: &[f64],
+    values: &[f64],
+    sem2: &[f64],
+    method_name: &str,
+    integrator: fn(&[f64], &[f64]) -> Result<f64>,
+) -> Result<f64> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if values.len() != sem2.len() {
+        return Err(CoreError::InvalidShape {
+            expected: values.len(),
+            found: sem2.len(),
+        });
+    }
+
+    // PCHIP and Akima depend nonlinearly on the window means, so propagate the
+    // SEMs through a numerical Jacobian of the integrated estimate instead of
+    // reusing the linear-weight shortcut used by trapezoidal/GQ/natural spline TI.
+    let mut plus = values.to_vec();
+    let mut minus = values.to_vec();
+    let mut variance = 0.0;
+    for index in 0..values.len() {
+        let step = (f64::EPSILON.sqrt() * (1.0 + values[index].abs()))
+            .max(NONLINEAR_TI_UNCERTAINTY_MIN_STEP);
+        plus[index] = values[index] + step;
+        minus[index] = values[index] - step;
+
+        let upper = integrator(lambdas, &plus)?;
+        let lower = integrator(lambdas, &minus)?;
+        let derivative = (upper - lower) / (2.0 * step);
+
+        if !derivative.is_finite() {
+            return Err(CoreError::NonFiniteValue(format!(
+                "{method_name} uncertainty Jacobian must be finite"
+            )));
+        }
+        variance += derivative * derivative * sem2[index];
+        plus[index] = values[index];
+        minus[index] = values[index];
+    }
+
+    Ok(variance.sqrt())
+}
+
+fn interval_widths_and_slopes(
+    lambdas: &[f64],
+    values: &[f64],
+    method_name: &str,
+) -> Result<(Vec<f64>, Vec<f64>)> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if lambdas.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: lambdas.len(),
+        });
+    }
+
+    let mut intervals = Vec::with_capacity(lambdas.len() - 1);
+    let mut slopes = Vec::with_capacity(lambdas.len() - 1);
+    for i in 0..(lambdas.len() - 1) {
+        let width = lambdas[i + 1] - lambdas[i];
+        if width <= 0.0 {
+            return Err(CoreError::Unsupported(format!(
+                "{method_name} integration requires strictly increasing lambda spacing"
+            )));
+        }
+        intervals.push(width);
+        slopes.push((values[i + 1] - values[i]) / width);
+    }
+    Ok((intervals, slopes))
 }
 
 fn gaussian_quadrature_rule(lambdas: &[f64]) -> Result<&'static QuadratureRule> {
