@@ -33,6 +33,9 @@ pub struct MbarEstimator {
 #[derive(Debug, Clone)]
 struct PreparedMbar {
     u_kn: Vec<Vec<f64>>,
+    // Keep a sample-major view for the default serial hot loops so denominator and
+    // log-weight passes can walk contiguous rows without changing the parallel path.
+    u_nk: Vec<f64>,
     n_k: Vec<f64>,
     states: Vec<StatePoint>,
     lambda_labels: Option<Vec<String>>,
@@ -63,6 +66,7 @@ impl MbarEstimator {
 
         mbar_solve(
             &prepared.u_kn,
+            &prepared.u_nk,
             &prepared.n_k,
             &mut f_k,
             self.options.tolerance,
@@ -124,6 +128,7 @@ impl MbarFit {
         self.log_weights.get_or_init(|| {
             mbar_log_weights(
                 &self.prepared.u_kn,
+                &self.prepared.u_nk,
                 &self.prepared.n_k,
                 &self.f_k,
                 self.parallel,
@@ -138,6 +143,7 @@ impl MbarFit {
     pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
         let uncertainties = mbar_uncertainty(
             &self.prepared.u_kn,
+            &self.prepared.u_nk,
             &self.prepared.n_k,
             &self.f_k,
             self.parallel,
@@ -223,8 +229,10 @@ impl MbarFit {
 impl PreparedMbar {
     fn from_windows(windows: &[UNkMatrix]) -> Result<Self> {
         let (u_kn, n_k, states, lambda_labels) = combine_windows(windows)?;
+        let u_nk = sample_major_from_state_major(&u_kn);
         Ok(Self {
             u_kn,
+            u_nk,
             n_k,
             states,
             lambda_labels,
@@ -284,6 +292,7 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
 
 fn mbar_solve(
     u_kn: &[Vec<f64>],
+    u_nk: &[f64],
     n_k: &[f64],
     f_k: &mut [f64],
     tolerance: f64,
@@ -304,22 +313,25 @@ fn mbar_solve(
         .collect();
 
     let mut log_denominator = vec![0.0; n_samples];
+    let mut state_offsets = vec![0.0; n_states];
+    let mut f_new = vec![0.0; n_states];
     for _ in 0..max_iterations {
         // Precompute ln(n_k) + f_k once per iteration so the sample loop only pays the
         // u_kn access and the log-sum-exp update.
-        let state_offsets = state_offsets(&ln_n_k, f_k);
-        fill_log_denominator(u_kn, &state_offsets, &mut log_denominator, parallel)?;
-
-        let mut f_new = vec![0.0; n_states];
-        fill_free_energies(u_kn, &log_denominator, &mut f_new, parallel)?;
-        let shift = f_new[0];
-        for value in f_new.iter_mut().take(n_states) {
-            *value -= shift;
+        fill_state_offsets(&ln_n_k, f_k, &mut state_offsets);
+        if parallel {
+            fill_log_denominator(u_kn, &state_offsets, &mut log_denominator, true)?;
+            fill_free_energies(u_kn, &log_denominator, &mut f_new, true)?;
+        } else {
+            // The serial path uses the sample-major buffer to keep per-sample scans contiguous.
+            fill_log_denominator_serial(u_nk, n_states, &state_offsets, &mut log_denominator)?;
+            fill_free_energies_serial(u_nk, n_states, &log_denominator, &mut f_new)?;
         }
-
+        let shift = f_new[0];
         let mut max_delta = 0.0;
-        for k in 0..n_states {
-            let delta = (f_new[k] - f_k[k]).abs();
+        for (new_value, old_value) in f_new.iter_mut().zip(f_k.iter()) {
+            *new_value -= shift;
+            let delta = (*new_value - *old_value).abs();
             if delta > max_delta {
                 max_delta = delta;
             }
@@ -335,16 +347,36 @@ fn mbar_solve(
 
 fn mbar_uncertainty(
     u_kn: &[Vec<f64>],
+    u_nk: &[f64],
     n_k: &[f64],
     f_k: &[f64],
     parallel: bool,
 ) -> Result<Vec<f64>> {
+    let n_states = u_kn.len();
+    let theta = mbar_theta(u_kn, u_nk, n_k, f_k, parallel)?;
+
+    let mut uncertainties = vec![0.0; n_states * n_states];
+    for i in 0..n_states {
+        for j in 0..n_states {
+            uncertainties[i * n_states + j] = pair_uncertainty_from_theta(&theta, i, j);
+        }
+    }
+    Ok(uncertainties)
+}
+
+fn mbar_theta(
+    u_kn: &[Vec<f64>],
+    u_nk: &[f64],
+    n_k: &[f64],
+    f_k: &[f64],
+    parallel: bool,
+) -> Result<nalgebra::DMatrix<f64>> {
     use nalgebra::{DMatrix, SymmetricEigen};
 
     let n_states = u_kn.len();
     let n_samples = u_kn[0].len();
 
-    let log_w = mbar_log_weights(u_kn, n_k, f_k, parallel);
+    let log_w = mbar_log_weights(u_kn, u_nk, n_k, f_k, parallel);
     let mut w_data = vec![0.0; n_samples * n_states];
     if parallel {
         w_data
@@ -377,25 +409,32 @@ fn mbar_uncertainty(
     let identity = DMatrix::identity(n_states, n_states);
     let a = &identity - &sigma * &v.transpose() * &ndiag * &v * &sigma;
     let a_inv = pseudoinverse(&a, 1.0e-10)?;
-    let theta = &v * &sigma * a_inv * &sigma * v.transpose();
-
-    let mut uncertainties = vec![0.0; n_states * n_states];
-    for i in 0..n_states {
-        for j in 0..n_states {
-            let val = theta[(i, i)] + theta[(j, j)] - 2.0 * theta[(i, j)];
-            uncertainties[i * n_states + j] = if val < 0.0 && val > -1e-10 {
-                0.0
-            } else if val < 0.0 {
-                val.abs().sqrt()
-            } else {
-                val.sqrt()
-            };
-        }
-    }
-    Ok(uncertainties)
+    Ok(&v * &sigma * a_inv * &sigma * v.transpose())
 }
 
-fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64], parallel: bool) -> Vec<f64> {
+fn pair_uncertainty_from_theta(
+    theta: &nalgebra::DMatrix<f64>,
+    from_idx: usize,
+    to_idx: usize,
+) -> f64 {
+    let val =
+        theta[(from_idx, from_idx)] + theta[(to_idx, to_idx)] - 2.0 * theta[(from_idx, to_idx)];
+    if val < 0.0 && val > -1e-10 {
+        0.0
+    } else if val < 0.0 {
+        val.abs().sqrt()
+    } else {
+        val.sqrt()
+    }
+}
+
+fn mbar_log_weights(
+    u_kn: &[Vec<f64>],
+    u_nk: &[f64],
+    n_k: &[f64],
+    f_k: &[f64],
+    parallel: bool,
+) -> Vec<f64> {
     let n_states = u_kn.len();
     let ln_n_k: Vec<f64> = n_k
         .iter()
@@ -411,7 +450,7 @@ fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64], parallel: bool)
             .for_each(|(n, row)| fill_log_weights_row(u_kn, &state_offsets, f_k, n, row));
     } else {
         for (n, row) in log_w.chunks_mut(n_states).enumerate() {
-            fill_log_weights_row(u_kn, &state_offsets, f_k, n, row);
+            fill_log_weights_row_serial(u_nk, n_states, &state_offsets, f_k, n, row);
         }
     }
     log_w
@@ -439,6 +478,18 @@ fn fill_log_denominator(
     Ok(())
 }
 
+fn fill_log_denominator_serial(
+    u_nk: &[f64],
+    n_states: usize,
+    state_offsets: &[f64],
+    log_denominator: &mut [f64],
+) -> Result<()> {
+    for (n, slot) in log_denominator.iter_mut().enumerate() {
+        *slot = checked_log_denominator_for_sample_serial(u_nk, n_states, state_offsets, n)?;
+    }
+    Ok(())
+}
+
 fn fill_free_energies(
     u_kn: &[Vec<f64>],
     log_denominator: &[f64],
@@ -461,12 +512,57 @@ fn fill_free_energies(
     Ok(())
 }
 
+fn fill_free_energies_serial(
+    u_nk: &[f64],
+    n_states: usize,
+    log_denominator: &[f64],
+    f_new: &mut [f64],
+) -> Result<()> {
+    let mut max_args = vec![f64::NEG_INFINITY; n_states];
+    let mut sums = vec![0.0; n_states];
+    for (n, denom) in log_denominator.iter().enumerate() {
+        let row = sample_major_row(u_nk, n_states, n);
+        for (k, value) in row.iter().enumerate() {
+            let val = -*denom - *value;
+            accumulate_logsumexp(&mut max_args[k], &mut sums[k], val);
+        }
+    }
+    for (state_idx, slot) in f_new.iter_mut().enumerate() {
+        *slot = if max_args[state_idx].is_finite() {
+            -(max_args[state_idx] + sums[state_idx].ln())
+        } else {
+            f64::NAN
+        };
+        if !slot.is_finite() {
+            return Err(CoreError::NonFiniteValue(format!(
+                "MBAR free energy became non-finite for state {state_idx}"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn checked_log_denominator_for_sample(
     u_kn: &[Vec<f64>],
     state_offsets: &[f64],
     sample_idx: usize,
 ) -> Result<f64> {
     let value = log_denominator_for_sample(u_kn, state_offsets, sample_idx);
+    if !value.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "MBAR denominator became non-finite at sample {sample_idx}"
+        )));
+    }
+    Ok(value)
+}
+
+fn checked_log_denominator_for_sample_serial(
+    u_nk: &[f64],
+    n_states: usize,
+    state_offsets: &[f64],
+    sample_idx: usize,
+) -> Result<f64> {
+    let value = log_denominator_for_sample_serial(u_nk, n_states, state_offsets, sample_idx);
     if !value.is_finite() {
         return Err(CoreError::NonFiniteValue(format!(
             "MBAR denominator became non-finite at sample {sample_idx}"
@@ -484,6 +580,26 @@ fn log_denominator_for_sample(u_kn: &[Vec<f64>], state_offsets: &[f64], sample_i
         }
         let val = state_offset - u_kn[k][sample_idx];
         accumulate_logsumexp(&mut max_arg, &mut sum, val);
+    }
+    max_arg + sum.ln()
+}
+
+fn log_denominator_for_sample_serial(
+    u_nk: &[f64],
+    n_states: usize,
+    state_offsets: &[f64],
+    sample_idx: usize,
+) -> f64 {
+    let mut max_arg = f64::NEG_INFINITY;
+    let mut sum = 0.0;
+    for (state_offset, value) in state_offsets
+        .iter()
+        .zip(sample_major_row(u_nk, n_states, sample_idx).iter())
+    {
+        if !state_offset.is_finite() {
+            continue;
+        }
+        accumulate_logsumexp(&mut max_arg, &mut sum, state_offset - *value);
     }
     max_arg + sum.ln()
 }
@@ -525,18 +641,58 @@ fn fill_log_weights_row(
     }
 }
 
-fn state_offsets(ln_n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
-    ln_n_k
+fn fill_log_weights_row_serial(
+    u_nk: &[f64],
+    n_states: usize,
+    state_offsets: &[f64],
+    f_k: &[f64],
+    sample_idx: usize,
+    row: &mut [f64],
+) {
+    let log_denom = log_denominator_for_sample_serial(u_nk, n_states, state_offsets, sample_idx);
+    for (k, value) in sample_major_row(u_nk, n_states, sample_idx)
         .iter()
-        .zip(f_k.iter())
-        .map(|(ln_n, f)| {
-            if ln_n.is_finite() {
-                ln_n + f
-            } else {
-                f64::NEG_INFINITY
-            }
-        })
-        .collect()
+        .enumerate()
+    {
+        row[k] = f_k[k] - *value - log_denom;
+    }
+}
+
+fn sample_major_row(u_nk: &[f64], n_states: usize, sample_idx: usize) -> &[f64] {
+    let start = sample_idx * n_states;
+    &u_nk[start..start + n_states]
+}
+
+fn sample_major_from_state_major(u_kn: &[Vec<f64>]) -> Vec<f64> {
+    if u_kn.is_empty() {
+        return Vec::new();
+    }
+    let n_states = u_kn.len();
+    let n_samples = u_kn[0].len();
+    let mut u_nk = vec![0.0; n_samples * n_states];
+    for sample_idx in 0..n_samples {
+        let row = &mut u_nk[sample_idx * n_states..(sample_idx + 1) * n_states];
+        for state_idx in 0..n_states {
+            row[state_idx] = u_kn[state_idx][sample_idx];
+        }
+    }
+    u_nk
+}
+
+fn state_offsets(ln_n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
+    let mut offsets = vec![0.0; ln_n_k.len()];
+    fill_state_offsets(ln_n_k, f_k, &mut offsets);
+    offsets
+}
+
+fn fill_state_offsets(ln_n_k: &[f64], f_k: &[f64], offsets: &mut [f64]) {
+    for ((slot, ln_n), f) in offsets.iter_mut().zip(ln_n_k.iter()).zip(f_k.iter()) {
+        *slot = if ln_n.is_finite() {
+            ln_n + f
+        } else {
+            f64::NEG_INFINITY
+        };
+    }
 }
 
 fn accumulate_logsumexp(max_arg: &mut f64, sum: &mut f64, value: f64) {

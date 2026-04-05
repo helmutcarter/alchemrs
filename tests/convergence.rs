@@ -47,6 +47,13 @@ fn mbar_convergence_tracks_prefix_count_and_labels() {
     let points = mbar_convergence(&windows, None).expect("mbar convergence");
     assert_eq!(points.len(), 3);
     assert_eq!(points[0].n_windows(), 1);
+    assert_eq!(points[0].from_state().lambdas(), s0.lambdas());
+    assert_eq!(points[0].to_state().lambdas(), s0.lambdas());
+    assert_eq!(points[0].uncertainty(), Some(0.0));
+    assert_eq!(
+        points[0].lambda_labels().unwrap(),
+        &["coul-lambda", "vdw-lambda"]
+    );
     assert_eq!(points[2].n_windows(), 3);
     assert_eq!(points[2].from_state().lambdas(), s0.lambdas());
     assert_eq!(points[2].to_state().lambdas(), s2.lambdas());
