@@ -3,8 +3,7 @@ use crate::data::{find_state_index_exact, DeltaFMatrix, UNkMatrix};
 use crate::error::{CoreError, Result};
 
 use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, work_values,
-    PairEstimate,
+    ensure_consistent_lambda_labels, ensure_consistent_states, work_values, PairEstimate,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -784,12 +784,9 @@ mod tests {
         )
         .unwrap();
 
-        let err = detect_equilibration_u_nk(
-            &u_nk,
-            UNkSeriesMethod::DE,
-            &DecorrelationOptions::default(),
-        )
-        .unwrap_err();
+        let err =
+            detect_equilibration_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
+                .unwrap_err();
         assert!(matches!(
             err,
             CoreError::InvalidShape {

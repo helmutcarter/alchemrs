@@ -2,9 +2,7 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows,
-};
+use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows};
 
 #[derive(Debug, Clone)]
 pub struct MbarOptions {

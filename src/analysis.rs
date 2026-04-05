@@ -1,6 +1,6 @@
 use crate::data::{
-    find_state_index_exact, state_points_match_exact, DeltaFMatrix, DhdlSeries,
-    FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
+    find_state_index_exact, state_points_match_exact, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate,
+    OverlapMatrix, StatePoint, UNkMatrix,
 };
 use crate::error::{CoreError, Result};
 use crate::estimators::{
@@ -784,8 +784,10 @@ pub fn overlap_matrix(
         }
         for i in 0..n_states {
             let wi = weights[i];
-            for j in 0..n_states {
-                wtw[i * n_states + j] += wi * weights[j];
+            let row_offset = i * n_states;
+            for j in i..n_states {
+                let idx = row_offset + j;
+                wtw[idx] = wi.mul_add(weights[j], wtw[idx]);
             }
         }
     }
@@ -793,7 +795,12 @@ pub fn overlap_matrix(
     let mut values = vec![0.0; n_states * n_states];
     for i in 0..n_states {
         for j in 0..n_states {
-            values[i * n_states + j] = wtw[i * n_states + j] * n_k[j];
+            let upper_idx = if i <= j {
+                i * n_states + j
+            } else {
+                j * n_states + i
+            };
+            values[i * n_states + j] = wtw[upper_idx] * n_k[j];
         }
     }
 
@@ -921,10 +928,8 @@ pub fn advise_lambda_schedule(
 
     let mut metrics = Vec::with_capacity(n_states - 1);
     for edge_index in 0..(n_states - 1) {
-        let pair_windows = trim_windows_to_sampled_states(&[
-            ordered[edge_index].clone(),
-            ordered[edge_index + 1].clone(),
-        ])?;
+        let pair_windows =
+            select_trimmed_windows_range(&trimmed[edge_index..edge_index + 2], edge_index, 2)?;
         let pair_result = fit_pair(&pair_windows, options.estimator)?;
         let block_stats = pair_block_stats(&pair_windows, options)?;
         let overlap_forward = overlap.values()[edge_index * n_states + edge_index + 1];
@@ -1297,15 +1302,13 @@ where
             found: windows.len(),
         });
     }
+    let trimmed = trim_windows_to_sampled_states(windows)?;
+    let total_windows = trimmed.len();
     let mut points = Vec::with_capacity(windows.len() - minimum_windows + 1);
-    for count in minimum_windows..=windows.len() {
-        let subset = if reverse {
-            &windows[windows.len() - count..]
-        } else {
-            &windows[..count]
-        };
-        let trimmed = trim_windows_to_sampled_states(subset)?;
-        let result = fit(&trimmed)?;
+    for count in minimum_windows..=total_windows {
+        let start = if reverse { total_windows - count } else { 0 };
+        let subset = select_trimmed_windows_range(&trimmed[start..start + count], start, count)?;
+        let result = fit(&subset)?;
         points.push(convergence_point_from_matrix(count, &result, reverse)?);
     }
     Ok(points)
@@ -1334,7 +1337,8 @@ where
         });
     }
 
-    let blocked = windows
+    let trimmed = trim_windows_to_sampled_states(windows)?;
+    let blocked = trimmed
         .iter()
         .map(|window| split_u_nk_window(window, n_blocks))
         .collect::<Result<Vec<_>>>()?;
@@ -1345,8 +1349,7 @@ where
             .iter()
             .map(|chunks| chunks[block_index].clone())
             .collect::<Vec<_>>();
-        let trimmed = trim_windows_to_sampled_states(&subset)?;
-        let result = fit(&trimmed)?;
+        let result = fit(&subset)?;
         points.push(block_estimate_from_matrix(
             block_index,
             n_blocks,
@@ -1375,27 +1378,118 @@ fn trim_windows_to_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix
             .iter()
             .map(|state| find_state_index_exact(window.evaluated_states(), state))
             .collect::<Result<Vec<_>>>()?;
-
-        let mut data = Vec::with_capacity(window.n_samples() * states.len());
-        for sample_idx in 0..window.n_samples() {
-            let row_offset = sample_idx * window.n_states();
-            for &idx in &indices {
-                data.push(window.data()[row_offset + idx]);
-            }
+        if indices.len() == window.n_states() && indices.iter().copied().eq(0..window.n_states()) {
+            trimmed.push(window.clone());
+        } else {
+            trimmed.push(select_window_state_indices(window, &indices, &states)?);
         }
-
-        trimmed.push(UNkMatrix::new_with_labels(
-            window.n_samples(),
-            states.len(),
-            data,
-            window.time_ps().to_vec(),
-            window.sampled_state().cloned(),
-            states.clone(),
-            window.lambda_labels().map(|labels| labels.to_vec()),
-        )?);
     }
 
     Ok(trimmed)
+}
+
+fn select_trimmed_windows_range(
+    windows: &[UNkMatrix],
+    state_start: usize,
+    state_count: usize,
+) -> Result<Vec<UNkMatrix>> {
+    if windows.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    if state_count == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let states = windows[0]
+        .evaluated_states()
+        .get(state_start..state_start + state_count)
+        .ok_or(CoreError::InvalidShape {
+            expected: state_start + state_count,
+            found: windows[0].n_states(),
+        })?
+        .to_vec();
+
+    windows
+        .iter()
+        .map(|window| select_window_state_range(window, state_start, state_count, &states))
+        .collect()
+}
+
+fn select_window_state_range(
+    window: &UNkMatrix,
+    state_start: usize,
+    state_count: usize,
+    states: &[StatePoint],
+) -> Result<UNkMatrix> {
+    let mut data = Vec::with_capacity(window.n_samples() * state_count);
+    for sample_idx in 0..window.n_samples() {
+        let row_offset = sample_idx * window.n_states();
+        let range_start = row_offset + state_start;
+        let range_end = range_start + state_count;
+        data.extend_from_slice(&window.data()[range_start..range_end]);
+    }
+
+    UNkMatrix::new_with_labels(
+        window.n_samples(),
+        state_count,
+        data,
+        window.time_ps().to_vec(),
+        window.sampled_state().cloned(),
+        states.to_vec(),
+        window.lambda_labels().map(|labels| labels.to_vec()),
+    )
+}
+
+fn select_window_state_indices(
+    window: &UNkMatrix,
+    indices: &[usize],
+    states: &[StatePoint],
+) -> Result<UNkMatrix> {
+    let mut data = Vec::with_capacity(window.n_samples() * indices.len());
+    if let Some((state_start, state_count)) = contiguous_state_range(indices) {
+        for sample_idx in 0..window.n_samples() {
+            let row_offset = sample_idx * window.n_states();
+            let range_start = row_offset + state_start;
+            let range_end = range_start + state_count;
+            data.extend_from_slice(&window.data()[range_start..range_end]);
+        }
+    } else {
+        for sample_idx in 0..window.n_samples() {
+            let row_offset = sample_idx * window.n_states();
+            for &idx in indices {
+                data.push(window.data()[row_offset + idx]);
+            }
+        }
+    }
+
+    UNkMatrix::new_with_labels(
+        window.n_samples(),
+        indices.len(),
+        data,
+        window.time_ps().to_vec(),
+        window.sampled_state().cloned(),
+        states.to_vec(),
+        window.lambda_labels().map(|labels| labels.to_vec()),
+    )
+}
+
+fn contiguous_state_range(indices: &[usize]) -> Option<(usize, usize)> {
+    let start = *indices.first()?;
+    if indices
+        .iter()
+        .copied()
+        .enumerate()
+        .all(|(offset, idx)| idx == start + offset)
+    {
+        Some((start, indices.len()))
+    } else {
+        None
+    }
 }
 
 fn split_dhdl_series(series: &DhdlSeries, n_blocks: usize) -> Result<Vec<DhdlSeries>> {

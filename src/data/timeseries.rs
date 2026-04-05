@@ -230,8 +230,8 @@ mod tests {
     fn unk_matrix_rejects_sampled_state_missing_from_grid_exactly() {
         let sampled = StatePoint::new(vec![0.1 + 0.2], 300.0).unwrap();
         let evaluated = StatePoint::new(vec![0.3], 300.0).unwrap();
-        let err = UNkMatrix::new(1, 1, vec![0.0], vec![0.0], Some(sampled), vec![evaluated])
-            .unwrap_err();
+        let err =
+            UNkMatrix::new(1, 1, vec![0.0], vec![0.0], Some(sampled), vec![evaluated]).unwrap_err();
         assert!(matches!(
             err,
             CoreError::InvalidState(message)
