@@ -1,6 +1,6 @@
 use alchemrs::{
     bar_convergence, dexp_convergence, mbar_convergence, ti_convergence, CoreError, DhdlSeries,
-    StatePoint, UNkMatrix,
+    MbarOptions, StatePoint, UNkMatrix,
 };
 
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint]) -> UNkMatrix {
@@ -54,6 +54,40 @@ fn mbar_convergence_tracks_prefix_count_and_labels() {
         points[2].lambda_labels().unwrap(),
         &["coul-lambda", "vdw-lambda"]
     );
+}
+
+#[test]
+fn mbar_convergence_adapts_full_length_initial_guess() {
+    let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+    let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+    let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+    let evaluated = vec![s0.clone(), s1.clone(), s2.clone()];
+    let windows = vec![
+        build_window(s0, &evaluated),
+        build_window(s1, &evaluated),
+        build_window(s2, &evaluated),
+    ];
+
+    let baseline = mbar_convergence(&windows, None).expect("baseline mbar convergence");
+    let warm_started = mbar_convergence(
+        &windows,
+        Some(MbarOptions {
+            initial_f_k: Some(vec![0.0, 1.0, 2.0]),
+            ..MbarOptions::default()
+        }),
+    )
+    .expect("warm-started mbar convergence");
+
+    assert_eq!(baseline.len(), warm_started.len());
+    for (left, right) in baseline.iter().zip(warm_started.iter()) {
+        assert_eq!(left.n_windows(), right.n_windows());
+        assert!((left.delta_f() - right.delta_f()).abs() < 1e-12);
+        match (left.uncertainty(), right.uncertainty()) {
+            (Some(a), Some(b)) => assert!((a - b).abs() < 1e-12),
+            (None, None) => {}
+            _ => panic!("uncertainty mismatch"),
+        }
+    }
 }
 
 #[test]

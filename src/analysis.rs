@@ -835,15 +835,33 @@ pub fn mbar_convergence(
     windows: &[UNkMatrix],
     options: Option<MbarOptions>,
 ) -> Result<Vec<ConvergencePoint>> {
-    convergence_from_matrix_windows(
-        windows,
-        |subset| {
-            MbarEstimator::new(options.clone().unwrap_or_default())
-                .estimate_with_uncertainty(subset)
-        },
-        false,
-        1,
-    )
+    if windows.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let trimmed = trim_windows_to_sampled_states(windows)?;
+    let total_windows = trimmed.len();
+    let base_options = options.unwrap_or_default();
+    let mut points = Vec::with_capacity(total_windows);
+    let mut initial_f_k = base_options.initial_f_k.clone();
+
+    for count in 1..=total_windows {
+        let subset = select_trimmed_windows_range(&trimmed[..count], 0, count)?;
+        let mut fit_options = base_options.clone();
+        // Each prefix adds one neighboring state, so the previous solution is a good
+        // initial guess for the next MBAR solve and usually reduces iteration count.
+        fit_options.initial_f_k = adapt_mbar_initial_f_k(initial_f_k.as_deref(), count);
+
+        let fit = MbarEstimator::new(fit_options).fit(&subset)?;
+        let result = fit.result_with_uncertainty()?;
+        points.push(convergence_point_from_matrix(count, &result, false)?);
+        initial_f_k = Some(fit.free_energies().to_vec());
+    }
+
+    Ok(points)
 }
 
 pub fn exp_convergence(
@@ -1285,6 +1303,21 @@ where
         points.push(convergence_point_from_matrix(count, &result, reverse)?);
     }
     Ok(points)
+}
+
+fn adapt_mbar_initial_f_k(source: Option<&[f64]>, n_states: usize) -> Option<Vec<f64>> {
+    let source = source?;
+    if source.is_empty() {
+        return Some(vec![0.0; n_states]);
+    }
+    let mut initial = source.to_vec();
+    if initial.len() > n_states {
+        initial.truncate(n_states);
+    } else if initial.len() < n_states {
+        let fill = *initial.last().unwrap_or(&0.0);
+        initial.resize(n_states, fill);
+    }
+    Some(initial)
 }
 
 fn block_average_from_windows<F>(
