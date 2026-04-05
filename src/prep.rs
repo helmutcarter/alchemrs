@@ -406,6 +406,12 @@ fn u_nk_series(u_nk: &UNkMatrix, data: &[f64], method: UNkSeriesMethod) -> Resul
                     operation: "DE u_nk preprocessing",
                 });
             }
+            if n_states < 2 {
+                return Err(CoreError::InvalidShape {
+                    expected: 2,
+                    found: n_states,
+                });
+            }
             let sampled_lambda = sampled.lambdas()[0];
             let index = find_state_index(u_nk.evaluated_states(), sampled_lambda)?;
             let other_index = if index + 1 < n_states {
@@ -746,6 +752,58 @@ mod tests {
             err,
             CoreError::RequiresOneDimensionalLambda {
                 operation: "DE u_nk preprocessing"
+            }
+        ));
+    }
+
+    #[test]
+    fn decorrelate_u_nk_de_requires_two_states() {
+        let state = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let u_nk = UNkMatrix::new(
+            2,
+            1,
+            vec![0.0, 0.0],
+            vec![0.0, 1.0],
+            Some(state.clone()),
+            vec![state],
+        )
+        .unwrap();
+
+        let err = decorrelate_u_nk(&u_nk, UNkSeriesMethod::DE, &DecorrelationOptions::default())
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::InvalidShape {
+                expected: 2,
+                found: 1
+            }
+        ));
+    }
+
+    #[test]
+    fn detect_equilibration_u_nk_de_requires_two_states() {
+        let state = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let u_nk = UNkMatrix::new(
+            2,
+            1,
+            vec![0.0, 0.0],
+            vec![0.0, 1.0],
+            Some(state.clone()),
+            vec![state],
+        )
+        .unwrap();
+
+        let err = detect_equilibration_u_nk(
+            &u_nk,
+            UNkSeriesMethod::DE,
+            &DecorrelationOptions::default(),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::InvalidShape {
+                expected: 2,
+                found: 1
             }
         ));
     }
