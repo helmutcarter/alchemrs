@@ -305,7 +305,10 @@ fn mbar_solve(
 
     let mut log_denominator = vec![0.0; n_samples];
     for _ in 0..max_iterations {
-        fill_log_denominator(u_kn, &ln_n_k, f_k, &mut log_denominator, parallel)?;
+        // Precompute ln(n_k) + f_k once per iteration so the sample loop only pays the
+        // u_kn access and the log-sum-exp update.
+        let state_offsets = state_offsets(&ln_n_k, f_k);
+        fill_log_denominator(u_kn, &state_offsets, &mut log_denominator, parallel)?;
 
         let mut f_new = vec![0.0; n_states];
         fill_free_energies(u_kn, &log_denominator, &mut f_new, parallel)?;
@@ -394,21 +397,21 @@ fn mbar_uncertainty(
 
 fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64], parallel: bool) -> Vec<f64> {
     let n_states = u_kn.len();
-    let n_samples = u_kn[0].len();
     let ln_n_k: Vec<f64> = n_k
         .iter()
         .map(|n| if *n > 0.0 { n.ln() } else { f64::NEG_INFINITY })
         .collect();
+    let state_offsets = state_offsets(&ln_n_k, f_k);
 
-    let mut log_w = vec![0.0; n_samples * n_states];
+    let mut log_w = vec![0.0; u_kn[0].len() * n_states];
     if parallel {
         log_w
             .par_chunks_mut(n_states)
             .enumerate()
-            .for_each(|(n, row)| fill_log_weights_row(u_kn, &ln_n_k, f_k, n, row));
+            .for_each(|(n, row)| fill_log_weights_row(u_kn, &state_offsets, f_k, n, row));
     } else {
         for (n, row) in log_w.chunks_mut(n_states).enumerate() {
-            fill_log_weights_row(u_kn, &ln_n_k, f_k, n, row);
+            fill_log_weights_row(u_kn, &state_offsets, f_k, n, row);
         }
     }
     log_w
@@ -416,8 +419,7 @@ fn mbar_log_weights(u_kn: &[Vec<f64>], n_k: &[f64], f_k: &[f64], parallel: bool)
 
 fn fill_log_denominator(
     u_kn: &[Vec<f64>],
-    ln_n_k: &[f64],
-    f_k: &[f64],
+    state_offsets: &[f64],
     log_denominator: &mut [f64],
     parallel: bool,
 ) -> Result<()> {
@@ -426,12 +428,12 @@ fn fill_log_denominator(
             .par_iter_mut()
             .enumerate()
             .try_for_each(|(n, slot)| -> Result<()> {
-                *slot = checked_log_denominator_for_sample(u_kn, ln_n_k, f_k, n)?;
+                *slot = checked_log_denominator_for_sample(u_kn, state_offsets, n)?;
                 Ok(())
             })?;
     } else {
         for (n, slot) in log_denominator.iter_mut().enumerate() {
-            *slot = checked_log_denominator_for_sample(u_kn, ln_n_k, f_k, n)?;
+            *slot = checked_log_denominator_for_sample(u_kn, state_offsets, n)?;
         }
     }
     Ok(())
@@ -461,11 +463,10 @@ fn fill_free_energies(
 
 fn checked_log_denominator_for_sample(
     u_kn: &[Vec<f64>],
-    ln_n_k: &[f64],
-    f_k: &[f64],
+    state_offsets: &[f64],
     sample_idx: usize,
 ) -> Result<f64> {
-    let value = log_denominator_for_sample(u_kn, ln_n_k, f_k, sample_idx);
+    let value = log_denominator_for_sample(u_kn, state_offsets, sample_idx);
     if !value.is_finite() {
         return Err(CoreError::NonFiniteValue(format!(
             "MBAR denominator became non-finite at sample {sample_idx}"
@@ -474,30 +475,15 @@ fn checked_log_denominator_for_sample(
     Ok(value)
 }
 
-fn log_denominator_for_sample(
-    u_kn: &[Vec<f64>],
-    ln_n_k: &[f64],
-    f_k: &[f64],
-    sample_idx: usize,
-) -> f64 {
-    let n_states = u_kn.len();
+fn log_denominator_for_sample(u_kn: &[Vec<f64>], state_offsets: &[f64], sample_idx: usize) -> f64 {
     let mut max_arg = f64::NEG_INFINITY;
-    for k in 0..n_states {
-        if !ln_n_k[k].is_finite() {
-            continue;
-        }
-        let val = f_k[k] - u_kn[k][sample_idx] + ln_n_k[k];
-        if val > max_arg {
-            max_arg = val;
-        }
-    }
     let mut sum = 0.0;
-    for k in 0..n_states {
-        if !ln_n_k[k].is_finite() {
+    for (k, state_offset) in state_offsets.iter().enumerate() {
+        if !state_offset.is_finite() {
             continue;
         }
-        let val = f_k[k] - u_kn[k][sample_idx] + ln_n_k[k];
-        sum += (val - max_arg).exp();
+        let val = state_offset - u_kn[k][sample_idx];
+        accumulate_logsumexp(&mut max_arg, &mut sum, val);
     }
     max_arg + sum.ln()
 }
@@ -517,33 +503,53 @@ fn checked_free_energy_for_state(
 }
 
 fn free_energy_for_state(u_kn: &[Vec<f64>], log_denominator: &[f64], state_idx: usize) -> f64 {
-    let n_samples = u_kn[0].len();
     let mut max_arg = f64::NEG_INFINITY;
-    for n in 0..n_samples {
-        let val = -log_denominator[n] - u_kn[state_idx][n];
-        if val > max_arg {
-            max_arg = val;
-        }
-    }
     let mut sum = 0.0;
-    for n in 0..n_samples {
-        let val = -log_denominator[n] - u_kn[state_idx][n];
-        sum += (val - max_arg).exp();
+    for (n, denom) in log_denominator.iter().enumerate() {
+        let val = -*denom - u_kn[state_idx][n];
+        accumulate_logsumexp(&mut max_arg, &mut sum, val);
     }
     -(max_arg + sum.ln())
 }
 
 fn fill_log_weights_row(
     u_kn: &[Vec<f64>],
-    ln_n_k: &[f64],
+    state_offsets: &[f64],
     f_k: &[f64],
     sample_idx: usize,
     row: &mut [f64],
 ) {
-    let n_states = u_kn.len();
-    let log_denom = log_denominator_for_sample(u_kn, ln_n_k, f_k, sample_idx);
-    for k in 0..n_states {
+    let log_denom = log_denominator_for_sample(u_kn, state_offsets, sample_idx);
+    for k in 0..u_kn.len() {
         row[k] = f_k[k] - u_kn[k][sample_idx] - log_denom;
+    }
+}
+
+fn state_offsets(ln_n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
+    ln_n_k
+        .iter()
+        .zip(f_k.iter())
+        .map(|(ln_n, f)| {
+            if ln_n.is_finite() {
+                ln_n + f
+            } else {
+                f64::NEG_INFINITY
+            }
+        })
+        .collect()
+}
+
+fn accumulate_logsumexp(max_arg: &mut f64, sum: &mut f64, value: f64) {
+    // Stable one-pass log-sum-exp update. This avoids a separate max scan and sum scan in
+    // the MBAR hot loops while preserving the usual numerical stability.
+    if !max_arg.is_finite() {
+        *max_arg = value;
+        *sum = 1.0;
+    } else if value <= *max_arg {
+        *sum += (value - *max_arg).exp();
+    } else {
+        *sum = (*sum) * (*max_arg - value).exp() + 1.0;
+        *max_arg = value;
     }
 }
 

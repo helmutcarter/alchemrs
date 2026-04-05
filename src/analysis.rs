@@ -1314,8 +1314,12 @@ fn adapt_mbar_initial_f_k(source: Option<&[f64]>, n_states: usize) -> Option<Vec
     if initial.len() > n_states {
         initial.truncate(n_states);
     } else if initial.len() < n_states {
-        let fill = *initial.last().unwrap_or(&0.0);
-        initial.resize(n_states, fill);
+        let next = match initial.as_slice() {
+            [.., prev, last] => last + (last - prev),
+            [last] => *last,
+            [] => 0.0,
+        };
+        initial.resize(n_states, next);
     }
     Some(initial)
 }
