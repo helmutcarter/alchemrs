@@ -1001,6 +1001,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
 .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.legend-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fffaf0;color:var(--ink);font:500 12px/1.35 ui-monospace,Consolas,monospace}.legend-swatch{width:14px;height:3px;border-radius:999px;background:var(--accent);display:inline-block}.legend-swatch.method-trapezoidal{background:#1f5e5b}.legend-swatch.method-simpson{background:#b5483d}.legend-swatch.method-cubic-spline{background:#b9832f}.legend-swatch.method-pchip{background:#2f7d4a}.legend-swatch.method-akima{background:#6b7280}\
 .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}\
 .value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}.stack{display:grid;gap:14px}\
+.disclosure{padding:0;overflow:hidden}.disclosure-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;list-style:none;cursor:pointer;padding:16px 18px;font-size:18px;font-weight:600}.disclosure-summary::-webkit-details-marker{display:none}.disclosure-summary::after{content:\"Show\";font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}.disclosure[open] .disclosure-summary::after{content:\"Hide\"}.disclosure-sub{margin:0;padding:0 18px 16px;color:var(--muted);font-size:13px;line-height:1.45}.disclosure-body{padding:0 18px 18px}\
 .pill{display:inline-block;padding:4px 10px;border-radius:999px;font:600 12px/1.2 ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;background:#efe7d6;color:var(--ink)}\
 .pill.healthy{background:rgba(47,125,74,.12);color:var(--good)}.pill.monitor{background:rgba(185,131,47,.14);color:var(--warn)}.pill.add_sampling,.pill.add_window,.pill.add_window_and_sampling{background:rgba(181,72,61,.12);color:var(--bad)}\
 .badge-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#efe7d6;color:var(--ink);font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.04em}.badge.rationale{background:rgba(31,94,91,.10);color:var(--accent)}\
@@ -1066,12 +1067,12 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         &render_ti_interval_uncertainty_plot_svg(advice),
     ));
     html.push_str("</div></section>");
-    html.push_str("<section class=\"section\"><h2>Integration Method Shapes</h2><div class=\"grid plot-grid\">");
-    html.push_str(&render_ti_method_plot_cards_html(advice));
-    html.push_str("</div></section>");
     html.push_str("<section class=\"section\"><h2>Method Differences</h2><div class=\"grid plot-grid\">");
     html.push_str(&render_ti_method_difference_plot_card_html(advice));
     html.push_str("</div></section>");
+    html.push_str("<section class=\"section\"><details class=\"card disclosure\"><summary class=\"disclosure-summary\">Integration Method Shapes</summary><p class=\"disclosure-sub\">Detailed per-method shape cards are available here when you want to inspect the raw interpolants, but they are hidden by default because the difference view is usually more informative.</p><div class=\"disclosure-body\"><div class=\"grid plot-grid\">");
+    html.push_str(&render_ti_method_plot_cards_html(advice));
+    html.push_str("</div></div></details></section>");
     let mut ranked = advice.intervals().iter().collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
         right
@@ -1655,11 +1656,12 @@ fn render_ti_method_difference_plot_card_html(advice: &TiScheduleAdvice) -> Stri
             .iter()
             .map(|(_, value)| value.abs())
             .fold(0.0, f64::max);
+        let signed_difference_integral = integrate_curve_trapezoidal(&differences);
         difference_series.push(TiPlotSeries {
             method: curve.method,
             points: differences,
         });
-        legend_entries.push((curve.method, max_abs_delta));
+        legend_entries.push((curve.method, max_abs_delta, signed_difference_integral));
     }
 
     if difference_series.is_empty() {
@@ -1796,14 +1798,29 @@ fn interpolate_sampled_curve(points: &[(f64, f64)], x: f64) -> Option<f64> {
     }
 }
 
-fn render_ti_method_difference_legend_html(entries: &[(IntegrationMethod, f64)]) -> String {
+fn integrate_curve_trapezoidal(points: &[(f64, f64)]) -> f64 {
+    if points.len() < 2 {
+        return 0.0;
+    }
+
+    let mut integral = 0.0;
+    for window in points.windows(2) {
+        let (x0, y0) = window[0];
+        let (x1, y1) = window[1];
+        integral += (x1 - x0) * (y0 + y1) * 0.5;
+    }
+    integral
+}
+
+fn render_ti_method_difference_legend_html(entries: &[(IntegrationMethod, f64, f64)]) -> String {
     let mut html = String::from("<div class=\"legend\">");
-    for (method, max_abs_delta) in entries {
+    for (method, max_abs_delta, signed_difference_integral) in entries {
         html.push_str(&format!(
-            "<div class=\"legend-item\"><span class=\"legend-swatch {}\"></span><span>{}: max |Δ| {}</span></div>",
+            "<div class=\"legend-item\"><span class=\"legend-swatch {}\"></span><span>{}: max |Δ| {}, ∫Δ dλ {}</span></div>",
             ti_method_css_class(*method),
             escape_html(ti_method_title(*method)),
             format_plot_number(*max_abs_delta),
+            format_plot_number(*signed_difference_integral),
         ));
     }
     html.push_str("</div>");
@@ -2753,6 +2770,7 @@ mod tests {
         assert!(output.contains("Integration Method Shapes"));
         assert!(output.contains("Method Differences"));
         assert!(output.contains("Deviation From Trapezoidal"));
+        assert!(output.contains("∫Δ dλ"));
         assert!(output.contains("Trapezoidal"));
         assert!(output.contains("Cubic Spline"));
         assert!(output.contains("PCHIP"));
@@ -2812,6 +2830,7 @@ mod tests {
         assert!(output.contains("forward/reverse delta"));
         assert!(output.contains("Integration Method Shapes"));
         assert!(output.contains("Method Differences"));
+        assert!(output.contains("∫Δ dλ"));
         assert!(output.contains("Simpson"));
         assert!(output.contains("high_block_cv"));
         assert!(!output.contains("proposed lambda</div><div class=\"mono\">n/a</div>"));
