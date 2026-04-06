@@ -997,7 +997,7 @@ fn render_ti_html_report(
 .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
 h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}\
 .plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}\
-.ti-series-plot{display:block;width:100%;height:auto}.axis{stroke:#a79d8e;stroke-width:1}.grid-line{stroke:#e8e1d3;stroke-width:1}.zero-line{stroke:#c9b8a8;stroke-width:1;stroke-dasharray:4 4}.series-line{fill:none;stroke:var(--accent);stroke-width:2.5}.series-line.curvature{stroke:#b5483d}.series-line.uncertainty{stroke:#b9832f}.series-line.method-trapezoidal{stroke:#1f5e5b}.series-line.method-simpson{stroke:#b5483d}.series-line.method-cubic-spline{stroke:#b9832f}.series-line.method-pchip{stroke:#2f7d4a}.series-line.method-akima{stroke:#6b7280}.series-point{fill:var(--accent);stroke:#fffaf0;stroke-width:1.5}.series-point.curvature{fill:#b5483d}.series-point.uncertainty{fill:#b9832f}.axis-label{fill:var(--muted);font:600 11px/1.2 ui-monospace,Consolas,monospace}.tick-label{fill:var(--muted);font:500 10px/1.2 ui-monospace,Consolas,monospace}\
+.ti-series-plot{display:block;width:100%;height:auto}.axis{stroke:#a79d8e;stroke-width:1}.grid-line{stroke:#e8e1d3;stroke-width:1}.zero-line{stroke:#c9b8a8;stroke-width:1;stroke-dasharray:4 4}.series-fill{stroke:none}.series-fill.positive{fill:rgba(47,125,74,.18)}.series-fill.negative{fill:rgba(181,72,61,.18)}.series-line{fill:none;stroke:var(--accent);stroke-width:2.5}.series-line.curvature{stroke:#b5483d}.series-line.uncertainty{stroke:#b9832f}.series-line.method-trapezoidal{stroke:#1f5e5b}.series-line.method-simpson{stroke:#b5483d}.series-line.method-cubic-spline{stroke:#b9832f}.series-line.method-pchip{stroke:#2f7d4a}.series-line.method-akima{stroke:#6b7280}.series-point{fill:var(--accent);stroke:#fffaf0;stroke-width:1.5}.series-point.curvature{fill:#b5483d}.series-point.uncertainty{fill:#b9832f}.axis-label{fill:var(--muted);font:600 11px/1.2 ui-monospace,Consolas,monospace}.tick-label{fill:var(--muted);font:500 10px/1.2 ui-monospace,Consolas,monospace}\
 .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.legend-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fffaf0;color:var(--ink);font:500 12px/1.35 ui-monospace,Consolas,monospace}.legend-swatch{width:14px;height:3px;border-radius:999px;background:var(--accent);display:inline-block}.legend-swatch.method-trapezoidal{background:#1f5e5b}.legend-swatch.method-simpson{background:#b5483d}.legend-swatch.method-cubic-spline{background:#b9832f}.legend-swatch.method-pchip{background:#2f7d4a}.legend-swatch.method-akima{background:#6b7280}\
 .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}\
 .value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}.stack{display:grid;gap:14px}\
@@ -1010,12 +1010,12 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
 .queue-table{width:100%;border-collapse:collapse;margin-top:12px}.queue-table th,.queue-table td{padding:10px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top}.queue-table th{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.queue-link{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(31,94,91,.25)}.queue-link:hover{border-bottom-color:var(--accent)}\
 </style></head><body><div class=\"wrap\">",
     );
-    html.push_str("<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>TI Schedule Report</h1><div class=\"lede\">TI-native spacing diagnostics built from dH/dlambda means, block stability, local slope, and curvature.</div></header>");
+    html.push_str("<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>TI Schedule Report</h1><div class=\"lede\">TI-native spacing diagnostics built from dH/dλ means, block stability, local slope, and curvature.</div></header>");
     html.push_str("<section class=\"grid summary\">");
     html.push_str(&summary_card(
         "Mode",
         "ti",
-        "dH/dlambda schedule diagnostics",
+        "dH/dλ schedule diagnostics",
     ));
     html.push_str(&summary_card(
         "Windows",
@@ -1052,7 +1052,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     html.push_str("</div></div></section>");
     html.push_str("<section class=\"section\"><h2>Plots</h2><div class=\"grid plot-grid\">");
     html.push_str(&plot_card_html(
-        "Mean dH/dlambda",
+        "Mean dH/dλ",
         "Window means after preprocessing. Use this to spot steep regions and sign changes.",
         &render_ti_window_plot_svg(advice),
     ));
@@ -1070,7 +1070,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     html.push_str("<section class=\"section\"><h2>Method Differences</h2><div class=\"grid plot-grid\">");
     html.push_str(&render_ti_method_difference_plot_card_html(advice));
     html.push_str("</div></section>");
-    html.push_str("<section class=\"section\"><details class=\"card disclosure\"><summary class=\"disclosure-summary\">Integration Method Shapes</summary><p class=\"disclosure-sub\">Detailed per-method shape cards are available here when you want to inspect the raw interpolants, but they are hidden by default because the difference view is usually more informative.</p><div class=\"disclosure-body\"><div class=\"grid plot-grid\">");
+    html.push_str("<section class=\"section\"><details class=\"card disclosure\"><summary class=\"disclosure-summary\">Integration Method Curves</summary><p class=\"disclosure-sub\">Detailed per-method curve cards are available here when you want to inspect the raw interpolants, but they are hidden by default because the difference view is usually more informative.</p><div class=\"disclosure-body\"><div class=\"grid plot-grid\">");
     html.push_str(&render_ti_method_plot_cards_html(advice));
     html.push_str("</div></div></details></section>");
     let mut ranked = advice.intervals().iter().collect::<Vec<_>>();
@@ -1080,19 +1080,19 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             .partial_cmp(&left.priority_score())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    html.push_str("<section class=\"section\"><div class=\"card\"><h2>Priority Queue</h2><table class=\"queue-table\"><thead><tr><th>Interval</th><th>Priority</th><th>Severity</th><th>Slope</th><th>Curvature</th><th>Endpoints</th></tr></thead><tbody>");
+    html.push_str("<section class=\"section\"><div class=\"card\"><h2>Priority Queue</h2><table class=\"queue-table\"><thead><tr><th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Recommendation</th></tr></thead><tbody>");
     for interval in ranked.into_iter().take(5) {
         html.push_str(&format!(
-            "<tr><td class=\"mono\"><a class=\"queue-link\" href=\"#interval-{}\">interval {}</a></td><td class=\"mono\">{:.3}</td><td><span class=\"pill {}\">{}</span></td><td class=\"mono\">{}</td><td class=\"mono\">{}</td><td class=\"mono\">{} -&gt; {}</td></tr>",
+            "<tr><td class=\"mono\"><a class=\"queue-link\" href=\"#interval-{}\">interval {}</a></td><td class=\"mono\">{} -&gt; {}</td><td class=\"mono\">{}</td><td class=\"mono\">{}</td><td class=\"mono\">{:.3}</td><td><span class=\"pill {}\">{}</span></td></tr>",
             interval.interval_index(),
             interval.interval_index(),
-            interval.priority_score(),
-            ti_severity_name(interval.severity()),
-            ti_severity_name(interval.severity()),
+            escape_html(&format_report_state(interval.from_state().lambdas())),
+            escape_html(&format_report_state(interval.to_state().lambdas())),
             format_report_number(interval.slope()),
             report_option_string(interval.curvature()),
-            escape_html(&format_report_state(interval.from_state().lambdas())),
-            escape_html(&format_report_state(interval.to_state().lambdas()))
+            interval.priority_score(),
+            ti_severity_name(interval.severity()),
+            ti_severity_name(interval.severity())
         ));
     }
     html.push_str("</tbody></table></div></section>");
@@ -1121,7 +1121,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             html.push_str("<div class=\"kv\">");
             if let Some(state) = suggestion.proposed_state() {
                 html.push_str(&kv_html(
-                    "proposed lambda",
+                "proposed λ",
                     &format_report_state(state.lambdas()),
                 ));
             }
@@ -1153,15 +1153,15 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         html.push_str(&format!("<div class=\"metric-row\"><div class=\"metric-name\">priority</div><div class=\"bar\"><div class=\"fill {}\" style=\"width:{width:.2}%\"></div></div><div class=\"mono\">{:.3}</div></div>", if matches!(interval.severity(), TiEdgeSeverity::AddSampling | TiEdgeSeverity::AddWindow | TiEdgeSeverity::AddWindowAndSampling) { "bad" } else { "" }, interval.priority_score()));
         html.push_str("<div class=\"kv\">");
         html.push_str(&kv_html(
-            "delta lambda",
+            "delta λ",
             &format_report_number(interval.delta_lambda()),
         ));
         html.push_str(&kv_html(
-            "left mean dH/dlambda",
+            "left mean dH/dλ",
             &format_report_number(interval.left_mean_dhdl()),
         ));
         html.push_str(&kv_html(
-            "right mean dH/dlambda",
+            "right mean dH/dλ",
             &format_report_number(interval.right_mean_dhdl()),
         ));
         html.push_str(&kv_html("slope", &format_report_number(interval.slope())));
@@ -1311,7 +1311,7 @@ fn render_ti_suggestion_evidence_html(
                 &report_option_string(interval.curvature()),
             ));
             html.push_str(&kv_html(
-                "delta lambda",
+                "delta λ",
                 &format_report_number(interval.delta_lambda()),
             ));
         }
@@ -1529,12 +1529,11 @@ fn render_ti_window_plot_svg(advice: &TiScheduleAdvice) -> String {
                 .map(|lambda| (lambda, window.mean_dhdl()))
         })
         .collect::<Vec<_>>();
-    render_ti_series_plot_svg(
+    render_ti_zero_shaded_series_plot_svg(
         &points,
         &points,
-        "lambda",
-        "mean dH/dlambda",
-        false,
+        "λ",
+        "mean dH/dλ",
         "series-line",
         "series-point",
         true,
@@ -1556,7 +1555,7 @@ fn render_ti_curvature_plot_svg(advice: &TiScheduleAdvice) -> String {
     render_ti_series_plot_svg(
         &points,
         &points,
-        "lambda midpoint",
+        "λ midpoint",
         "|curvature|",
         true,
         "series-line curvature",
@@ -1580,7 +1579,7 @@ fn render_ti_interval_uncertainty_plot_svg(advice: &TiScheduleAdvice) -> String 
     render_ti_series_plot_svg(
         &points,
         &points,
-        "lambda midpoint",
+        "λ midpoint",
         "interval uncertainty",
         true,
         "series-line uncertainty",
@@ -1604,19 +1603,32 @@ fn render_ti_method_plot_cards_html(advice: &TiScheduleAdvice) -> String {
     let mut html = String::new();
     for curve in method_curves {
         let draw_line = !matches!(curve.method, IntegrationMethod::GaussianQuadrature);
-        html.push_str(&plot_card_html(
-            ti_method_title(curve.method),
-            ti_method_plot_subtitle(curve.method),
-            &render_ti_series_plot_svg(
+        let body = if matches!(curve.method, IntegrationMethod::GaussianQuadrature) {
+            render_ti_series_plot_svg(
                 &curve.points,
                 &window_points,
-                "lambda",
+                "λ",
                 "method curve",
-                false,
+                true,
                 "series-line",
                 "series-point",
                 draw_line,
-            ),
+            )
+        } else {
+            render_ti_zero_shaded_series_plot_svg(
+                &curve.points,
+                &window_points,
+                "λ",
+                "method curve",
+                "series-line",
+                "series-point",
+                draw_line,
+            )
+        };
+        html.push_str(&plot_card_html(
+            ti_method_title(curve.method),
+            ti_method_plot_subtitle(curve.method),
+            &body,
         ));
     }
 
@@ -1670,7 +1682,7 @@ fn render_ti_method_difference_plot_card_html(advice: &TiScheduleAdvice) -> Stri
 
     let mut body = render_ti_multi_series_plot_svg(
         &difference_series,
-        "lambda",
+        "λ",
         "delta from trapezoidal",
         true,
     );
@@ -1722,7 +1734,7 @@ fn ti_method_plot_subtitle(method: IntegrationMethod) -> &'static str {
             "Piecewise-linear interpolant between adjacent TI window means. Dots mark the original TI windows."
         }
         IntegrationMethod::Simpson => {
-            "Composite quadratic interpolant across each pair of uniform lambda intervals. Dots mark the original TI windows."
+            "Composite quadratic interpolant across each pair of uniform λ intervals. Dots mark the original TI windows."
         }
         IntegrationMethod::CubicSpline => {
             "Natural cubic spline passing smoothly through the TI window means. Dots mark the original TI windows."
@@ -1838,6 +1850,29 @@ fn ti_method_css_class(method: IntegrationMethod) -> &'static str {
     }
 }
 
+fn axis_tick_values(min: f64, max: f64, include_zero: bool) -> Vec<f64> {
+    let mut ticks = (0..=4)
+        .map(|tick| {
+            let frac = tick as f64 / 4.0;
+            max - frac * (max - min)
+        })
+        .collect::<Vec<_>>();
+
+    if include_zero && min <= 0.0 && max >= 0.0 {
+        if let Some((closest_index, _)) = ticks
+            .iter()
+            .enumerate()
+            .map(|(index, value)| (index, value.abs()))
+            .min_by(|left, right| left.1.total_cmp(&right.1))
+        {
+            ticks[closest_index] = 0.0;
+            ticks.sort_by(|left, right| right.total_cmp(left));
+        }
+    }
+
+    ticks
+}
+
 fn render_ti_series_plot_svg(
     line_points: &[(f64, f64)],
     marker_points: &[(f64, f64)],
@@ -1929,21 +1964,23 @@ fn render_ti_series_plot_svg(
     for tick in 0..=4 {
         let frac = tick as f64 / 4.0;
         let x = left + frac * plot_width;
-        let y = top + frac * plot_height;
         let x_value = x_min + frac * (x_max - x_min);
-        let y_value = y_max - frac * (y_max - y_min);
         svg.push_str(&format!(
             "<line class=\"grid-line\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
             top + plot_height
         ));
         svg.push_str(&format!(
-            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
-            left + plot_width
-        ));
-        svg.push_str(&format!(
             "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{}</text>",
             top + plot_height + 18.0,
             format_plot_number(x_value)
+        ));
+    }
+
+    for y_value in axis_tick_values(y_min, y_max, include_zero) {
+        let y = map_y(y_value);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            left + plot_width
         ));
         svg.push_str(&format!(
             "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\">{}</text>",
@@ -1999,6 +2036,229 @@ fn render_ti_series_plot_svg(
     }
     svg.push_str("</svg>");
     svg
+}
+
+fn render_ti_zero_shaded_series_plot_svg(
+    line_points: &[(f64, f64)],
+    marker_points: &[(f64, f64)],
+    x_label: &str,
+    y_label: &str,
+    line_class: &str,
+    point_class: &str,
+    draw_line: bool,
+) -> String {
+    if (line_points.is_empty() && marker_points.is_empty()) || (draw_line && line_points.len() < 2)
+    {
+        return "<div class=\"plot-empty\">Not enough points to render plot.</div>".to_string();
+    }
+
+    let bounds_points = if marker_points.is_empty() {
+        line_points
+    } else {
+        marker_points
+    };
+
+    let width = 520.0;
+    let height = 240.0;
+    let left = 58.0;
+    let right = 18.0;
+    let top = 16.0;
+    let bottom = 40.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+
+    let mut x_min = bounds_points
+        .iter()
+        .map(|(x, _)| *x)
+        .fold(f64::INFINITY, f64::min);
+    let mut x_max = bounds_points
+        .iter()
+        .map(|(x, _)| *x)
+        .fold(f64::NEG_INFINITY, f64::max);
+    if (x_max - x_min).abs() <= 1.0e-12 {
+        x_min -= 0.5;
+        x_max += 0.5;
+    }
+
+    let mut y_min = bounds_points
+        .iter()
+        .map(|(_, y)| *y)
+        .fold(f64::INFINITY, f64::min);
+    let mut y_max = bounds_points
+        .iter()
+        .map(|(_, y)| *y)
+        .fold(f64::NEG_INFINITY, f64::max);
+    y_min = y_min.min(0.0);
+    y_max = y_max.max(0.0);
+    if (y_max - y_min).abs() <= 1.0e-12 {
+        let pad = y_max.abs().max(1.0) * 0.25;
+        y_min -= pad;
+        y_max += pad;
+    } else {
+        let pad = (y_max - y_min) * 0.12;
+        y_min -= pad;
+        y_max += pad;
+    }
+
+    let map_x = |x: f64| left + (x - x_min) / (x_max - x_min) * plot_width;
+    let map_y = |y: f64| top + (1.0 - (y - y_min) / (y_max - y_min)) * plot_height;
+    let zero_y = map_y(0.0);
+
+    let polyline = if draw_line {
+        Some(
+            line_points
+                .iter()
+                .map(|(x, y)| format!("{:.2},{:.2}", map_x(*x), map_y(*y)))
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
+    } else {
+        None
+    };
+
+    let mut svg = format!(
+        "<svg class=\"ti-series-plot\" viewBox=\"0 0 {:.0} {:.0}\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"{} versus {}\">",
+        width,
+        height,
+        escape_html(y_label),
+        escape_html(x_label)
+    );
+
+    for tick in 0..=4 {
+        let frac = tick as f64 / 4.0;
+        let x = left + frac * plot_width;
+        let x_value = x_min + frac * (x_max - x_min);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
+            top + plot_height
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{}</text>",
+            top + plot_height + 18.0,
+            format_plot_number(x_value)
+        ));
+    }
+
+    for y_value in axis_tick_values(y_min, y_max, true) {
+        let y = map_y(y_value);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            left + plot_width
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\">{}</text>",
+            left - 8.0,
+            y + 3.0,
+            format_plot_number(y_value)
+        ));
+    }
+
+    for polygon in zero_area_polygons(line_points, true) {
+        svg.push_str(&format!(
+            "<polygon class=\"series-fill positive\" points=\"{}\" />",
+            polygon
+                .iter()
+                .map(|(x, y)| format!("{:.2},{:.2}", map_x(*x), map_y(*y)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+    }
+    for polygon in zero_area_polygons(line_points, false) {
+        svg.push_str(&format!(
+            "<polygon class=\"series-fill negative\" points=\"{}\" />",
+            polygon
+                .iter()
+                .map(|(x, y)| format!("{:.2},{:.2}", map_x(*x), map_y(*y)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        ));
+    }
+
+    svg.push_str(&format!(
+        "<line class=\"zero-line\" x1=\"{left:.2}\" y1=\"{zero_y:.2}\" x2=\"{:.2}\" y2=\"{zero_y:.2}\" />",
+        left + plot_width
+    ));
+    svg.push_str(&format!(
+        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        top + plot_height,
+        left + plot_width,
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{}</text>",
+        left + plot_width * 0.5,
+        height - 8.0,
+        escape_html(x_label)
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"16\" y=\"{:.2}\" transform=\"rotate(-90 16 {:.2})\" text-anchor=\"middle\">{}</text>",
+        top + plot_height * 0.5,
+        top + plot_height * 0.5,
+        escape_html(y_label)
+    ));
+    if let Some(polyline) = polyline.as_ref() {
+        svg.push_str(&format!(
+            "<polyline class=\"{}\" points=\"{}\" />",
+            line_class, polyline
+        ));
+    }
+    for (x, y) in marker_points {
+        svg.push_str(&format!(
+            "<circle class=\"{}\" cx=\"{:.2}\" cy=\"{:.2}\" r=\"3.5\" />",
+            point_class,
+            map_x(*x),
+            map_y(*y)
+        ));
+    }
+    svg.push_str("</svg>");
+    svg
+}
+
+fn zero_area_polygons(points: &[(f64, f64)], positive: bool) -> Vec<Vec<(f64, f64)>> {
+    let mut polygons = Vec::new();
+    for window in points.windows(2) {
+        let (x0, y0) = window[0];
+        let (x1, y1) = window[1];
+        if (x1 - x0).abs() <= 1.0e-12 {
+            continue;
+        }
+
+        let crosses_zero = (y0 > 0.0 && y1 < 0.0) || (y0 < 0.0 && y1 > 0.0);
+        let x_zero = if crosses_zero {
+            Some(x0 + (x1 - x0) * (-y0) / (y1 - y0))
+        } else {
+            None
+        };
+
+        if positive {
+            if y0 > 0.0 && y1 > 0.0 {
+                polygons.push(vec![(x0, 0.0), (x0, y0), (x1, y1), (x1, 0.0)]);
+            } else if y0 == 0.0 && y1 > 0.0 {
+                polygons.push(vec![(x0, 0.0), (x1, y1), (x1, 0.0)]);
+            } else if y0 > 0.0 && y1 == 0.0 {
+                polygons.push(vec![(x0, 0.0), (x0, y0), (x1, 0.0)]);
+            } else if y0 > 0.0 && y1 < 0.0 {
+                polygons.push(vec![(x0, 0.0), (x0, y0), (x_zero.unwrap(), 0.0)]);
+            } else if y0 < 0.0 && y1 > 0.0 {
+                polygons.push(vec![(x_zero.unwrap(), 0.0), (x1, y1), (x1, 0.0)]);
+            }
+        } else if y0 < 0.0 && y1 < 0.0 {
+            polygons.push(vec![(x0, 0.0), (x0, y0), (x1, y1), (x1, 0.0)]);
+        } else if y0 == 0.0 && y1 < 0.0 {
+            polygons.push(vec![(x0, 0.0), (x1, y1), (x1, 0.0)]);
+        } else if y0 < 0.0 && y1 == 0.0 {
+            polygons.push(vec![(x0, 0.0), (x0, y0), (x1, 0.0)]);
+        } else if y0 < 0.0 && y1 > 0.0 {
+            polygons.push(vec![(x0, 0.0), (x0, y0), (x_zero.unwrap(), 0.0)]);
+        } else if y0 > 0.0 && y1 < 0.0 {
+            polygons.push(vec![(x_zero.unwrap(), 0.0), (x1, y1), (x1, 0.0)]);
+        }
+    }
+    polygons
 }
 
 fn render_ti_multi_series_plot_svg(
@@ -2360,8 +2620,9 @@ mod tests {
     use serde_json::Value;
 
     use super::{
-        render_advice, render_html_report, render_ti_html_report,
+        axis_tick_values, render_advice, render_html_report, render_ti_html_report,
         render_ti_method_plot_cards_html, AdviseRunOptions,
+        zero_area_polygons,
     };
     use crate::cli::input::{AnalysisInputOptions, AnalysisSampleCounts};
     use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat, UNkObservable};
@@ -2764,31 +3025,34 @@ mod tests {
 
         assert!(output.contains("TI Schedule Report"));
         assert!(output.contains("Plots"));
-        assert!(output.contains("Mean dH/dlambda"));
+        assert!(output.contains("Mean dH/dλ"));
         assert!(output.contains("Curvature Magnitude"));
         assert!(output.contains("Interval Uncertainty"));
-        assert!(output.contains("Integration Method Shapes"));
+        assert!(output.contains("Integration Method Curves"));
         assert!(output.contains("Method Differences"));
         assert!(output.contains("Deviation From Trapezoidal"));
         assert!(output.contains("∫Δ dλ"));
+        assert!(output.contains("series-fill positive"));
+        assert!(output.contains(">0</text>"));
         assert!(output.contains("Trapezoidal"));
         assert!(output.contains("Cubic Spline"));
         assert!(output.contains("PCHIP"));
         assert!(output.contains("Akima"));
         assert!(!output.contains("Gaussian Quadrature"));
         assert!(output.contains("ti-series-plot"));
-        assert!(output.contains("lambda midpoint"));
+        assert!(output.contains("λ midpoint"));
         assert!(output.contains("|curvature|"));
         assert!(output.contains("series-line curvature"));
         assert!(output.contains("series-line uncertainty"));
         assert!(output.contains("href=\"#interval-"));
         assert!(output.contains("id=\"interval-"));
         assert!(output.contains("<a class=\"queue-link mono\" href=\"#interval-"));
+        assert!(output.contains("<th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Recommendation</th>"));
         assert!(output.contains(": λ "));
         assert!(output.contains("<span class=\"mono\"> interval 0: λ "));
         assert!(output.contains("high_curvature"));
-        assert!(output.contains("proposed lambda</div><div class=\"mono\">0.495"));
-        assert!(!output.contains("proposed lambda</div><div class=\"mono\">n/a</div>"));
+        assert!(output.contains("proposed λ</div><div class=\"mono\">0.495"));
+        assert!(!output.contains("proposed λ</div><div class=\"mono\">n/a</div>"));
     }
 
     #[test]
@@ -2828,12 +3092,12 @@ mod tests {
         assert!(output.contains("left block CV"));
         assert!(output.contains("right block CV"));
         assert!(output.contains("forward/reverse delta"));
-        assert!(output.contains("Integration Method Shapes"));
+        assert!(output.contains("Integration Method Curves"));
         assert!(output.contains("Method Differences"));
         assert!(output.contains("∫Δ dλ"));
         assert!(output.contains("Simpson"));
         assert!(output.contains("high_block_cv"));
-        assert!(!output.contains("proposed lambda</div><div class=\"mono\">n/a</div>"));
+        assert!(!output.contains("proposed λ</div><div class=\"mono\">n/a</div>"));
     }
 
     #[test]
@@ -2842,5 +3106,26 @@ mod tests {
 
         assert_eq!(output.matches("<polyline class=\"series-line\"").count(), 4);
         assert_eq!(output.matches("<circle class=\"series-point\"").count(), 16);
+        assert!(output.contains("series-fill positive"));
+    }
+
+    #[test]
+    fn axis_tick_values_include_zero_when_requested() {
+        let ticks = axis_tick_values(-2.0, 5.0, true);
+
+        assert!(ticks.contains(&0.0));
+    }
+
+    #[test]
+    fn zero_area_polygons_split_sign_changes_at_crossings() {
+        let points = vec![(0.0, -1.0), (1.0, 1.0)];
+
+        let positive = zero_area_polygons(&points, true);
+        let negative = zero_area_polygons(&points, false);
+
+        assert_eq!(positive.len(), 1);
+        assert_eq!(negative.len(), 1);
+        assert!((positive[0][0].0 - 0.5).abs() < 1.0e-12);
+        assert!((negative[0][2].0 - 0.5).abs() < 1.0e-12);
     }
 }
