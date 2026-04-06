@@ -20,7 +20,7 @@ In TI mode (`--input-kind dhdl`), it combines:
 
 - per-window `mean_dhdl` and SEM
 - window-local block-average variability
-- forward/reverse `dH/dlambda` stability within each window
+- split-half `dH/dlambda` drift within each window
 - interval-local slope, curvature, and trapezoid contribution
 - interval uncertainty propagated from neighboring window SEMs
 
@@ -74,7 +74,7 @@ If `--report` is provided, the CLI also writes a standalone HTML report with:
 - a top priority queue of the highest-risk edges, including their weakest components
 - ranked schedule suggestions
 - edge-level diagnostics with severity badges
-- for TI mode, an integration-method shape gallery for each applicable TI method on the current lambda grid
+- for TI mode, an integration-method curve gallery for each applicable TI method on the current lambda grid
 - inline priority bars for quick scanning
 - inline SVG lambda-axis visuals for each edge and proposal
 - an in-report legend for source, target, proposal, delta-bar, and status semantics
@@ -113,7 +113,7 @@ In TI mode, each window records:
 - `mean_dhdl`
 - optional `sem_dhdl`
 - optional block mean / standard deviation / coefficient of variation
-- optional forward/reverse `dH/dlambda` delta
+- optional split-half `dH/dlambda` delta
 
 Each TI interval records:
 

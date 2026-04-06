@@ -300,7 +300,7 @@ fn render_ti_json(
                 "block_mean": window.block_mean(),
                 "block_stddev": window.block_stddev(),
                 "block_cv": window.block_cv(),
-                "forward_reverse_delta": window.forward_reverse_delta(),
+                "split_half_dhdl_delta": window.split_half_dhdl_delta(),
             })
         })
         .collect::<Vec<_>>();
@@ -728,8 +728,8 @@ fn render_html_report(
 :root{--bg:#f7f4ec;--panel:#fffdf8;--ink:#1d1b19;--muted:#6a655e;--line:#d7cfc0;--good:#2f7d4a;--warn:#b9832f;--bad:#b5483d;--accent:#1f5e5b;}\
 *{box-sizing:border-box}body{margin:0;font-family:Georgia,\"Times New Roman\",serif;background:radial-gradient(circle at top,#fffaf0,var(--bg));color:var(--ink)}\
 .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
-h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}\
-.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}\
+h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.lede.ti{max-width:none;white-space:nowrap}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}\
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.keep-case{text-transform:none}\
 .value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}\
 .stack{display:grid;gap:14px}.pill{display:inline-block;padding:4px 10px;border-radius:999px;font:600 12px/1.2 ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;background:#efe7d6;color:var(--ink)}\
 .pill.healthy{background:rgba(47,125,74,.12);color:var(--good)}.pill.monitor{background:rgba(185,131,47,.14);color:var(--warn)}.pill.add_sampling,.pill.add_window{background:rgba(181,72,61,.12);color:var(--bad)}\
@@ -997,9 +997,9 @@ fn render_ti_html_report(
 .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
 h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}\
 .plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}\
-.ti-series-plot{display:block;width:100%;height:auto}.axis{stroke:#a79d8e;stroke-width:1}.grid-line{stroke:#e8e1d3;stroke-width:1}.zero-line{stroke:#c9b8a8;stroke-width:1;stroke-dasharray:4 4}.series-fill{stroke:none}.series-fill.positive{fill:rgba(47,125,74,.18)}.series-fill.negative{fill:rgba(181,72,61,.18)}.series-line{fill:none;stroke:var(--accent);stroke-width:2.5}.series-line.curvature{stroke:#b5483d}.series-line.uncertainty{stroke:#b9832f}.series-line.method-trapezoidal{stroke:#1f5e5b}.series-line.method-simpson{stroke:#b5483d}.series-line.method-cubic-spline{stroke:#b9832f}.series-line.method-pchip{stroke:#2f7d4a}.series-line.method-akima{stroke:#6b7280}.series-point{fill:var(--accent);stroke:#fffaf0;stroke-width:1.5}.series-point.curvature{fill:#b5483d}.series-point.uncertainty{fill:#b9832f}.axis-label{fill:var(--muted);font:600 11px/1.2 ui-monospace,Consolas,monospace}.tick-label{fill:var(--muted);font:500 10px/1.2 ui-monospace,Consolas,monospace}\
+.ti-series-plot{display:block;width:100%;height:auto}.axis{stroke:#a79d8e;stroke-width:1}.grid-line{stroke:#e8e1d3;stroke-width:1}.zero-line{stroke:#c9b8a8;stroke-width:1;stroke-dasharray:4 4}.series-fill{stroke:none}.series-fill.positive{fill:rgba(181,72,61,.18)}.series-fill.negative{fill:rgba(47,125,74,.18)}.series-line{fill:none;stroke:var(--accent);stroke-width:2.5}.series-line.curvature{stroke:#b5483d}.series-line.uncertainty{stroke:#b9832f}.series-line.method-trapezoidal{stroke:#1f5e5b}.series-line.method-simpson{stroke:#b5483d}.series-line.method-cubic-spline{stroke:#b9832f}.series-line.method-pchip{stroke:#2f7d4a}.series-line.method-akima{stroke:#6b7280}.series-point{fill:var(--accent);stroke:#fffaf0;stroke-width:1.5}.series-point.curvature{fill:#b5483d}.series-point.uncertainty{fill:#b9832f}.axis-label{fill:var(--muted);font:600 11px/1.2 ui-monospace,Consolas,monospace}.tick-label{fill:var(--muted);font:500 10px/1.2 ui-monospace,Consolas,monospace}\
 .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.legend-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fffaf0;color:var(--ink);font:500 12px/1.35 ui-monospace,Consolas,monospace}.legend-swatch{width:14px;height:3px;border-radius:999px;background:var(--accent);display:inline-block}.legend-swatch.method-trapezoidal{background:#1f5e5b}.legend-swatch.method-simpson{background:#b5483d}.legend-swatch.method-cubic-spline{background:#b9832f}.legend-swatch.method-pchip{background:#2f7d4a}.legend-swatch.method-akima{background:#6b7280}\
-.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}\
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.keep-case{text-transform:none}\
 .value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}.stack{display:grid;gap:14px}\
 .disclosure{padding:0;overflow:hidden}.disclosure-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;list-style:none;cursor:pointer;padding:16px 18px;font-size:18px;font-weight:600}.disclosure-summary::-webkit-details-marker{display:none}.disclosure-summary::after{content:\"Show\";font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}.disclosure[open] .disclosure-summary::after{content:\"Hide\"}.disclosure-sub{margin:0;padding:0 18px 16px;color:var(--muted);font-size:13px;line-height:1.45}.disclosure-body{padding:0 18px 18px}\
 .pill{display:inline-block;padding:4px 10px;border-radius:999px;font:600 12px/1.2 ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;background:#efe7d6;color:var(--ink)}\
@@ -1007,10 +1007,10 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
 .badge-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.badge{display:inline-block;padding:3px 8px;border-radius:999px;background:#efe7d6;color:var(--ink);font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.04em}.badge.rationale{background:rgba(31,94,91,.10);color:var(--accent)}\
 .metric-row{display:grid;grid-template-columns:160px 1fr auto;gap:12px;align-items:center;margin-top:10px}.metric-name{font-size:13px;color:var(--muted)}.bar{height:10px;border-radius:999px;background:#eee6d8;overflow:hidden}.fill{height:100%;background:linear-gradient(90deg,var(--accent),#8db8a3)}.fill.bad{background:linear-gradient(90deg,#c46d52,var(--bad))}\
 .mono{font:500 13px/1.45 ui-monospace,Consolas,monospace}.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}.kv > div{padding-top:10px;border-top:1px solid var(--line)}\
-.queue-table{width:100%;border-collapse:collapse;margin-top:12px}.queue-table th,.queue-table td{padding:10px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top}.queue-table th{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.queue-link{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(31,94,91,.25)}.queue-link:hover{border-bottom-color:var(--accent)}\
+.queue-table{width:100%;border-collapse:collapse;margin-top:12px}.queue-table th,.queue-table td{padding:10px 12px;border-top:1px solid var(--line);text-align:left;vertical-align:top}.queue-table th{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.queue-link{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(31,94,91,.25)}.queue-link:hover{border-bottom-color:var(--accent)}@media (max-width: 900px){.lede.ti{white-space:normal}}\
 </style></head><body><div class=\"wrap\">",
     );
-    html.push_str("<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>TI Schedule Report</h1><div class=\"lede\">TI-native spacing diagnostics built from dH/dλ means, block stability, local slope, and curvature.</div></header>");
+    html.push_str("<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>TI Schedule Report</h1><div class=\"lede ti\">TI-native spacing diagnostics built from dH/dλ means, block stability, local slope, and curvature.</div></header>");
     html.push_str("<section class=\"grid summary\">");
     html.push_str(&summary_card(
         "Mode",
@@ -1058,7 +1058,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     ));
     html.push_str(&plot_card_html(
         "Curvature Magnitude",
-        "Interval-local curvature diagnostic plotted at interval midpoints. Peaks indicate under-resolved TI regions.",
+        "Finite-difference estimate of |d²/dλ² ⟨dH/dλ⟩|. Peaks indicate where additional lambda windows may be needed.",
         &render_ti_curvature_plot_svg(advice),
     ));
     html.push_str(&plot_card_html(
@@ -1067,7 +1067,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         &render_ti_interval_uncertainty_plot_svg(advice),
     ));
     html.push_str("</div></section>");
-    html.push_str("<section class=\"section\"><h2>Method Differences</h2><div class=\"grid plot-grid\">");
+    html.push_str("<section class=\"section\"><h2>Integration Method Differences</h2><div class=\"grid plot-grid\">");
     html.push_str(&render_ti_method_difference_plot_card_html(advice));
     html.push_str("</div></section>");
     html.push_str("<section class=\"section\"><details class=\"card disclosure\"><summary class=\"disclosure-summary\">Integration Method Curves</summary><p class=\"disclosure-sub\">Detailed per-method curve cards are available here when you want to inspect the raw interpolants, but they are hidden by default because the difference view is usually more informative.</p><div class=\"disclosure-body\"><div class=\"grid plot-grid\">");
@@ -1080,7 +1080,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             .partial_cmp(&left.priority_score())
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-    html.push_str("<section class=\"section\"><div class=\"card\"><h2>Priority Queue</h2><table class=\"queue-table\"><thead><tr><th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Recommendation</th></tr></thead><tbody>");
+    html.push_str("<section class=\"section\"><div class=\"card\"><h2>Priority Queue</h2><table class=\"queue-table\"><thead><tr><th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Suggestion</th></tr></thead><tbody>");
     for interval in ranked.into_iter().take(5) {
         html.push_str(&format!(
             "<tr><td class=\"mono\"><a class=\"queue-link\" href=\"#interval-{}\">interval {}</a></td><td class=\"mono\">{} -&gt; {}</td><td class=\"mono\">{}</td><td class=\"mono\">{}</td><td class=\"mono\">{:.3}</td><td><span class=\"pill {}\">{}</span></td></tr>",
@@ -1138,6 +1138,24 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     html.push_str("<section class=\"section\"><h2>Intervals</h2><div class=\"stack\">");
     for interval in advice.intervals() {
         let width = (interval.priority_score() / max_priority * 100.0).clamp(0.0, 100.0);
+        let left_window = advice.windows().get(interval.interval_index());
+        let right_window = advice.windows().get(interval.interval_index() + 1);
+        let left_lambda_label = format!(
+            "mean dH/dλ at λ={}",
+            format_report_state(interval.from_state().lambdas())
+        );
+        let right_lambda_label = format!(
+            "mean dH/dλ at λ={}",
+            format_report_state(interval.to_state().lambdas())
+        );
+        let left_samples_label = format!(
+            "kept samples at λ={}",
+            format_report_state(interval.from_state().lambdas())
+        );
+        let right_samples_label = format!(
+            "kept samples at λ={}",
+            format_report_state(interval.to_state().lambdas())
+        );
         html.push_str(&format!(
             "<article class=\"card\" id=\"interval-{}\">",
             interval.interval_index()
@@ -1157,12 +1175,24 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             &format_report_number(interval.delta_lambda()),
         ));
         html.push_str(&kv_html(
-            "left mean dH/dλ",
+            &left_lambda_label,
             &format_report_number(interval.left_mean_dhdl()),
         ));
         html.push_str(&kv_html(
-            "right mean dH/dλ",
+            &right_lambda_label,
             &format_report_number(interval.right_mean_dhdl()),
+        ));
+        html.push_str(&kv_html(
+            &left_samples_label,
+            &left_window
+                .map(|window| window.kept_samples().to_string())
+                .unwrap_or_else(|| "n/a".to_string()),
+        ));
+        html.push_str(&kv_html(
+            &right_samples_label,
+            &right_window
+                .map(|window| window.kept_samples().to_string())
+                .unwrap_or_else(|| "n/a".to_string()),
         ));
         html.push_str(&kv_html("slope", &format_report_number(interval.slope())));
         html.push_str(&kv_html(
@@ -1292,15 +1322,15 @@ fn render_ti_suggestion_evidence_html(
                 ),
             ));
             html.push_str(&kv_html(
-                "left forward/reverse delta",
+                "left split-half drift",
                 &report_option_string(
-                    left_window.and_then(TiWindowDiagnostic::forward_reverse_delta),
+                    left_window.and_then(TiWindowDiagnostic::split_half_dhdl_delta),
                 ),
             ));
             html.push_str(&kv_html(
-                "right forward/reverse delta",
+                "right split-half drift",
                 &report_option_string(
-                    right_window.and_then(TiWindowDiagnostic::forward_reverse_delta),
+                    right_window.and_then(TiWindowDiagnostic::split_half_dhdl_delta),
                 ),
             ));
         }
@@ -1430,10 +1460,10 @@ fn ti_suggestion_rationale_badges(
     {
         badges.push("high_block_cv".to_string());
     }
-    if left_window.is_some_and(high_forward_reverse_delta)
-        || right_window.is_some_and(high_forward_reverse_delta)
+    if left_window.is_some_and(high_split_half_drift)
+        || right_window.is_some_and(high_split_half_drift)
     {
-        badges.push("high_forward_reverse_delta".to_string());
+        badges.push("high_split_half_drift".to_string());
     }
 
     match suggestion.kind() {
@@ -1464,8 +1494,8 @@ fn ti_suggestion_rationale_badges(
     badges
 }
 
-fn high_forward_reverse_delta(window: &TiWindowDiagnostic) -> bool {
-    match (window.forward_reverse_delta(), window.sem_dhdl()) {
+fn high_split_half_drift(window: &TiWindowDiagnostic) -> bool {
+    match (window.split_half_dhdl_delta(), window.sem_dhdl()) {
         (Some(delta), Some(sem)) => delta > sem * 2.0,
         _ => false,
     }
@@ -1685,6 +1715,7 @@ fn render_ti_method_difference_plot_card_html(advice: &TiScheduleAdvice) -> Stri
         "λ",
         "delta from trapezoidal",
         true,
+        Some(&lambdas),
     );
     body.push_str(&render_ti_method_difference_legend_html(&legend_entries));
 
@@ -2266,6 +2297,7 @@ fn render_ti_multi_series_plot_svg(
     x_label: &str,
     y_label: &str,
     include_zero: bool,
+    x_guides: Option<&[f64]>,
 ) -> String {
     let points = series
         .iter()
@@ -2324,24 +2356,49 @@ fn render_ti_multi_series_plot_svg(
         escape_html(x_label)
     );
 
-    for tick in 0..=4 {
-        let frac = tick as f64 / 4.0;
-        let x = left + frac * plot_width;
-        let y = top + frac * plot_height;
-        let x_value = x_min + frac * (x_max - x_min);
-        let y_value = y_max - frac * (y_max - y_min);
+    let x_tick_values = if let Some(guides) = x_guides {
+        let mut values = guides
+            .iter()
+            .copied()
+            .filter(|value| value.is_finite())
+            .collect::<Vec<_>>();
+        values.sort_by(|left, right| left.total_cmp(right));
+        values.dedup_by(|left, right| (*left - *right).abs() <= 1.0e-12);
+        if values.is_empty() {
+            (0..=4)
+                .map(|tick| x_min + tick as f64 / 4.0 * (x_max - x_min))
+                .collect::<Vec<_>>()
+        } else {
+            values
+        }
+    } else {
+        (0..=4)
+            .map(|tick| x_min + tick as f64 / 4.0 * (x_max - x_min))
+            .collect::<Vec<_>>()
+    };
+    let labeled_x_tick_values = select_labeled_x_ticks(&x_tick_values, &map_x, 30.0);
+
+    for x_value in x_tick_values {
+        let x = map_x(x_value);
         svg.push_str(&format!(
             "<line class=\"grid-line\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
             top + plot_height
         ));
-        svg.push_str(&format!(
-            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
-            left + plot_width
-        ));
+    }
+    for x_value in labeled_x_tick_values {
+        let x = map_x(x_value);
         svg.push_str(&format!(
             "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{}</text>",
             top + plot_height + 18.0,
             format_plot_number(x_value)
+        ));
+    }
+
+    for y_value in axis_tick_values(y_min, y_max, include_zero) {
+        let y = map_y(y_value);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            left + plot_width
         ));
         svg.push_str(&format!(
             "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\">{}</text>",
@@ -2398,6 +2455,39 @@ fn render_ti_multi_series_plot_svg(
 
     svg.push_str("</svg>");
     svg
+}
+
+fn select_labeled_x_ticks(
+    values: &[f64],
+    map_x: &dyn Fn(f64) -> f64,
+    min_spacing_px: f64,
+) -> Vec<f64> {
+    if values.len() <= 2 {
+        return values.to_vec();
+    }
+
+    let mut labeled = Vec::new();
+    for (index, value) in values.iter().copied().enumerate() {
+        let is_endpoint = index == 0 || index + 1 == values.len();
+        if labeled.is_empty() {
+            labeled.push(value);
+            continue;
+        }
+
+        let previous_x = map_x(*labeled.last().unwrap());
+        let current_x = map_x(value);
+        if is_endpoint || current_x - previous_x >= min_spacing_px {
+            labeled.push(value);
+        }
+    }
+
+    if *labeled.last().unwrap() != *values.last().unwrap()
+        && map_x(*values.last().unwrap()) - map_x(*labeled.last().unwrap()) >= min_spacing_px * 0.5
+    {
+        labeled.push(*values.last().unwrap());
+    }
+
+    labeled
 }
 
 fn format_plot_number(value: f64) -> String {
@@ -2577,7 +2667,7 @@ fn normalize_lambda_components(lambda_components: Option<Vec<String>>) -> Option
 fn summary_card(label: &str, value: &str, sub: &str) -> String {
     format!(
         "<div class=\"card\"><div class=\"label\">{}</div><div class=\"value\">{}</div><div class=\"sub\">{}</div></div>",
-        escape_html(label),
+        label_html(label),
         escape_html(value),
         escape_html(sub)
     )
@@ -2586,13 +2676,22 @@ fn summary_card(label: &str, value: &str, sub: &str) -> String {
 fn kv_html(label: &str, value: &str) -> String {
     format!(
         "<div><div class=\"label\">{}</div><div class=\"mono\">{}</div></div>",
-        escape_html(label),
+        label_html(label),
         if value.is_empty() {
             "&nbsp;".to_string()
         } else {
             escape_html(value)
         }
     )
+}
+
+fn label_html(label: &str) -> String {
+    const DHDL_TOKEN: &str = "__DHDL_LABEL_TOKEN__";
+    let escaped = escape_html(label);
+    escaped
+        .replace("dH/dλ", DHDL_TOKEN)
+        .replace('λ', "<span class=\"keep-case\">λ</span>")
+        .replace(DHDL_TOKEN, "<span class=\"keep-case\">dH/dλ</span>")
 }
 
 fn escape_html(value: &str) -> String {
@@ -3029,7 +3128,7 @@ mod tests {
         assert!(output.contains("Curvature Magnitude"));
         assert!(output.contains("Interval Uncertainty"));
         assert!(output.contains("Integration Method Curves"));
-        assert!(output.contains("Method Differences"));
+        assert!(output.contains("Integration Method Differences"));
         assert!(output.contains("Deviation From Trapezoidal"));
         assert!(output.contains("∫Δ dλ"));
         assert!(output.contains("series-fill positive"));
@@ -3047,12 +3146,14 @@ mod tests {
         assert!(output.contains("href=\"#interval-"));
         assert!(output.contains("id=\"interval-"));
         assert!(output.contains("<a class=\"queue-link mono\" href=\"#interval-"));
-        assert!(output.contains("<th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Recommendation</th>"));
+        assert!(output.contains("<th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Suggestion</th>"));
         assert!(output.contains(": λ "));
         assert!(output.contains("<span class=\"mono\"> interval 0: λ "));
+        assert!(output.contains("mean <span class=\"keep-case\">dH/dλ</span> at <span class=\"keep-case\">λ</span>=0"));
+        assert!(output.contains("kept samples at <span class=\"keep-case\">λ</span>=0"));
         assert!(output.contains("high_curvature"));
-        assert!(output.contains("proposed λ</div><div class=\"mono\">0.495"));
-        assert!(!output.contains("proposed λ</div><div class=\"mono\">n/a</div>"));
+        assert!(output.contains("proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">0.495"));
+        assert!(!output.contains("proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"));
     }
 
     #[test]
@@ -3091,13 +3192,13 @@ mod tests {
 
         assert!(output.contains("left block CV"));
         assert!(output.contains("right block CV"));
-        assert!(output.contains("forward/reverse delta"));
+        assert!(output.contains("split-half drift"));
         assert!(output.contains("Integration Method Curves"));
-        assert!(output.contains("Method Differences"));
+        assert!(output.contains("Integration Method Differences"));
         assert!(output.contains("∫Δ dλ"));
         assert!(output.contains("Simpson"));
         assert!(output.contains("high_block_cv"));
-        assert!(!output.contains("proposed λ</div><div class=\"mono\">n/a</div>"));
+        assert!(!output.contains("proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"));
     }
 
     #[test]

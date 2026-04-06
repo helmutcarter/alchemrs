@@ -268,8 +268,8 @@ fn advise_schedule_cli_outputs_expected_ti_json_when_forced_to_dhdl() {
         assert_json_optional_f64_close(&actual["sem_dhdl"], expected.sem_dhdl());
         assert_json_optional_f64_close(&actual["block_cv"], expected.block_cv());
         assert_json_optional_f64_close(
-            &actual["forward_reverse_delta"],
-            expected.forward_reverse_delta(),
+            &actual["split_half_dhdl_delta"],
+            expected.split_half_dhdl_delta(),
         );
     }
 
