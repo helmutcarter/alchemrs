@@ -174,7 +174,24 @@ mod tests {
         });
         let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
         assert!((result.delta_f() - 1.0).abs() < 1e-12);
-        assert_eq!(result.uncertainty(), None);
+        assert_eq!(result.uncertainty(), Some(0.0));
+    }
+
+    #[test]
+    fn ti_simpson_propagates_uncertainty_from_rule_weights() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0, 2.0], vec![0.0, 0.0, 0.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0, 2.0], vec![1.0, 2.0, 0.0]).unwrap();
+        let d2 = DhdlSeries::new(s2, vec![0.0, 1.0, 2.0], vec![2.0, 2.0, 2.0]).unwrap();
+        let estimator = TiEstimator::new(TiOptions {
+            method: IntegrationMethod::Simpson,
+            parallel: false,
+        });
+        let result = estimator.fit(&[d0, d1, d2]).unwrap().result().unwrap();
+        let expected_sigma = (4.0_f64 / 27.0_f64).sqrt();
+        assert!((result.uncertainty().unwrap() - expected_sigma).abs() < 1e-12);
     }
 
     #[test]

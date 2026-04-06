@@ -38,10 +38,10 @@ Behavior:
 Current uncertainty behavior:
 
 - trapezoidal mode reports an uncertainty estimate
+- Simpson mode reports an uncertainty estimate by propagating the Simpson-rule weights through the per-window SEMs
 - cubic-spline mode reports an uncertainty estimate by propagating the implied spline-integration weights through the per-window SEMs
 - PCHIP and Akima report an uncertainty estimate by numerically differentiating the integrated result with respect to the window means and propagating the per-window SEMs through that Jacobian
 - Gaussian quadrature reports an uncertainty estimate from the quadrature weights and per-window SEMs
-- Simpson mode currently returns no uncertainty
 
 Interpolation references:
 

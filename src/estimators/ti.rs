@@ -100,7 +100,7 @@ impl TiEstimator {
             IntegrationMethod::Trapezoidal => {
                 Some(trapezoidal_uncertainty(&lambdas, &sem2_values)?)
             }
-            IntegrationMethod::Simpson => None,
+            IntegrationMethod::Simpson => Some(simpson_uncertainty(&lambdas, &sem2_values)?),
             IntegrationMethod::CubicSpline => {
                 Some(cubic_spline_uncertainty(&lambdas, &sem2_values)?)
             }
@@ -288,6 +288,23 @@ fn integrate_gaussian_quadrature(lambdas: &[f64], values: &[f64]) -> Result<f64>
         .zip(values.iter())
         .map(|(weight, value)| weight * value)
         .sum())
+}
+
+fn simpson_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
+    if lambdas.len() != sem2.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: sem2.len(),
+        });
+    }
+
+    let weights = simpson_weights(lambdas)?;
+    let variance: f64 = weights
+        .iter()
+        .zip(sem2.iter())
+        .map(|(weight, sem2)| weight * weight * sem2)
+        .sum();
+    Ok(variance.sqrt())
 }
 
 fn integrate_cubic_spline(lambdas: &[f64], values: &[f64]) -> Result<f64> {
@@ -595,6 +612,48 @@ fn cubic_spline_weights(lambdas: &[f64]) -> Result<Vec<f64>> {
         basis.fill(0.0);
         basis[basis_index] = 1.0;
         weights.push(integrate_cubic_spline(lambdas, &basis)?);
+    }
+    Ok(weights)
+}
+
+fn simpson_weights(lambdas: &[f64]) -> Result<Vec<f64>> {
+    if lambdas.len() < 3 {
+        return Err(CoreError::InvalidShape {
+            expected: 3,
+            found: lambdas.len(),
+        });
+    }
+    if (lambdas.len() & 1) == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len() + 1,
+            found: lambdas.len(),
+        });
+    }
+
+    let n = lambdas.len();
+    let h = (lambdas[n - 1] - lambdas[0]) / ((n - 1) as f64);
+    if h == 0.0 {
+        return Err(CoreError::InvalidState(
+            "lambda spacing must be non-zero".to_string(),
+        ));
+    }
+    let tol = h.abs() * 1e-8;
+    let mut weights = Vec::with_capacity(n);
+    for i in 0..n {
+        let expected = lambdas[0] + (i as f64) * h;
+        if (lambdas[i] - expected).abs() > tol {
+            return Err(CoreError::Unsupported(
+                "Simpson integration requires uniform lambda spacing".to_string(),
+            ));
+        }
+        let coeff = if i == 0 || i + 1 == n {
+            1.0
+        } else if i % 2 == 0 {
+            2.0
+        } else {
+            4.0
+        };
+        weights.push(coeff * h / 3.0);
     }
     Ok(weights)
 }
