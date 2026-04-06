@@ -560,16 +560,10 @@ mod tests {
     #[test]
     fn exp_parallel_matches_serial() {
         let windows = make_two_state_windows();
-        let serial = ExpEstimator::new(ExpOptions {
-            parallel: false,
-            ..ExpOptions::default()
-        })
+        let serial = ExpEstimator::new(ExpOptions { parallel: false })
         .estimate_with_uncertainty(&windows)
         .unwrap();
-        let parallel = ExpEstimator::new(ExpOptions {
-            parallel: true,
-            ..ExpOptions::default()
-        })
+        let parallel = ExpEstimator::new(ExpOptions { parallel: true })
         .estimate_with_uncertainty(&windows)
         .unwrap();
 

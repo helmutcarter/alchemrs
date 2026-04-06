@@ -1,5 +1,5 @@
 use crate::analysis::{BlockEstimate, ConvergencePoint};
-use crate::data::{DeltaFMatrix, DhdlSeries, OverlapMatrix};
+use crate::data::{DeltaFMatrix, DhdlSeries, OverlapMatrix, StatePoint};
 use crate::error::{CoreError, Result};
 use plotters::prelude::*;
 
@@ -555,16 +555,9 @@ fn overlap_color(value: f64) -> RGBColor {
     )
 }
 
-fn adjacent_state_values(
-    delta_f: &DeltaFMatrix,
-) -> Result<
-    Vec<(
-        &crate::data::StatePoint,
-        &crate::data::StatePoint,
-        f64,
-        Option<f64>,
-    )>,
-> {
+type AdjacentStateValue<'a> = (&'a StatePoint, &'a StatePoint, f64, Option<f64>);
+
+fn adjacent_state_values(delta_f: &DeltaFMatrix) -> Result<Vec<AdjacentStateValue<'_>>> {
     let n_states = delta_f.n_states();
     let uncertainties = delta_f.uncertainties();
     let mut values = Vec::with_capacity(n_states - 1);
@@ -582,14 +575,7 @@ fn adjacent_state_values(
     Ok(values)
 }
 
-fn delta_f_bounds(
-    adjacent: &[(
-        &crate::data::StatePoint,
-        &crate::data::StatePoint,
-        f64,
-        Option<f64>,
-    )],
-) -> (f64, f64) {
+fn delta_f_bounds(adjacent: &[AdjacentStateValue<'_>]) -> (f64, f64) {
     let mut min: f64 = 0.0;
     let mut max: f64 = 0.0;
     for (_, _, value, uncertainty) in adjacent {
@@ -608,7 +594,7 @@ fn delta_f_bounds(
     }
 }
 
-fn extract_scalar_lambda(state: &crate::data::StatePoint) -> Result<f64> {
+fn extract_scalar_lambda(state: &StatePoint) -> Result<f64> {
     if state.lambdas().len() != 1 {
         return Err(CoreError::Unsupported(
             "TI plotting requires one-dimensional lambda states".to_string(),
@@ -700,7 +686,7 @@ fn lerp_channel(start: f64, end: f64, t: f64) -> u8 {
     (start + (end - start) * t).round() as u8
 }
 
-fn format_state_label(state: &crate::data::StatePoint) -> String {
+fn format_state_label(state: &StatePoint) -> String {
     let lambdas = state
         .lambdas()
         .iter()

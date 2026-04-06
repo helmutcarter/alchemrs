@@ -171,9 +171,9 @@ impl MbarFit {
             for i in 0..n_states {
                 let wi = weights[i];
                 let row_offset = i * n_states;
-                for j in i..n_states {
+                for (j, &wj) in weights.iter().enumerate().skip(i) {
                     let idx = row_offset + j;
-                    wtw[idx] = wi.mul_add(weights[j], wtw[idx]);
+                    wtw[idx] = wi.mul_add(wj, wtw[idx]);
                 }
             }
         }

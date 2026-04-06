@@ -6,15 +6,9 @@ use super::common::{
     ensure_consistent_lambda_labels, ensure_consistent_states, work_values, ExpRow,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ExpOptions {
     pub parallel: bool,
-}
-
-impl Default for ExpOptions {
-    fn default() -> Self {
-        Self { parallel: false }
-    }
 }
 
 #[derive(Debug, Clone, Default)]
