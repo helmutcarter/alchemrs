@@ -358,6 +358,7 @@ pub enum Command {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum TiMethod {
+    Auto,
     Trapezoidal,
     Simpson,
     CubicSpline,
@@ -373,15 +374,16 @@ pub enum AdviseInputKind {
     Dhdl,
 }
 
-impl From<TiMethod> for IntegrationMethod {
-    fn from(method: TiMethod) -> Self {
-        match method {
-            TiMethod::Trapezoidal => IntegrationMethod::Trapezoidal,
-            TiMethod::Simpson => IntegrationMethod::Simpson,
-            TiMethod::CubicSpline => IntegrationMethod::CubicSpline,
-            TiMethod::Pchip => IntegrationMethod::Pchip,
-            TiMethod::Akima => IntegrationMethod::Akima,
-            TiMethod::GaussianQuadrature => IntegrationMethod::GaussianQuadrature,
+impl TiMethod {
+    pub fn explicit_method(self) -> Option<IntegrationMethod> {
+        match self {
+            TiMethod::Auto => None,
+            TiMethod::Trapezoidal => Some(IntegrationMethod::Trapezoidal),
+            TiMethod::Simpson => Some(IntegrationMethod::Simpson),
+            TiMethod::CubicSpline => Some(IntegrationMethod::CubicSpline),
+            TiMethod::Pchip => Some(IntegrationMethod::Pchip),
+            TiMethod::Akima => Some(IntegrationMethod::Akima),
+            TiMethod::GaussianQuadrature => Some(IntegrationMethod::GaussianQuadrature),
         }
     }
 }
@@ -494,6 +496,17 @@ mod tests {
         match cli.command {
             Command::Ti { method, .. } => {
                 assert!(matches!(method, super::TiMethod::GaussianQuadrature));
+            }
+            _ => panic!("expected ti command"),
+        }
+    }
+
+    #[test]
+    fn ti_command_accepts_auto_method() {
+        let cli = Cli::parse_from(["alchemrs", "ti", "--method", "auto", "window.out"]);
+        match cli.command {
+            Command::Ti { method, .. } => {
+                assert!(matches!(method, super::TiMethod::Auto));
             }
             _ => panic!("expected ti command"),
         }

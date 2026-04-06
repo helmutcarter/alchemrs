@@ -74,6 +74,7 @@ If `--report` is provided, the CLI also writes a standalone HTML report with:
 - a top priority queue of the highest-risk edges, including their weakest components
 - ranked schedule suggestions
 - edge-level diagnostics with severity badges
+- for TI mode, an integration-method shape gallery for each applicable TI method on the current lambda grid
 - inline priority bars for quick scanning
 - inline SVG lambda-axis visuals for each edge and proposal
 - an in-report legend for source, target, proposal, delta-bar, and status semantics

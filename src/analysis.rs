@@ -4,8 +4,8 @@ use crate::data::{
 };
 use crate::error::{CoreError, Result};
 use crate::estimators::{
-    BarEstimator, BarOptions, ExpEstimator, ExpOptions, MbarEstimator, MbarOptions, TiEstimator,
-    TiOptions,
+    BarEstimator, BarOptions, ExpEstimator, ExpOptions, IntegrationMethod, MbarEstimator,
+    MbarOptions, TiEstimator, TiOptions,
 };
 use nalgebra::{DMatrix, Schur};
 use std::cmp::Ordering;
@@ -621,6 +621,80 @@ impl TiScheduleAdvice {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TiMethodRecommendationOptions {
+    pub schedule: TiScheduleAdvisorOptions,
+    pub disagreement_sigma_factor: f64,
+    pub absolute_delta_tolerance: f64,
+}
+
+impl Default for TiMethodRecommendationOptions {
+    fn default() -> Self {
+        Self {
+            schedule: TiScheduleAdvisorOptions::default(),
+            disagreement_sigma_factor: 1.5,
+            absolute_delta_tolerance: 1.0e-2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TiMethodAssessment {
+    method: IntegrationMethod,
+    supported: bool,
+    delta_f: Option<f64>,
+    uncertainty: Option<f64>,
+    rationale: String,
+}
+
+impl TiMethodAssessment {
+    pub fn method(&self) -> IntegrationMethod {
+        self.method
+    }
+
+    pub fn supported(&self) -> bool {
+        self.supported
+    }
+
+    pub fn delta_f(&self) -> Option<f64> {
+        self.delta_f
+    }
+
+    pub fn uncertainty(&self) -> Option<f64> {
+        self.uncertainty
+    }
+
+    pub fn rationale(&self) -> &str {
+        &self.rationale
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TiMethodRecommendation {
+    recommended_method: IntegrationMethod,
+    reason: String,
+    assessments: Vec<TiMethodAssessment>,
+    cross_method_spread: Option<f64>,
+}
+
+impl TiMethodRecommendation {
+    pub fn recommended_method(&self) -> IntegrationMethod {
+        self.recommended_method
+    }
+
+    pub fn reason(&self) -> &str {
+        &self.reason
+    }
+
+    pub fn assessments(&self) -> &[TiMethodAssessment] {
+        &self.assessments
+    }
+
+    pub fn cross_method_spread(&self) -> Option<f64> {
+        self.cross_method_spread
+    }
+}
+
 impl BlockEstimate {
     pub fn new(
         block_index: usize,
@@ -1207,6 +1281,317 @@ pub fn advise_ti_schedule(
     Ok(TiScheduleAdvice::new(windows, intervals, suggestions))
 }
 
+pub fn recommend_ti_method(
+    series: &[DhdlSeries],
+    options: Option<TiMethodRecommendationOptions>,
+) -> Result<TiMethodRecommendation> {
+    let options = validate_ti_method_recommendation_options(options.unwrap_or_default())?;
+    let advice = advise_ti_schedule(series, Some(options.schedule))?;
+
+    let lambdas = advice
+        .windows()
+        .iter()
+        .map(|window| extract_scalar_lambda(window.state(), "TI method recommendation"))
+        .collect::<Result<Vec<_>>>()?;
+    let means = advice
+        .windows()
+        .iter()
+        .map(|window| window.mean_dhdl())
+        .collect::<Vec<_>>();
+
+    let uniform_spacing = has_uniform_spacing(&lambdas);
+    let odd_window_count = (lambdas.len() & 1) == 1;
+    let monotone_means = is_monotone_series(&means);
+    let has_structure_issue = advice.suggestions().iter().any(|suggestion| {
+        matches!(
+            suggestion.kind(),
+            TiSuggestionKind::InsertWindow | TiSuggestionKind::InsertWindowAndExtendSampling
+        )
+    });
+    let has_sampling_issue = advice.suggestions().iter().any(|suggestion| {
+        matches!(
+            suggestion.kind(),
+            TiSuggestionKind::ExtendSampling | TiSuggestionKind::InsertWindowAndExtendSampling
+        )
+    });
+
+    let mut assessments = Vec::with_capacity(TI_METHOD_CANDIDATES.len());
+    for method in TI_METHOD_CANDIDATES {
+        let estimator = TiEstimator::new(TiOptions {
+            method,
+            parallel: false,
+        });
+        match estimator.fit(series) {
+            Ok(fit) => assessments.push(TiMethodAssessment {
+                method,
+                supported: true,
+                delta_f: Some(fit.delta_f()),
+                uncertainty: fit.uncertainty(),
+                rationale: supported_ti_method_rationale(
+                    method,
+                    uniform_spacing,
+                    odd_window_count,
+                    monotone_means,
+                ),
+            }),
+            Err(CoreError::Unsupported(message)) => assessments.push(TiMethodAssessment {
+                method,
+                supported: false,
+                delta_f: None,
+                uncertainty: None,
+                rationale: message,
+            }),
+            Err(error @ CoreError::InvalidShape { .. })
+                if method != IntegrationMethod::Trapezoidal =>
+            {
+                assessments.push(TiMethodAssessment {
+                    method,
+                    supported: false,
+                    delta_f: None,
+                    uncertainty: None,
+                    rationale: error.to_string(),
+                })
+            }
+            Err(error) if method == IntegrationMethod::Trapezoidal => return Err(error),
+            Err(error) => assessments.push(TiMethodAssessment {
+                method,
+                supported: false,
+                delta_f: None,
+                uncertainty: None,
+                rationale: error.to_string(),
+            }),
+        }
+    }
+
+    let supported_deltas = assessments
+        .iter()
+        .filter_map(|assessment| assessment.delta_f())
+        .collect::<Vec<_>>();
+    let cross_method_spread = if supported_deltas.is_empty() {
+        None
+    } else {
+        let min = supported_deltas.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = supported_deltas
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        Some(max - min)
+    };
+    let disagreement_limit = options.absolute_delta_tolerance.max(
+        options.disagreement_sigma_factor
+            * preferred_uncertainty_reference(&assessments).unwrap_or(0.0),
+    );
+    let methods_disagree = cross_method_spread.is_some_and(|spread| spread > disagreement_limit);
+    let severe_methods_disagree =
+        cross_method_spread.is_some_and(|spread| spread > disagreement_limit * 3.0);
+
+    let (recommended_method, reason) = choose_ti_method(
+        &assessments,
+        uniform_spacing,
+        odd_window_count,
+        monotone_means,
+        has_structure_issue,
+        has_sampling_issue,
+        methods_disagree,
+        severe_methods_disagree,
+    );
+
+    Ok(TiMethodRecommendation {
+        recommended_method,
+        reason,
+        assessments,
+        cross_method_spread,
+    })
+}
+
+const TI_METHOD_CANDIDATES: [IntegrationMethod; 6] = [
+    IntegrationMethod::Trapezoidal,
+    IntegrationMethod::Simpson,
+    IntegrationMethod::CubicSpline,
+    IntegrationMethod::Pchip,
+    IntegrationMethod::Akima,
+    IntegrationMethod::GaussianQuadrature,
+];
+
+fn choose_ti_method(
+    assessments: &[TiMethodAssessment],
+    uniform_spacing: bool,
+    odd_window_count: bool,
+    monotone_means: bool,
+    has_structure_issue: bool,
+    has_sampling_issue: bool,
+    methods_disagree: bool,
+    severe_methods_disagree: bool,
+) -> (IntegrationMethod, String) {
+    if supports_ti_method(assessments, IntegrationMethod::GaussianQuadrature) {
+        return (
+            IntegrationMethod::GaussianQuadrature,
+            "sampled lambdas match a supported Gauss-Legendre rule on [0, 1]".to_string(),
+        );
+    }
+
+    if has_structure_issue {
+        return (
+            IntegrationMethod::Trapezoidal,
+            "TI schedule diagnostics flagged under-resolved intervals, so trapezoidal is the safest current choice".to_string(),
+        );
+    }
+
+    if uniform_spacing
+        && odd_window_count
+        && !has_sampling_issue
+        && !methods_disagree
+        && supports_ti_method(assessments, IntegrationMethod::Simpson)
+    {
+        return (
+            IntegrationMethod::Simpson,
+            "uniform odd-count lambda grid with healthy TI diagnostics and low cross-method disagreement".to_string(),
+        );
+    }
+
+    if methods_disagree {
+        if severe_methods_disagree {
+            return (
+                IntegrationMethod::Trapezoidal,
+                "supported methods disagree strongly enough that trapezoidal is the conservative fallback".to_string(),
+            );
+        }
+        if !has_sampling_issue
+            && monotone_means
+            && supports_ti_method(assessments, IntegrationMethod::Pchip)
+        {
+            return (
+                IntegrationMethod::Pchip,
+                "supported methods disagree materially, and monotone dH/dlambda means favor shape-preserving PCHIP".to_string(),
+            );
+        }
+        if !has_sampling_issue
+            && supports_ti_method(assessments, IntegrationMethod::Akima)
+        {
+            return (
+                IntegrationMethod::Akima,
+                "supported methods disagree materially on a nonuniform schedule, so Akima is the most local smooth interpolant available".to_string(),
+            );
+        }
+        return (
+            IntegrationMethod::Trapezoidal,
+            "supported methods disagree materially and/or the TI diagnostics look unstable, so trapezoidal is the conservative fallback".to_string(),
+        );
+    }
+
+    if !has_sampling_issue && monotone_means && supports_ti_method(assessments, IntegrationMethod::Pchip) {
+        return (
+            IntegrationMethod::Pchip,
+            "healthy nonuniform schedule with monotone dH/dlambda means favors shape-preserving PCHIP".to_string(),
+        );
+    }
+
+    if !has_sampling_issue && supports_ti_method(assessments, IntegrationMethod::CubicSpline) {
+        return (
+            IntegrationMethod::CubicSpline,
+            "healthy nonuniform schedule with low cross-method disagreement favors a smooth cubic-spline integral".to_string(),
+        );
+    }
+
+    if !has_sampling_issue && supports_ti_method(assessments, IntegrationMethod::Akima) {
+        return (
+            IntegrationMethod::Akima,
+            "healthy nonuniform schedule can use Akima as a local smooth interpolant".to_string(),
+        );
+    }
+
+    (
+        IntegrationMethod::Trapezoidal,
+        "trapezoidal remains valid on arbitrary TI schedules and is the safest fallback here"
+            .to_string(),
+    )
+}
+
+fn supports_ti_method(
+    assessments: &[TiMethodAssessment],
+    method: IntegrationMethod,
+) -> bool {
+    assessments
+        .iter()
+        .find(|assessment| assessment.method() == method)
+        .is_some_and(|assessment| assessment.supported())
+}
+
+fn supported_ti_method_rationale(
+    method: IntegrationMethod,
+    uniform_spacing: bool,
+    odd_window_count: bool,
+    monotone_means: bool,
+) -> String {
+    match method {
+        IntegrationMethod::Trapezoidal => {
+            "supported on arbitrary strictly increasing lambda schedules".to_string()
+        }
+        IntegrationMethod::Simpson => {
+            if uniform_spacing && odd_window_count {
+                "supported on this uniform odd-count lambda grid".to_string()
+            } else {
+                "supported when the lambda grid is uniform and has an odd number of windows"
+                    .to_string()
+            }
+        }
+        IntegrationMethod::CubicSpline => {
+            "supported as a smooth global cubic interpolant with propagated uncertainty"
+                .to_string()
+        }
+        IntegrationMethod::Pchip => {
+            if monotone_means {
+                "supported and shape-preserving for this monotone dH/dlambda trend".to_string()
+            } else {
+                "supported as a shape-preserving cubic Hermite interpolant".to_string()
+            }
+        }
+        IntegrationMethod::Akima => {
+            "supported as a local cubic interpolant for nonuniform schedules".to_string()
+        }
+        IntegrationMethod::GaussianQuadrature => {
+            "supported because the sampled lambdas match a Gauss-Legendre quadrature rule"
+                .to_string()
+        }
+    }
+}
+
+fn preferred_uncertainty_reference(assessments: &[TiMethodAssessment]) -> Option<f64> {
+    assessments
+        .iter()
+        .find(|assessment| assessment.method() == IntegrationMethod::Trapezoidal)
+        .and_then(|assessment| assessment.uncertainty())
+        .or_else(|| {
+            assessments
+                .iter()
+                .filter_map(|assessment| assessment.uncertainty())
+                .find(|value| value.is_finite())
+        })
+}
+
+fn has_uniform_spacing(lambdas: &[f64]) -> bool {
+    if lambdas.len() < 3 {
+        return false;
+    }
+    let h = (lambdas[lambdas.len() - 1] - lambdas[0]) / ((lambdas.len() - 1) as f64);
+    if h == 0.0 {
+        return false;
+    }
+    let tol = h.abs() * 1.0e-8;
+    for (index, lambda) in lambdas.iter().enumerate().skip(1) {
+        let expected = lambdas[0] + (index as f64) * h;
+        if (lambda - expected).abs() > tol {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_monotone_series(values: &[f64]) -> bool {
+    values.windows(2).all(|pair| pair[1] >= pair[0])
+        || values.windows(2).all(|pair| pair[1] <= pair[0])
+}
+
 pub(crate) fn ti_block_average(
     series: &[DhdlSeries],
     n_blocks: usize,
@@ -1643,6 +2028,26 @@ fn validate_ti_schedule_advisor_options(
         }
     }
     Ok(options)
+}
+
+fn validate_ti_method_recommendation_options(
+    options: TiMethodRecommendationOptions,
+) -> Result<TiMethodRecommendationOptions> {
+    let schedule = validate_ti_schedule_advisor_options(options.schedule)?;
+    for (name, value) in [
+        ("disagreement_sigma_factor", options.disagreement_sigma_factor),
+        ("absolute_delta_tolerance", options.absolute_delta_tolerance),
+    ] {
+        if !value.is_finite() || value < 0.0 {
+            return Err(CoreError::InvalidState(format!(
+                "TI method recommendation {name} must be finite and non-negative"
+            )));
+        }
+    }
+    Ok(TiMethodRecommendationOptions {
+        schedule,
+        ..options
+    })
 }
 
 fn sort_windows_by_sampled_state(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix>> {
@@ -2402,12 +2807,12 @@ fn block_estimate_from_matrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        advise_lambda_schedule, advise_ti_schedule, schedule_suggestion, AdjacentEdgeDiagnostic,
-        AdvisorEstimator, EdgeSeverity, ProposalStrategy, ScheduleAdvisorOptions, TiEdgeSeverity,
-        TiScheduleAdvisorOptions,
+        advise_lambda_schedule, advise_ti_schedule, recommend_ti_method, schedule_suggestion,
+        AdjacentEdgeDiagnostic, AdvisorEstimator, EdgeSeverity, ProposalStrategy,
+        ScheduleAdvisorOptions, TiEdgeSeverity, TiScheduleAdvisorOptions,
     };
     use crate::data::{StatePoint, UNkMatrix};
-    use crate::DhdlSeries;
+    use crate::{DhdlSeries, IntegrationMethod};
 
     fn build_window(
         sampled_lambda: f64,
@@ -2714,6 +3119,121 @@ mod tests {
             .suggestions()
             .iter()
             .any(|suggestion| suggestion.proposed_state().is_some()));
+    }
+
+    #[test]
+    fn recommend_ti_method_prefers_gaussian_quadrature_for_exact_nodes() {
+        let l0 = 0.21132486540518713;
+        let l1 = 0.7886751345948129;
+        let series = vec![
+            DhdlSeries::new(
+                StatePoint::new(vec![l0], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![1.0, 1.0, 1.0],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![l1], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![2.0, 2.0, 2.0],
+            )
+            .unwrap(),
+        ];
+
+        let recommendation = recommend_ti_method(&series, None).unwrap();
+        assert_eq!(
+            recommendation.recommended_method(),
+            IntegrationMethod::GaussianQuadrature
+        );
+        assert!(recommendation
+            .reason()
+            .contains("Gauss-Legendre"));
+    }
+
+    #[test]
+    fn recommend_ti_method_prefers_simpson_on_healthy_uniform_grid() {
+        let series = vec![
+            DhdlSeries::new(
+                StatePoint::new(vec![0.0], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![0.0, 0.0, 0.0],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![0.5], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![1.0, 1.0, 1.0],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![1.0], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![2.0, 2.0, 2.0],
+            )
+            .unwrap(),
+        ];
+
+        let recommendation = recommend_ti_method(&series, None).unwrap();
+        assert_eq!(recommendation.recommended_method(), IntegrationMethod::Simpson);
+    }
+
+    #[test]
+    fn recommend_ti_method_prefers_pchip_for_healthy_monotone_nonuniform_grid() {
+        let series = vec![
+            DhdlSeries::new(
+                StatePoint::new(vec![0.0], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![0.3, 0.3, 0.3],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![0.2], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![0.5, 0.5, 0.5],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![0.55], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![0.8, 0.8, 0.8],
+            )
+            .unwrap(),
+            DhdlSeries::new(
+                StatePoint::new(vec![1.0], 298.0).unwrap(),
+                vec![0.0, 1.0, 2.0],
+                vec![1.1, 1.1, 1.1],
+            )
+            .unwrap(),
+        ];
+
+        let recommendation = recommend_ti_method(&series, None).unwrap();
+        assert_eq!(recommendation.recommended_method(), IntegrationMethod::Pchip);
+        let simpson = recommendation
+            .assessments()
+            .iter()
+            .find(|assessment| assessment.method() == IntegrationMethod::Simpson)
+            .expect("simpson assessment");
+        assert!(!simpson.supported());
+    }
+
+    #[test]
+    fn recommend_ti_method_falls_back_to_trapezoidal_for_under_resolved_schedule() {
+        let s0 = StatePoint::new(vec![0.0], 298.0).unwrap();
+        let s1 = StatePoint::new(vec![0.33], 298.0).unwrap();
+        let s2 = StatePoint::new(vec![0.66], 298.0).unwrap();
+        let s3 = StatePoint::new(vec![1.0], 298.0).unwrap();
+        let series = vec![
+            DhdlSeries::new(s0, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+            DhdlSeries::new(s1, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+            DhdlSeries::new(s2, vec![0.0, 1.0, 2.0, 3.0], vec![10.0, 10.0, 10.0, 10.0]).unwrap(),
+            DhdlSeries::new(s3, vec![0.0, 1.0, 2.0, 3.0], vec![0.0, 0.0, 0.0, 0.0]).unwrap(),
+        ];
+
+        let recommendation = recommend_ti_method(&series, None).unwrap();
+        assert_eq!(
+            recommendation.recommended_method(),
+            IntegrationMethod::Trapezoidal
+        );
     }
 
     #[test]

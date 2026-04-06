@@ -7,7 +7,7 @@ mod ti;
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{ExpEstimator, ExpFit, ExpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions};
-pub use ti::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
+pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
 #[cfg(test)]
 mod tests {

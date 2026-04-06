@@ -63,6 +63,8 @@ pub fn run(
                 conservative: input_options.effective_conservative(),
                 nskip: input_options.nskip,
                 u_nk_observable: input_options.u_nk_observable_name(),
+                ti_method: None,
+                ti_method_reason: None,
                 lambda_components: windows
                     .first()
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),

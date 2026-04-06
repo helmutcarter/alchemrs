@@ -173,7 +173,7 @@ alchemrs advise-schedule \
   /path/to/*/prod.out
 ```
 
-The JSON output includes `sample_counts`, `provenance`, and `suggestions`, plus either `edges` for `u_nk` mode or `windows` and `intervals` for TI mode. `u_nk` edge diagnostics include neighbor-relative metrics, dominant changing components, and a priority score. TI interval diagnostics include `mean_dhdl`, `slope`, `curvature`, `interval_uncertainty`, and block-stability summaries. When `--report` is provided, the CLI also writes a standalone HTML report; the `u_nk` report includes the full SVG lambda-axis and multidimensional component breakdown, while the TI report focuses on ranked interval diagnostics and schedule suggestions.
+The JSON output includes `sample_counts`, `provenance`, and `suggestions`, plus either `edges` for `u_nk` mode or `windows` and `intervals` for TI mode. `u_nk` edge diagnostics include neighbor-relative metrics, dominant changing components, and a priority score. TI interval diagnostics include `mean_dhdl`, `slope`, `curvature`, `interval_uncertainty`, and block-stability summaries. When `--report` is provided, the CLI also writes a standalone HTML report; the `u_nk` report includes the full SVG lambda-axis and multidimensional component breakdown, while the TI report also includes an integration-method shape gallery showing the applicable TI interpolants on the current lambda grid.
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
@@ -187,7 +187,7 @@ alchemrs bar \
 CSV columns include estimator parameters after the result fields:
 
 ```text
-delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept
+delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,ti_method,ti_method_reason,lambda_components,windows,samples_in,samples_after_burnin,samples_kept
 ```
 
 ### TI
@@ -202,6 +202,18 @@ alchemrs ti \
 
 `ti` supports `--method <trapezoidal|simpson|cubic-spline|pchip|akima|gaussian-quadrature>`.
 For more on picking an integration method, see the docs.
+
+To let the CLI choose a method automatically and record why it was selected:
+
+```bash
+alchemrs ti \
+  --temperature 300 \
+  --method auto \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+TI outputs now include `ti_method` and, for `--method auto`, `ti_method_reason` in provenance.
 
 ### BAR
 

@@ -28,6 +28,8 @@ It includes:
 - `lambda_components` when available
 - sample counts
 - `u_nk_observable` when relevant
+- `ti_method` when the estimator is TI
+- `ti_method_reason` when TI method auto-selection was used
 - overlap summary when requested
 
 ## JSON output
@@ -66,6 +68,8 @@ Current provenance fields include:
 - the effective `conservative` value
 - `nskip`
 - `u_nk_observable` when applicable
+- `ti_method` for TI results
+- `ti_method_reason` when `ti --method auto` selected the integration method
 - `lambda_components` when the parser can identify named lambda dimensions
 - number of windows
 - number of samples before preprocessing

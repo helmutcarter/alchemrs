@@ -12,6 +12,19 @@ pub enum IntegrationMethod {
     GaussianQuadrature,
 }
 
+impl IntegrationMethod {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Trapezoidal => "trapezoidal",
+            Self::Simpson => "simpson",
+            Self::CubicSpline => "cubic-spline",
+            Self::Pchip => "pchip",
+            Self::Akima => "akima",
+            Self::GaussianQuadrature => "gaussian-quadrature",
+        }
+    }
+}
+
 const GAUSSIAN_QUADRATURE_LAMBDA_ABS_TOL: f64 = 1.0e-5;
 const NONLINEAR_TI_UNCERTAINTY_MIN_STEP: f64 = 1.0e-6;
 
@@ -141,6 +154,51 @@ impl TiEstimator {
         n_blocks: usize,
     ) -> Result<Vec<BlockEstimate>> {
         analysis::ti_block_average(series, n_blocks, Some(self.options.clone()))
+    }
+}
+
+pub fn sample_ti_curve(
+    lambdas: &[f64],
+    values: &[f64],
+    method: IntegrationMethod,
+    samples_per_interval: usize,
+) -> Result<Vec<(f64, f64)>> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if samples_per_interval == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    match method {
+        IntegrationMethod::Trapezoidal => sample_trapezoidal_curve(lambdas, values, samples_per_interval),
+        IntegrationMethod::Simpson => sample_simpson_curve(lambdas, values, samples_per_interval),
+        IntegrationMethod::CubicSpline => {
+            let second = natural_cubic_second_derivatives(lambdas, values)?;
+            sample_cubic_spline_curve(lambdas, values, &second, samples_per_interval)
+        }
+        IntegrationMethod::Pchip => {
+            let derivatives = pchip_derivatives(lambdas, values)?;
+            sample_cubic_hermite_curve(lambdas, values, &derivatives, samples_per_interval, "PCHIP")
+        }
+        IntegrationMethod::Akima => {
+            let derivatives = akima_derivatives(lambdas, values)?;
+            sample_cubic_hermite_curve(lambdas, values, &derivatives, samples_per_interval, "Akima")
+        }
+        IntegrationMethod::GaussianQuadrature => {
+            gaussian_quadrature_rule(lambdas)?;
+            Ok(lambdas
+                .iter()
+                .copied()
+                .zip(values.iter().copied())
+                .collect())
+        }
     }
 }
 
@@ -290,6 +348,61 @@ fn integrate_gaussian_quadrature(lambdas: &[f64], values: &[f64]) -> Result<f64>
         .sum())
 }
 
+fn sample_trapezoidal_curve(
+    lambdas: &[f64],
+    values: &[f64],
+    samples_per_interval: usize,
+) -> Result<Vec<(f64, f64)>> {
+    interval_widths_and_slopes(lambdas, values, "trapezoidal")?;
+    let mut points = Vec::with_capacity((lambdas.len() - 1) * samples_per_interval + 1);
+    for interval_index in 0..(lambdas.len() - 1) {
+        let x0 = lambdas[interval_index];
+        let x1 = lambdas[interval_index + 1];
+        let y0 = values[interval_index];
+        let y1 = values[interval_index + 1];
+        let steps = samples_per_interval;
+        for step in 0..=steps {
+            if interval_index > 0 && step == 0 {
+                continue;
+            }
+            let t = step as f64 / (steps as f64);
+            let x = x0 + (x1 - x0) * t;
+            let y = y0 + (y1 - y0) * t;
+            points.push((x, y));
+        }
+    }
+    Ok(points)
+}
+
+fn sample_simpson_curve(
+    lambdas: &[f64],
+    values: &[f64],
+    samples_per_interval: usize,
+) -> Result<Vec<(f64, f64)>> {
+    simpson_weights(lambdas)?;
+    let mut points =
+        Vec::with_capacity(((lambdas.len() - 1) * samples_per_interval).saturating_add(1));
+    for start in (0..(lambdas.len() - 2)).step_by(2) {
+        let x0 = lambdas[start];
+        let x1 = lambdas[start + 1];
+        let x2 = lambdas[start + 2];
+        let y0 = values[start];
+        let y1 = values[start + 1];
+        let y2 = values[start + 2];
+        let steps = samples_per_interval * 2;
+        for step in 0..=steps {
+            if start > 0 && step == 0 {
+                continue;
+            }
+            let t = step as f64 / (steps as f64);
+            let x = x0 + (x2 - x0) * t;
+            let y = lagrange_quadratic(x0, y0, x1, y1, x2, y2, x);
+            points.push((x, y));
+        }
+    }
+    Ok(points)
+}
+
 fn simpson_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {
     if lambdas.len() != sem2.len() {
         return Err(CoreError::InvalidShape {
@@ -331,6 +444,55 @@ fn integrate_cubic_spline(lambdas: &[f64], values: &[f64]) -> Result<f64> {
             - (h * h * h) * (second_derivatives[i] + second_derivatives[i + 1]) / 24.0;
     }
     Ok(total)
+}
+
+fn sample_cubic_spline_curve(
+    lambdas: &[f64],
+    values: &[f64],
+    second_derivatives: &[f64],
+    samples_per_interval: usize,
+) -> Result<Vec<(f64, f64)>> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if lambdas.len() != second_derivatives.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: second_derivatives.len(),
+        });
+    }
+    let mut points = Vec::with_capacity((lambdas.len() - 1) * samples_per_interval + 1);
+    for interval_index in 0..(lambdas.len() - 1) {
+        let x0 = lambdas[interval_index];
+        let x1 = lambdas[interval_index + 1];
+        let y0 = values[interval_index];
+        let y1 = values[interval_index + 1];
+        let m0 = second_derivatives[interval_index];
+        let m1 = second_derivatives[interval_index + 1];
+        let h = x1 - x0;
+        if h <= 0.0 {
+            return Err(CoreError::Unsupported(
+                "Cubic spline integration requires strictly increasing lambda spacing".to_string(),
+            ));
+        }
+        for step in 0..=samples_per_interval {
+            if interval_index > 0 && step == 0 {
+                continue;
+            }
+            let t = step as f64 / (samples_per_interval as f64);
+            let x = x0 + h * t;
+            let a = (x1 - x) / h;
+            let b = (x - x0) / h;
+            let y = a * y0
+                + b * y1
+                + (((a * a * a) - a) * m0 + ((b * b * b) - b) * m1) * (h * h) / 6.0;
+            points.push((x, y));
+        }
+    }
+    Ok(points)
 }
 
 fn integrate_pchip(lambdas: &[f64], values: &[f64]) -> Result<f64> {
@@ -403,6 +565,63 @@ fn integrate_cubic_hermite(
             + (h * h) * (derivatives[i] - derivatives[i + 1]) / 12.0;
     }
     Ok(total)
+}
+
+fn sample_cubic_hermite_curve(
+    lambdas: &[f64],
+    values: &[f64],
+    derivatives: &[f64],
+    samples_per_interval: usize,
+    method_name: &str,
+) -> Result<Vec<(f64, f64)>> {
+    if lambdas.len() != values.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: values.len(),
+        });
+    }
+    if lambdas.len() != derivatives.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lambdas.len(),
+            found: derivatives.len(),
+        });
+    }
+    let mut points = Vec::with_capacity((lambdas.len() - 1) * samples_per_interval + 1);
+    for interval_index in 0..(lambdas.len() - 1) {
+        let x0 = lambdas[interval_index];
+        let x1 = lambdas[interval_index + 1];
+        let y0 = values[interval_index];
+        let y1 = values[interval_index + 1];
+        let d0 = derivatives[interval_index];
+        let d1 = derivatives[interval_index + 1];
+        let h = x1 - x0;
+        if h <= 0.0 {
+            return Err(CoreError::Unsupported(format!(
+                "{method_name} integration requires strictly increasing lambda spacing"
+            )));
+        }
+        for step in 0..=samples_per_interval {
+            if interval_index > 0 && step == 0 {
+                continue;
+            }
+            let t = step as f64 / (samples_per_interval as f64);
+            let x = x0 + h * t;
+            let h00 = 2.0 * t * t * t - 3.0 * t * t + 1.0;
+            let h10 = t * t * t - 2.0 * t * t + t;
+            let h01 = -2.0 * t * t * t + 3.0 * t * t;
+            let h11 = t * t * t - t * t;
+            let y = h00 * y0 + h10 * h * d0 + h01 * y1 + h11 * h * d1;
+            points.push((x, y));
+        }
+    }
+    Ok(points)
+}
+
+fn lagrange_quadratic(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64, x: f64) -> f64 {
+    let l0 = ((x - x1) * (x - x2)) / ((x0 - x1) * (x0 - x2));
+    let l1 = ((x - x0) * (x - x2)) / ((x1 - x0) * (x1 - x2));
+    let l2 = ((x - x0) * (x - x1)) / ((x2 - x0) * (x2 - x1));
+    y0 * l0 + y1 * l1 + y2 * l2
 }
 
 fn gaussian_quadrature_uncertainty(lambdas: &[f64], sem2: &[f64]) -> Result<f64> {

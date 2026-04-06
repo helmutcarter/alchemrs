@@ -7,8 +7,8 @@ use alchemrs::parse::amber::{extract_dhdl, extract_u_nk, extract_u_nk_with_poten
 use alchemrs::{
     advise_lambda_schedule, advise_ti_schedule, decorrelate_dhdl, decorrelate_u_nk,
     decorrelate_u_nk_with_observable, detect_equilibration_dhdl, detect_equilibration_u_nk,
-    AdvisorEstimator, DecorrelationOptions, ScheduleAdvisorOptions, TiScheduleAdvisorOptions,
-    UNkSeriesMethod,
+    recommend_ti_method, AdvisorEstimator, DecorrelationOptions, ScheduleAdvisorOptions,
+    TiScheduleAdvisorOptions, UNkSeriesMethod,
 };
 use alchemrs::{
     overlap_eigenvalues, overlap_matrix, BarEstimator, BarMethod, BarOptions, DhdlSeries,
@@ -758,6 +758,11 @@ fn ti_cli_outputs_expected_json_when_decorrelating() {
     assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
     assert!(payload["provenance"]["u_nk_observable"].is_null());
     assert_eq!(
+        payload["provenance"]["ti_method"].as_str(),
+        Some("trapezoidal")
+    );
+    assert!(payload["provenance"]["ti_method_reason"].is_null());
+    assert_eq!(
         payload["provenance"]["windows"].as_u64(),
         Some(expected_counts.windows as u64)
     );
@@ -809,6 +814,11 @@ fn ti_cli_outputs_expected_json_when_auto_equilibrating() {
     assert_eq!(payload["provenance"]["conservative"].as_bool(), Some(false));
     assert!(payload["provenance"]["u_nk_observable"].is_null());
     assert_eq!(
+        payload["provenance"]["ti_method"].as_str(),
+        Some("trapezoidal")
+    );
+    assert!(payload["provenance"]["ti_method_reason"].is_null());
+    assert_eq!(
         payload["provenance"]["samples_after_burnin"].as_u64(),
         Some(expected_counts.samples_after_burnin as u64)
     );
@@ -855,6 +865,42 @@ fn ti_cli_rejects_nonquadrature_schedule_for_gaussian_quadrature() {
     assert!(
         stderr.contains("use trapezoidal TI for arbitrary schedules"),
         "unexpected stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn ti_cli_auto_reports_recommended_method_in_json() {
+    let inputs = acetamide_inputs();
+    let output = run_cli(&["ti", "--method", "auto", "--output-format", "json"], &inputs);
+    let payload = parse_json_output(&output);
+
+    let series = inputs
+        .iter()
+        .map(|path| extract_dhdl(path, TEMPERATURE_K).expect("extract dhdl"))
+        .collect::<Vec<_>>();
+    let recommendation = recommend_ti_method(&series, None).expect("TI recommendation");
+    let estimator = TiEstimator::new(TiOptions {
+        method: recommendation.recommended_method(),
+        parallel: false,
+    });
+    let fit = estimator.fit(&series).expect("fit TI");
+    let result = fit.result().expect("TI result");
+
+    assert_eq!(
+        payload["provenance"]["ti_method"].as_str(),
+        Some(recommendation.recommended_method().as_str())
+    );
+    assert_eq!(
+        payload["provenance"]["ti_method_reason"].as_str(),
+        Some(recommendation.reason())
+    );
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        result.delta_f(),
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        result.uncertainty().expect("uncertainty"),
     );
 }
 

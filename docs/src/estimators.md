@@ -22,6 +22,10 @@ Types:
 - `TiFit`
 - `TiOptions`
 - `IntegrationMethod::{Trapezoidal, Simpson, CubicSpline, Pchip, Akima, GaussianQuadrature}`
+- `recommend_ti_method(...)`
+- `TiMethodRecommendation`
+- `TiMethodAssessment`
+- `TiMethodRecommendationOptions`
 
 Input:
 
@@ -54,6 +58,13 @@ Gaussian quadrature behavior:
 - only supports Gauss-Legendre schedules with `1..=16` sampled windows
 - validates that the sampled lambdas match the supported quadrature nodes
 - reports the free energy over the full `[0, 1]` interval, so `result().from_state()` is `lambda=0` and `result().to_state()` is `lambda=1` even though the sampled windows are interior quadrature nodes
+
+Method recommendation:
+
+- `recommend_ti_method(...)` lives in `alchemrs::analysis`
+- evaluates all currently supported TI methods on the same preprocessed `DhdlSeries`
+- combines method eligibility, TI schedule diagnostics, monotonicity, and cross-method spread
+- returns the recommended `IntegrationMethod` plus per-method assessments and a human-readable rationale
 
 ## BAR
 

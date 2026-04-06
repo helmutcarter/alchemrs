@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs::{TiEstimator, TiOptions};
+use alchemrs::{recommend_ti_method, IntegrationMethod, TiEstimator, TiOptions};
 
 use crate::cli::input::{load_dhdl_series, AnalysisInputOptions};
 use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
@@ -18,8 +18,23 @@ pub fn run(
 ) -> CliResult<()> {
     let loaded = load_dhdl_series(inputs, input_options)?;
     let series = loaded.series;
+    let (resolved_method, method_reason) = match method {
+        TiMethod::Auto => {
+            let recommendation = recommend_ti_method(&series, None)?;
+            (
+                recommendation.recommended_method(),
+                Some(recommendation.reason().to_string()),
+            )
+        }
+        explicit => (
+            explicit
+                .explicit_method()
+                .expect("non-auto TI method must resolve"),
+            None,
+        ),
+    };
     let estimator = TiEstimator::new(TiOptions {
-        method: method.into(),
+        method: resolved_method,
         parallel,
     });
     let fit = estimator.fit(&series)?;
@@ -43,6 +58,8 @@ pub fn run(
                 conservative: input_options.effective_conservative(),
                 nskip: input_options.nskip,
                 u_nk_observable: input_options.u_nk_observable_name(),
+                ti_method: Some(render_ti_method(fit.method())),
+                ti_method_reason: method_reason,
                 lambda_components: None,
             },
             sample_counts: loaded.sample_counts,
@@ -51,4 +68,8 @@ pub fn run(
         output_path.as_deref(),
     )?;
     Ok(())
+}
+
+fn render_ti_method(method: IntegrationMethod) -> &'static str {
+    method.as_str()
 }

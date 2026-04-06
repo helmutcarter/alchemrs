@@ -88,6 +88,8 @@ For GROMACS files with multidimensional lambda schedules, the CLI currently reje
 
 The CLI accepts `--u-nk-observable` on `ti` only to provide a more helpful error message. If supplied, the command fails with a domain-specific explanation instead of a generic unknown-flag parse error.
 
+`ti --method auto` runs the TI method recommender on the preprocessed `dH/dlambda` windows, chooses a supported integration method, and records both `ti_method` and `ti_method_reason` in output provenance.
+
 ## Command examples
 
 ### TI
@@ -95,7 +97,7 @@ The CLI accepts `--u-nk-observable` on `ti` only to provide a more helpful error
 ```bash
 cargo run --release -- ti \
   --temperature 300 \
-  --method trapezoidal \
+  --method auto \
   --decorrelate \
   path/to/*/prod.out
 ```
@@ -159,7 +161,7 @@ cargo run --release -- advise-schedule \
 
 `u_nk` advisor output includes neighbor-relative overlap/uncertainty context, dominant lambda components for each jump, a priority score for ranking suggestions, and proposal strategies such as focused component splits for multidimensional schedules. TI mode emits per-window `mean_dhdl`/SEM/block diagnostics plus per-interval slope, curvature, trapezoid contribution, interval uncertainty, and ranked schedule suggestions.
 
-When `--report` is provided, the command also writes a standalone HTML report. The `u_nk` report includes a top priority queue, ranked suggestions, edge summaries, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown for multidimensional schedules, including normalized delta bars per component. The TI report uses the same overall structure but renders windows and intervals instead of overlap edges.
+When `--report` is provided, the command also writes a standalone HTML report. The `u_nk` report includes a top priority queue, ranked suggestions, edge summaries, inline SVG lambda-axis visuals, an in-report legend, and a per-component breakdown for multidimensional schedules, including normalized delta bars per component. The TI report uses the same overall structure but renders windows and intervals instead of overlap edges, and now includes an integration-method shape gallery for the currently applicable TI methods.
 
 See [Schedule Advisor](schedule-advisor.md) for the output schema and current heuristics.
 

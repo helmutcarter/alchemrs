@@ -36,6 +36,8 @@ pub struct OutputProvenance {
     pub conservative: bool,
     pub nskip: usize,
     pub u_nk_observable: Option<&'static str>,
+    pub ti_method: Option<&'static str>,
+    pub ti_method_reason: Option<String>,
     pub lambda_components: Option<Vec<String>>,
 }
 
@@ -108,6 +110,12 @@ fn render_text(result: &RenderedScalarResult<'_>) -> String {
     if let Some(u_nk_observable) = result.provenance.u_nk_observable {
         output.push_str(&format!("u_nk_observable: {u_nk_observable}\n"));
     }
+    if let Some(ti_method) = result.provenance.ti_method {
+        output.push_str(&format!("ti_method: {ti_method}\n"));
+    }
+    if let Some(ti_method_reason) = result.provenance.ti_method_reason.as_ref() {
+        output.push_str(&format!("ti_method_reason: {ti_method_reason}\n"));
+    }
     if let Some(lambda_components) = result.provenance.lambda_components.as_ref() {
         output.push_str(&format!(
             "lambda_components: {}\n",
@@ -155,6 +163,19 @@ fn render_json(result: &RenderedScalarResult<'_>) -> Result<String, String> {
     provenance.insert(
         "u_nk_observable".to_string(),
         option_str_value(result.provenance.u_nk_observable),
+    );
+    provenance.insert(
+        "ti_method".to_string(),
+        option_str_value(result.provenance.ti_method),
+    );
+    provenance.insert(
+        "ti_method_reason".to_string(),
+        result
+            .provenance
+            .ti_method_reason
+            .as_ref()
+            .map(|value| json!(value))
+            .unwrap_or(Value::Null),
     );
     provenance.insert(
         "lambda_components".to_string(),
@@ -234,6 +255,8 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> Result<String, String> {
             "conservative",
             "nskip",
             "u_nk_observable",
+            "ti_method",
+            "ti_method_reason",
             "lambda_components",
             "windows",
             "samples_in",
@@ -265,6 +288,12 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> Result<String, String> {
             .u_nk_observable
             .unwrap_or_default()
             .to_string(),
+        result
+            .provenance
+            .ti_method
+            .unwrap_or_default()
+            .to_string(),
+        result.provenance.ti_method_reason.clone().unwrap_or_default(),
         result
             .provenance
             .lambda_components
@@ -380,6 +409,8 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("de"),
+                    ti_method: None,
+                    ti_method_reason: None,
                     lambda_components: None,
                 },
                 sample_counts: AnalysisSampleCounts {
@@ -412,6 +443,8 @@ mod tests {
         assert_eq!(value["provenance"]["conservative"].as_bool(), Some(true));
         assert_eq!(value["provenance"]["nskip"].as_u64(), Some(1));
         assert_eq!(value["provenance"]["u_nk_observable"].as_str(), Some("de"));
+        assert_eq!(value["provenance"]["ti_method"], Value::Null);
+        assert_eq!(value["provenance"]["ti_method_reason"], Value::Null);
         assert_eq!(value["provenance"]["lambda_components"], Value::Null);
         assert_eq!(value["provenance"]["windows"].as_u64(), Some(15));
         assert_eq!(value["provenance"]["samples_in"].as_u64(), Some(300));
@@ -442,6 +475,8 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: None,
+                    ti_method: Some("trapezoidal"),
+                    ti_method_reason: None,
                     lambda_components: None,
                 },
                 sample_counts: AnalysisSampleCounts {
@@ -457,7 +492,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1,,,2,40,40,20\n"
+            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,ti_method,ti_method_reason,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,0,1,kT,,,ti,300,false,0,false,false,true,1,,trapezoidal,,,2,40,40,20\n"
         );
     }
 
@@ -484,6 +519,8 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("de"),
+                    ti_method: None,
+                    ti_method_reason: None,
                     lambda_components: None,
                 },
                 sample_counts: AnalysisSampleCounts {
@@ -523,6 +560,8 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("all"),
+                    ti_method: None,
+                    ti_method_reason: None,
                     lambda_components: Some(vec![
                         "mass-lambda".to_string(),
                         "coul-lambda".to_string(),
@@ -544,6 +583,8 @@ mod tests {
         assert_eq!(value["from_lambda"], serde_json::json!([0.0, 0.0, 0.8]));
         assert_eq!(value["to_lambda"], serde_json::json!([0.0, 0.0, 0.9]));
         assert_eq!(value["provenance"]["u_nk_observable"].as_str(), Some("all"));
+        assert_eq!(value["provenance"]["ti_method"], Value::Null);
+        assert_eq!(value["provenance"]["ti_method_reason"], Value::Null);
         assert_eq!(
             value["provenance"]["lambda_components"],
             serde_json::json!(["mass-lambda", "coul-lambda", "vdw-lambda"])
@@ -570,6 +611,8 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("all"),
+                    ti_method: None,
+                    ti_method_reason: None,
                     lambda_components: Some(vec![
                         "mass-lambda".to_string(),
                         "coul-lambda".to_string(),
@@ -613,6 +656,8 @@ mod tests {
                     conservative: true,
                     nskip: 1,
                     u_nk_observable: Some("all"),
+                    ti_method: None,
+                    ti_method_reason: None,
                     lambda_components: Some(vec![
                         "mass-lambda".to_string(),
                         "coul-lambda".to_string(),
@@ -632,7 +677,7 @@ mod tests {
 
         assert_eq!(
             output,
-            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,[0;0;0.8],[0;0;0.9],kT,,,mbar,300,false,0,false,false,true,1,all,[mass-lambda;coul-lambda;vdw-lambda],3,30,30,30\n"
+            "delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalues,estimator,temperature_k,decorrelate,remove_burnin,auto_equilibrate,fast,conservative,nskip,u_nk_observable,ti_method,ti_method_reason,lambda_components,windows,samples_in,samples_after_burnin,samples_kept\n1.5,,[0;0;0.8],[0;0;0.9],kT,,,mbar,300,false,0,false,false,true,1,all,,,[mass-lambda;coul-lambda;vdw-lambda],3,30,30,30\n"
         );
     }
 }
