@@ -561,11 +561,11 @@ mod tests {
     fn exp_parallel_matches_serial() {
         let windows = make_two_state_windows();
         let serial = ExpEstimator::new(ExpOptions { parallel: false })
-        .estimate_with_uncertainty(&windows)
-        .unwrap();
+            .estimate_with_uncertainty(&windows)
+            .unwrap();
         let parallel = ExpEstimator::new(ExpOptions { parallel: true })
-        .estimate_with_uncertainty(&windows)
-        .unwrap();
+            .estimate_with_uncertainty(&windows)
+            .unwrap();
 
         assert_eq!(serial.values(), parallel.values());
         assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
