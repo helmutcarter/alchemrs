@@ -53,7 +53,7 @@ This book documents the current implementation, not a frozen public-stability pr
 
 This repository does not currently provide:
 
-- plotting in the Rust library
+- a large plotting/reporting surface beyond the current optional SVG helpers
 - production-grade parser coverage for every major MD engine
 - Python bindings in the current package
 - versioned public API guarantees

@@ -57,11 +57,15 @@ Commands:
 - `dexp`
 
 ### Build
+
 It can either be invoked through cargo:
+
 ```bash
 cargo run --release [arguments]
 ```
+
 or compiled using cargo and called from the binary:
+
 ```bash
 cargo build --release
 ./target/release/alchemrs [arguments]
@@ -233,13 +237,17 @@ alchemrs dexp \
 
 EXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
 
-## Performance 
-Initial results demonstrate 6x performance improvement over `alchemlyb`. 
-TODO: Table of performance comparisons, include vs. `alchemlyb`, `pymbar`, `gmx bar` 
+## Performance
+
+Initial internal benchmarks on the bundled fixtures show substantial speedups over
+`alchemlyb` for several workflows. Ongoing profiling notes and experiment results live in
+[`optimizations.md`](optimizations.md).
 
 ## License Information
-This project is licensed under either of
-  - MIT license ([LICENSE-MIT](LICENSE-MIT))
-  - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
 
-Copyright © 2026 Helmut Carter
+This project is licensed under either of
+
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+
+Copyright (c) 2026 Helmut Carter

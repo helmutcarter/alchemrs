@@ -50,7 +50,7 @@ Overlap heatmap:
 
 Adjacent-state `ΔF` plot:
 
-![Adjacent-state Delta F example](assets/plots/deltaf-state.svg)
+![Adjacent-state ΔF example](assets/plots/deltaf-state.svg)
 
 TI `dH/dlambda` plot:
 
@@ -128,7 +128,7 @@ let delta_f = fit.result_with_uncertainty()?;
 let svg = render_delta_f_state_svg(
     &delta_f,
     Some(DeltaFStatePlotOptions {
-        title: "Adjacent Delta F".to_string(),
+        title: "Adjacent ΔF".to_string(),
         ..DeltaFStatePlotOptions::default()
     }),
 )?;
@@ -162,11 +162,17 @@ assert!(svg.contains("<svg"));
 Block-average plots can be rendered from library block analysis results:
 
 ```rust
-use alchemrs::{BlockAveragePlotOptions, MbarEstimator, render_block_average_svg};
+use alchemrs::{
+    BlockAveragePlotOptions, MbarEstimator, MbarOptions, extract_u_nk,
+    render_block_average_svg,
+};
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
-# let windows = Vec::new();
-let blocks = MbarEstimator::default().block_average(&windows, 4)?;
+let windows = vec![
+    extract_u_nk("lambda0.out", 300.0)?,
+    extract_u_nk("lambda1.out", 300.0)?,
+];
+let blocks = MbarEstimator::new(MbarOptions::default()).block_average(&windows, 4)?;
 let svg = render_block_average_svg(
     &blocks,
     Some(BlockAveragePlotOptions {

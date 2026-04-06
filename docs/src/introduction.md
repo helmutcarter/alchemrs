@@ -4,7 +4,7 @@
 
 The project is organized as one package containing a library crate and a single CLI binary. Inside the library, the code is split into focused modules for:
 
-- parsing AMBER output into typed Rust data structures
+- parsing supported AMBER and GROMACS outputs into typed Rust data structures
 - preprocessing time series by trimming and decorrelation
 - estimating free energies with TI, BAR, MBAR, EXP, and DEXP
 - computing overlap diagnostics
@@ -14,7 +14,7 @@ The project is intentionally Rust-native. The `alchemrs` library crate is the ca
 
 At the moment, the practical workflow is:
 
-1. Parse AMBER outputs into `DhdlSeries` or `UNkMatrix`.
+1. Parse supported engine outputs into `DhdlSeries` or `UNkMatrix`.
 2. Trim and decorrelate those data if needed.
 3. Apply an estimator.
 4. Inspect uncertainties and overlap diagnostics.

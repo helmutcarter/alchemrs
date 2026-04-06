@@ -13,7 +13,7 @@ The `alchemrs` crate is organized into modules rather than separate library crat
 
 - `data`: domain types and scientific data-model structures
 - `error`: shared crate-level error handling
-- `parse`: engine-specific parsers; today this means AMBER parsing
+- `parse`: engine-specific parsers for AMBER outputs and GROMACS `dhdl.xvg` files
 - `prep`: time-series preparation such as duplicate cleanup, sorting, equilibration detection, and decorrelation
 - `estimators`: TI, BAR, MBAR, EXP, and DEXP implementations
 - `analysis`: overlap diagnostics and plot-ready convergence series

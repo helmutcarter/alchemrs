@@ -53,7 +53,7 @@ For multidimensional schedules, the endpoint columns are emitted as quoted brack
 
 ## Provenance
 
-In this project, “provenance” means the analysis settings and sample-count metadata that explain how a reported result was produced.
+In this project, "provenance" means the analysis settings and sample-count metadata that explain how a reported result was produced.
 
 Current provenance fields include:
 

@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let delta_f_svg = render_delta_f_state_svg(
         &delta_f_matrix()?,
         Some(DeltaFStatePlotOptions {
-            title: "Adjacent-State Delta F Example".to_string(),
+            title: "Adjacent-State ΔF Example".to_string(),
             ..DeltaFStatePlotOptions::default()
         }),
     )?;
