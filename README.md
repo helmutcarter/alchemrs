@@ -18,18 +18,27 @@ Commands:
 - `dexp`
 
 ### Build
+Pre-built binaries for versioned releases can be found at https://github.com/helmutcarter/alchemrs/releases 
+crates.io support will come later in development.
 
-It can either be invoked through cargo:
+If you want the latest update, or to compile it for your machine:
 
+First, clone this repo
 ```bash
-cargo run --release [arguments]
+git clone git@github.com:helmutcarter/alchemrs.git
+cd alchemrs
 ```
 
-or compiled using cargo and called from the binary:
+then you can either automatically compile and run the binary through `cargo`:
+```bash
+cargo run --release -- [command] [arguments]
+```
+
+or compile using cargo and then call the binary:
 
 ```bash
 cargo build --release
-./target/release/alchemrs [arguments]
+./target/release/alchemrs [command] [arguments]
 ```
 
 ### Common flags
@@ -45,21 +54,6 @@ cargo build --release
 - `--output <PATH>`: write the formatted result to a file instead of stdout.
 - `--overlap-summary`: include overlap scalar and overlap eigenvalues for BAR/EXP/DEXP/MBAR runs.
 
-### Structured output
-
-JSON output is useful for shell pipelines and downstream tools:
-
-```bash
-alchemrs mbar \
-  --temperature 300 \
-  --decorrelate \
-  --overlap-summary \
-  --output-format json \
-  --output results.json \
-  /path/to/*/prod.out
-```
-
-For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses an engine-provided potential-energy observable.
 
 ### Schedule advisor
 
@@ -104,7 +98,7 @@ Use the Rust API when you need embedding, custom orchestration, or tighter contr
 Optional plotting helpers can be enabled with:
 
 ```bash
-cargo build --features plotting
+cargo build --features plotting --release
 ```
 
 ## CLI Output Example
@@ -206,8 +200,8 @@ alchemrs ti \
   /path/to/*/prod.out
 ```
 
-`ti` also supports `--method simpson`, `--method cubic-spline`, `--method pchip`, `--method akima`, and `--method gaussian-quadrature`.
-Gaussian quadrature is only valid when the sampled lambda windows are the supported Gauss-Legendre nodes on `[0, 1]` for a `1..=16` window schedule. For arbitrary lambda schedules, use trapezoidal TI.
+`ti` supports `--method <trapezoidal|simpson|cubic-spline|pchip|akima|gaussian-quadrature>`.
+For more on picking an integration method, see the docs.
 
 ### BAR
 
