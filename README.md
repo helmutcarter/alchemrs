@@ -1,51 +1,12 @@
 # alchemrs
 
-`alchemrs` is a Rust-first toolkit for alchemical free energy analysis. The `alchemrs` package contains both the main library crate and the `alchemrs` command-line binary. The library provides modules for parsing AMBER and GROMACS outputs, preprocessing time series (equilibration trimming and decorrelation), running common estimators (TI, BAR, MBAR, EXP/DEXP), and computing diagnostics like overlap analysis. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to ensure scientific correctness.
+`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/EXP/DEXP estimators, and computing diagnostics such as overlap analysis and schedule advice. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
 
 Native SVG plotting is available as an optional `plotting` feature.
 
-## Library API
-
-The top-level `alchemrs` crate re-exports the common parse, prep, estimator, and analysis entry points:
-
-```rust
-use alchemrs::{
-    decorrelate_u_nk_with_observable, extract_u_nk_with_potential, DecorrelationOptions,
-    MbarEstimator, MbarOptions,
-};
-
-let (u_nk, epot) = extract_u_nk_with_potential("prod.out", 300.0)?;
-let u_nk = decorrelate_u_nk_with_observable(&u_nk, &epot, &DecorrelationOptions::default())?;
-let fit = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
-let result = fit.result_with_uncertainty()?;
-if let Some(labels) = fit.lambda_labels() {
-    println!("lambda components = {:?}", labels);
-}
-```
-
-The repo also includes runnable top-level examples:
-
-- `cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out`
-- `cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out`
-
-Optional plotting helpers can be enabled with:
-
-```bash
-cargo build --features plotting
-```
-
-## Documentation
-
-Documentation is online at https://helmutcarter.github.io/alchemrs/. The source files are in [`docs/`](docs/) and can be viewed locally:
-
-```bash
-cargo install mdbook
-mdbook serve docs
-```
-
 ## CLI
 
-The `alchemrs` binary provides a command-line workflow.
+The `alchemrs` binary is the primary entry point.
 
 Commands:
 
@@ -100,6 +61,54 @@ alchemrs mbar \
 
 For `u_nk`-based estimators (`bar`, `exp`, `dexp`, `mbar`), the observable selected by `--u-nk-observable` is used for both `--auto-equilibrate` and `--decorrelate`, and any retained indices are then applied back to the parsed `u_nk` samples. The default is `de`; `epot` uses an engine-provided potential-energy observable.
 
+### Schedule advisor
+
+The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics.
+
+```bash
+alchemrs advise-schedule \
+  --temperature 300 \
+  --decorrelate \
+  --u-nk-observable de \
+  --report schedule-report.html \
+  --output-format json \
+  /path/to/*/prod.out
+```
+
+Full CLI usage is documented in [`docs/src/cli.md`](docs/src/cli.md).
+
+## Rust API
+
+The top-level `alchemrs` crate re-exports the common parse, prep, estimator, and analysis entry points used by the CLI and available for direct Rust integration:
+
+```rust
+use alchemrs::{
+    decorrelate_u_nk_with_observable, extract_u_nk_with_potential, DecorrelationOptions,
+    MbarEstimator, MbarOptions,
+};
+
+let (u_nk, epot) = extract_u_nk_with_potential("prod.out", 300.0)?;
+let u_nk = decorrelate_u_nk_with_observable(&u_nk, &epot, &DecorrelationOptions::default())?;
+let fit = MbarEstimator::new(MbarOptions::default()).fit(&[u_nk])?;
+let result = fit.result_with_uncertainty()?;
+if let Some(labels) = fit.lambda_labels() {
+    println!("lambda components = {:?}", labels);
+}
+```
+
+Use the Rust API when you need embedding, custom orchestration, or tighter control than the CLI exposes. The repo also includes runnable top-level examples:
+
+- `cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out`
+- `cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out`
+
+Optional plotting helpers can be enabled with:
+
+```bash
+cargo build --features plotting
+```
+
+## CLI Output Example
+
 Example JSON output:
 
 ```json
@@ -134,7 +143,7 @@ Example JSON output:
 
 For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `DeltaFMatrix`, and `OverlapMatrix` all preserve parser-derived lambda component names when available through `.lambda_labels()`.
 
-### Schedule advisor
+### Advisor details
 
 The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics.
 
@@ -236,6 +245,15 @@ alchemrs dexp \
 ```
 
 EXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
+
+## Documentation
+
+Documentation is online at https://helmutcarter.github.io/alchemrs/. The source files are in [`docs/`](docs/) and can be viewed locally:
+
+```bash
+cargo install mdbook
+mdbook serve docs
+```
 
 ## Performance
 

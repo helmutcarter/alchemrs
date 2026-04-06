@@ -2,6 +2,7 @@
 
 - [Introduction](introduction.md)
 - [Getting Started](getting-started.md)
+- [CLI Guide](cli.md)
 - [Repository Layout](repository-layout.md)
 - [Data Model](data-model.md)
 - [Parsing AMBER Outputs](parsing.md)
@@ -10,7 +11,6 @@
 - [Overlap Diagnostics](overlap.md)
 - [Schedule Advisor](schedule-advisor.md)
 - [Plotting](plotting.md)
-- [CLI Guide](cli.md)
 - [Outputs and Provenance](outputs.md)
 - [Library Guide](library.md)
 - [Compatibility and Limitations](compatibility.md)

@@ -1,6 +1,6 @@
 # CLI Guide
 
-The CLI is the `alchemrs` binary in the same package as the `alchemrs` library crate.
+The CLI is the primary entry point for `alchemrs`. It ships as the `alchemrs` binary in the same package as the Rust library crate.
 
 Commands:
 

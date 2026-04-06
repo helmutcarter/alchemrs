@@ -1,6 +1,8 @@
-//! `alchemrs` is a Rust-first toolkit for alchemical free energy analysis.
+//! `alchemrs` is a CLI-first tool for alchemical free energy analysis with a
+//! robust Rust API underneath.
 //!
-//! The crate provides:
+//! The library crate provides the scientific engine behind the `alchemrs`
+//! command-line interface:
 //!
 //! - AMBER and GROMACS parsers for `dH/dlambda` and `u_nk` data
 //! - preprocessing utilities for burn-in removal, equilibration detection, and decorrelation
@@ -8,9 +10,10 @@
 //! - overlap diagnostics built on top of MBAR weights
 //! - optional SVG plotting helpers behind the `plotting` feature
 //!
-//! Most users can work directly with the top-level re-exports, while more explicit module
-//! namespaces remain available through [`parse`], [`prep`], [`estimators`], [`analysis`],
-//! [`data`], and [`error`].
+//! Most users should start with the CLI. For embedding, scripting, custom
+//! workflows, and future bindings, the Rust API remains available through the
+//! top-level re-exports and the explicit [`parse`], [`prep`], [`estimators`],
+//! [`analysis`], [`data`], and [`error`] modules.
 //!
 //! # Example
 //!

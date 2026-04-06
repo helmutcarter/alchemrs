@@ -1,5 +1,7 @@
 # Getting Started
 
+The fastest way to use `alchemrs` is through the CLI. The Rust API is documented separately for embedding and custom workflows.
+
 ## Prerequisites
 
 - Rust 1.85 or newer
@@ -13,19 +15,33 @@ The repository is a normal Cargo package and can be built and tested with standa
 cargo build
 ```
 
-## Run tests
-
-```bash
-cargo test
-```
-
 ## Build the CLI binary
 
 ```bash
 cargo build --release
 ```
 
-## Run the top-level examples
+Then run:
+
+```bash
+./target/release/alchemrs --help
+```
+
+## Try a CLI workflow
+
+```bash
+./target/release/alchemrs ti \
+  --temperature 300 \
+  ./fixtures/amber/acetamide_tiny/*/acetamide.prod.out
+```
+
+## Run tests
+
+```bash
+cargo test
+```
+
+## Run the Rust examples
 
 ```bash
 cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out

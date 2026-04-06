@@ -2,6 +2,12 @@
 
 The top-level `alchemrs` crate re-exports the main types and functions needed for direct Rust use.
 
+Use the library when the CLI is not enough:
+
+- embedding `alchemrs` inside another Rust application
+- building custom preprocessing or estimation pipelines
+- preparing for later Python or other bindings on top of the same core implementation
+
 ## Common imports
 
 ```rust

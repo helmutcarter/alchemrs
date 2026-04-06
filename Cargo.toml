@@ -3,13 +3,13 @@ name = "alchemrs"
 version = "0.3.0"
 edition = "2021"
 rust-version = "1.85"
-description = "Rust toolkit for alchemical free energy analysis of AMBER outputs"
+description = "CLI-first alchemical free energy analysis tool with a Rust API"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/helmutcarter/alchemrs"
 homepage = "https://github.com/helmutcarter/alchemrs"
 documentation = "https://docs.rs/alchemrs"
-keywords = ["alchemy", "free-energy", "mbar", "bar", "amber"]
+keywords = ["alchemy", "free-energy", "cli", "mbar", "gromacs"]
 categories = ["science", "command-line-utilities"]
 
 [features]

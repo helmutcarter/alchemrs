@@ -4,7 +4,7 @@ authors = ["alchemrs contributors"]
 language = "en"
 multilingual = false
 src = "src"
-description = "Rust-first alchemical free energy analysis toolkit"
+description = "CLI-first alchemical free energy analysis tool with a Rust API"
 
 [output.html]
 default-theme = "light"
