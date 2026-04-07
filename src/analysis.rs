@@ -1012,33 +1012,10 @@ pub fn advise_lambda_schedule(
 
     let options = validate_schedule_advisor_options(options.unwrap_or_default())?;
     let ordered = sort_windows_by_sampled_state(windows)?;
-    let trimmed = trim_windows_to_sampled_states(&ordered)?;
-    let overlap = overlap_matrix(&trimmed, Some(MbarOptions::default()))?;
-    let n_states = overlap.n_states();
-    let labels = overlap.lambda_labels().map(|values| values.to_vec());
-
-    let mut metrics = Vec::with_capacity(n_states - 1);
-    for edge_index in 0..(n_states - 1) {
-        let pair_windows =
-            select_trimmed_windows_range(&trimmed[edge_index..edge_index + 2], edge_index, 2)?;
-        let pair_result = fit_pair(&pair_windows, options.estimator)?;
-        let block_stats = pair_block_stats(&pair_windows, options)?;
-        let overlap_forward = overlap.values()[edge_index * n_states + edge_index + 1];
-        let overlap_reverse = overlap.values()[(edge_index + 1) * n_states + edge_index];
-        metrics.push(EdgeMetrics {
-            edge_index,
-            from_state: pair_result.states()[0].clone(),
-            to_state: pair_result.states()[1].clone(),
-            lambda_labels: labels.clone(),
-            overlap_forward,
-            overlap_reverse,
-            delta_f: pair_result.values()[1],
-            uncertainty: pair_result.uncertainties().map(|values| values[1]),
-            block_mean: block_stats.map(|(mean, _, _)| mean),
-            block_stddev: block_stats.map(|(_, stddev, _)| stddev),
-            block_cv: block_stats.map(|(_, _, cv)| cv),
-        });
-    }
+    let metrics = match options.estimator {
+        AdvisorEstimator::Mbar => schedule_edge_metrics_mbar(&ordered, options)?,
+        AdvisorEstimator::Bar => schedule_edge_metrics_bar(&ordered, options)?,
+    };
 
     let overlap_mins = metrics
         .iter()
@@ -1106,6 +1083,80 @@ pub fn advise_lambda_schedule(
             .unwrap_or(Ordering::Equal)
     });
     Ok(ScheduleAdvice::new(edges, suggestions))
+}
+
+fn schedule_edge_metrics_mbar(
+    windows: &[UNkMatrix],
+    options: ScheduleAdvisorOptions,
+) -> Result<Vec<EdgeMetrics>> {
+    let trimmed = trim_windows_to_sampled_states(windows)?;
+    let overlap = overlap_matrix(&trimmed, Some(MbarOptions::default()))?;
+    let n_states = overlap.n_states();
+    let labels = overlap.lambda_labels().map(|values| values.to_vec());
+
+    let mut metrics = Vec::with_capacity(n_states - 1);
+    for edge_index in 0..(n_states - 1) {
+        let pair_windows =
+            select_trimmed_windows_range(&trimmed[edge_index..edge_index + 2], edge_index, 2)?;
+        let pair_result = fit_pair(&pair_windows, options.estimator)?;
+        let block_stats = pair_block_stats(&pair_windows, options)?;
+        let overlap_forward = overlap.values()[edge_index * n_states + edge_index + 1];
+        let overlap_reverse = overlap.values()[(edge_index + 1) * n_states + edge_index];
+        metrics.push(EdgeMetrics {
+            edge_index,
+            from_state: pair_result.states()[0].clone(),
+            to_state: pair_result.states()[1].clone(),
+            lambda_labels: labels.clone(),
+            overlap_forward,
+            overlap_reverse,
+            delta_f: pair_result.values()[1],
+            uncertainty: pair_result.uncertainties().map(|values| values[1]),
+            block_mean: block_stats.map(|(mean, _, _)| mean),
+            block_stddev: block_stats.map(|(_, stddev, _)| stddev),
+            block_cv: block_stats.map(|(_, _, cv)| cv),
+        });
+    }
+
+    Ok(metrics)
+}
+
+fn schedule_edge_metrics_bar(
+    windows: &[UNkMatrix],
+    options: ScheduleAdvisorOptions,
+) -> Result<Vec<EdgeMetrics>> {
+    let mut metrics = Vec::with_capacity(windows.len() - 1);
+    for edge_index in 0..(windows.len() - 1) {
+        let pair_states = windows[edge_index..edge_index + 2]
+            .iter()
+            .map(|window| {
+                window.sampled_state().cloned().ok_or_else(|| {
+                    CoreError::InvalidState(
+                        "sampled_state required for schedule advisor".to_string(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let pair_windows =
+            select_windows_for_states(&windows[edge_index..edge_index + 2], &pair_states)?;
+        let pair_result = fit_pair(&pair_windows, options.estimator)?;
+        let pair_overlap = overlap_matrix(&pair_windows, Some(MbarOptions::default()))?;
+        let block_stats = pair_block_stats(&pair_windows, options)?;
+        metrics.push(EdgeMetrics {
+            edge_index,
+            from_state: pair_result.states()[0].clone(),
+            to_state: pair_result.states()[1].clone(),
+            lambda_labels: pair_result.lambda_labels().map(|values| values.to_vec()),
+            overlap_forward: pair_overlap.values()[1],
+            overlap_reverse: pair_overlap.values()[2],
+            delta_f: pair_result.values()[1],
+            uncertainty: pair_result.uncertainties().map(|values| values[1]),
+            block_mean: block_stats.map(|(mean, _, _)| mean),
+            block_stddev: block_stats.map(|(_, stddev, _)| stddev),
+            block_cv: block_stats.map(|(_, _, cv)| cv),
+        });
+    }
+
+    Ok(metrics)
 }
 
 pub fn advise_ti_schedule(
@@ -1813,21 +1864,27 @@ fn trim_windows_to_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<UNkMatrix
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    select_windows_for_states(windows, &states)
+}
 
-    let mut trimmed = Vec::with_capacity(windows.len());
+fn select_windows_for_states(
+    windows: &[UNkMatrix],
+    states: &[StatePoint],
+) -> Result<Vec<UNkMatrix>> {
+    let mut selected = Vec::with_capacity(windows.len());
     for window in windows {
         let indices = states
             .iter()
             .map(|state| find_state_index_exact(window.evaluated_states(), state))
             .collect::<Result<Vec<_>>>()?;
         if indices.len() == window.n_states() && indices.iter().copied().eq(0..window.n_states()) {
-            trimmed.push(window.clone());
+            selected.push(window.clone());
         } else {
-            trimmed.push(select_window_state_indices(window, &indices, &states)?);
+            selected.push(select_window_state_indices(window, &indices, states)?);
         }
     }
 
-    Ok(trimmed)
+    Ok(selected)
 }
 
 fn select_trimmed_windows_range(
@@ -2886,6 +2943,36 @@ mod tests {
         .unwrap()
     }
 
+    fn build_variable_window(
+        sampled_lambda: f64,
+        rows: &[Vec<f64>],
+        evaluated_lambdas: &[f64],
+    ) -> UNkMatrix {
+        let n_samples = rows.len();
+        let n_states = evaluated_lambdas.len();
+        let data = rows
+            .iter()
+            .flat_map(|row| {
+                assert_eq!(row.len(), n_states);
+                row.iter().copied()
+            })
+            .collect::<Vec<_>>();
+        let time = (0..n_samples).map(|idx| idx as f64).collect::<Vec<_>>();
+        let evaluated_states = evaluated_lambdas
+            .iter()
+            .map(|&lambda| StatePoint::new(vec![lambda], 298.0).unwrap())
+            .collect::<Vec<_>>();
+        UNkMatrix::new(
+            n_samples,
+            n_states,
+            data,
+            time,
+            Some(StatePoint::new(vec![sampled_lambda], 298.0).unwrap()),
+            evaluated_states,
+        )
+        .unwrap()
+    }
+
     #[test]
     fn advise_lambda_schedule_sorts_windows_and_suggests_midpoints() {
         let states = vec![
@@ -3007,6 +3094,65 @@ mod tests {
             .edges()
             .iter()
             .all(|edge| edge.severity() == EdgeSeverity::Healthy));
+    }
+
+    #[test]
+    fn advise_lambda_schedule_bar_supports_local_neighbor_grids() {
+        let windows = vec![
+            build_variable_window(
+                0.0,
+                &[
+                    vec![0.0, 0.2],
+                    vec![0.0, 0.1],
+                    vec![0.0, 0.2],
+                    vec![0.0, 0.1],
+                ],
+                &[0.0, 0.5],
+            ),
+            build_variable_window(
+                0.5,
+                &[
+                    vec![0.2, 0.0, 0.2],
+                    vec![0.1, 0.0, 0.1],
+                    vec![0.2, 0.0, 0.2],
+                    vec![0.1, 0.0, 0.1],
+                ],
+                &[0.0, 0.5, 1.0],
+            ),
+            build_variable_window(
+                1.0,
+                &[
+                    vec![0.2, 0.0],
+                    vec![0.1, 0.0],
+                    vec![0.2, 0.0],
+                    vec![0.1, 0.0],
+                ],
+                &[0.5, 1.0],
+            ),
+        ];
+
+        let advice = advise_lambda_schedule(
+            &windows,
+            Some(ScheduleAdvisorOptions {
+                estimator: AdvisorEstimator::Bar,
+                overlap_min: 0.0,
+                block_cv_min: 1.0e30,
+                n_blocks: 2,
+                suggest_midpoints: false,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(advice.edges().len(), 2);
+        assert!(advice.suggestions().is_empty());
+        assert_eq!(advice.edges()[0].from_state().lambdas(), &[0.0]);
+        assert_eq!(advice.edges()[0].to_state().lambdas(), &[0.5]);
+        assert_eq!(advice.edges()[1].from_state().lambdas(), &[0.5]);
+        assert_eq!(advice.edges()[1].to_state().lambdas(), &[1.0]);
+        assert!(advice
+            .edges()
+            .iter()
+            .all(|edge| edge.overlap_forward().is_finite() && edge.overlap_reverse().is_finite()));
     }
 
     #[test]
