@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs::{BarMethod, IntegrationMethod, MbarSolver};
+use alchemrs::{BarMethod, IntegrationMethod};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 
 pub mod commands;
@@ -335,9 +335,9 @@ pub enum Command {
         /// MBAR relative tolerance
         #[arg(long, default_value_t = 1.0e-7)]
         tolerance: f64,
-        /// MBAR solver backend
-        #[arg(long, value_enum, default_value_t = MbarCliSolver::FixedPoint)]
-        solver: MbarCliSolver,
+        /// Use the fast L-BFGS MBAR solver backend
+        #[arg(long = "fast-mbar")]
+        fast_mbar: bool,
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
@@ -375,21 +375,6 @@ pub enum AdviseInputKind {
     Auto,
     UNk,
     Dhdl,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum MbarCliSolver {
-    FixedPoint,
-    Lbfgs,
-}
-
-impl MbarCliSolver {
-    pub fn solver(self) -> MbarSolver {
-        match self {
-            Self::FixedPoint => MbarSolver::FixedPoint,
-            Self::Lbfgs => MbarSolver::Lbfgs,
-        }
-    }
 }
 
 impl TiMethod {
@@ -560,6 +545,15 @@ mod tests {
                 assert!(matches!(method, super::TiMethod::Akima));
             }
             _ => panic!("expected ti command"),
+        }
+    }
+
+    #[test]
+    fn mbar_command_accepts_fast_mbar_flag() {
+        let cli = Cli::parse_from(["alchemrs", "mbar", "--fast-mbar", "window.out"]);
+        match cli.command {
+            Command::Mbar { fast_mbar, .. } => assert!(fast_mbar),
+            _ => panic!("expected mbar command"),
         }
     }
 

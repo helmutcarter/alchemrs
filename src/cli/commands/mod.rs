@@ -230,7 +230,7 @@ pub fn run(command: Command) -> CliResult<()> {
             u_nk_observable,
             max_iterations,
             tolerance,
-            solver,
+            fast_mbar,
             no_uncertainty,
             output_units,
             output_format,
@@ -254,7 +254,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 mbar::MbarRunOptions {
                     max_iterations,
                     tolerance,
-                    solver: solver.solver(),
+                    fast_mbar,
                     no_uncertainty,
                     output_units,
                     output_format,

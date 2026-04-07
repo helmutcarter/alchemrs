@@ -11,7 +11,7 @@ use crate::CliResult;
 pub struct MbarRunOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
-    pub solver: MbarSolver,
+    pub fast_mbar: bool,
     pub no_uncertainty: bool,
     pub output_units: OutputUnits,
     pub output_format: OutputFormat,
@@ -31,7 +31,11 @@ pub fn run(
         max_iterations: run_options.max_iterations,
         tolerance: run_options.tolerance,
         parallel: run_options.parallel,
-        solver: run_options.solver,
+        solver: if run_options.fast_mbar {
+            MbarSolver::Lbfgs
+        } else {
+            MbarSolver::FixedPoint
+        },
         ..MbarOptions::default()
     });
     let fit = estimator.fit(&windows)?;
