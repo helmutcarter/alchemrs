@@ -1348,7 +1348,7 @@ fn mbar_cli_outputs_multidimensional_gromacs_json_with_lambda_components() {
         Some("all")
     );
     assert_eq!(payload["provenance"]["windows"].as_u64(), Some(1));
-    assert_eq!(payload["provenance"]["samples_kept"].as_u64(), Some(200));
+    assert_eq!(payload["provenance"]["samples_kept"].as_u64(), Some(1000));
 }
 
 #[test]
