@@ -2,9 +2,7 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, work_values, ExpRow,
-};
+use super::common::{ensure_consistent_lambda_labels, work_values};
 
 #[derive(Debug, Clone, Default)]
 pub struct ExpOptions {
@@ -30,79 +28,113 @@ impl ExpEstimator {
     }
 
     pub fn fit(&self, windows: &[UNkMatrix]) -> Result<ExpFit> {
-        if windows.is_empty() {
+        if windows.len() < 2 {
             return Err(CoreError::InvalidShape {
-                expected: 1,
-                found: 0,
+                expected: 2,
+                found: windows.len(),
             });
         }
-        let states = ensure_consistent_states(windows)?;
-        let n_states = states.len();
-        let mut window_map: Vec<Option<&UNkMatrix>> = vec![None; n_states];
+
+        let states = sorted_sampled_states(windows)?;
+        let lambda_labels = ensure_consistent_lambda_labels(windows)?;
+        let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; states.len()];
 
         for window in windows {
             let sampled = window.sampled_state().ok_or_else(|| {
                 CoreError::InvalidState("sampled_state required for EXP".to_string())
             })?;
             let idx = find_state_index_exact(&states, sampled)?;
-            if window_map[idx].is_some() {
+            if window_by_index[idx].is_some() {
                 return Err(CoreError::InvalidState(
                     "multiple windows for same sampled_state".to_string(),
                 ));
             }
-            window_map[idx] = Some(window);
+            window_by_index[idx] = Some(window);
         }
 
-        for (idx, entry) in window_map.iter().enumerate() {
-            if entry.is_none() {
-                return Err(CoreError::InvalidState(format!(
-                    "missing window for state {idx}"
+        let pair_results: Vec<Result<(f64, f64, f64, f64)>> = if self.options.parallel {
+            use rayon::prelude::*;
+            (0..(states.len() - 1))
+                .into_par_iter()
+                .map(|idx| {
+                    let win_f = window_by_index[idx].ok_or_else(|| {
+                        CoreError::InvalidState(format!("missing window for state {idx}"))
+                    })?;
+                    let win_r = window_by_index[idx + 1].ok_or_else(|| {
+                        CoreError::InvalidState(format!("missing window for state {}", idx + 1))
+                    })?;
+                    let (idx_f0, idx_f1) = adjacent_pair_indices(win_f, &states, idx)?;
+                    let (idx_r0, idx_r1) = adjacent_pair_indices(win_r, &states, idx)?;
+                    let work_f = work_values(win_f, idx_f0, idx_f1)?;
+                    let work_r = work_values(win_r, idx_r1, idx_r0)?;
+                    Ok((
+                        exp_delta_f(&work_f)?,
+                        exp_uncertainty(&work_f)?,
+                        exp_delta_f(&work_r)?,
+                        exp_uncertainty(&work_r)?,
+                    ))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            let mut out = Vec::with_capacity(states.len() - 1);
+            for idx in 0..(states.len() - 1) {
+                let win_f = window_by_index[idx].ok_or_else(|| {
+                    CoreError::InvalidState(format!("missing window for state {idx}"))
+                })?;
+                let win_r = window_by_index[idx + 1].ok_or_else(|| {
+                    CoreError::InvalidState(format!("missing window for state {}", idx + 1))
+                })?;
+                let (idx_f0, idx_f1) = adjacent_pair_indices(win_f, &states, idx)?;
+                let (idx_r0, idx_r1) = adjacent_pair_indices(win_r, &states, idx)?;
+                let work_f = work_values(win_f, idx_f0, idx_f1)?;
+                let work_r = work_values(win_r, idx_r1, idx_r0)?;
+                out.push(Ok((
+                    exp_delta_f(&work_f)?,
+                    exp_uncertainty(&work_f)?,
+                    exp_delta_f(&work_r)?,
+                    exp_uncertainty(&work_r)?,
                 )));
             }
+            out
+        };
+
+        let mut forward_delta = Vec::with_capacity(states.len() - 1);
+        let mut forward_sigma = Vec::with_capacity(states.len() - 1);
+        let mut reverse_delta = Vec::with_capacity(states.len() - 1);
+        let mut reverse_sigma = Vec::with_capacity(states.len() - 1);
+        for result in pair_results {
+            let (df_f, sigma_f, df_r, sigma_r) = result?;
+            forward_delta.push(df_f);
+            forward_sigma.push(sigma_f);
+            reverse_delta.push(df_r);
+            reverse_sigma.push(sigma_r);
         }
 
+        let n_states = states.len();
         let mut values = vec![0.0; n_states * n_states];
         let mut uncertainties = vec![0.0; n_states * n_states];
 
-        if self.options.parallel {
-            use rayon::prelude::*;
-            let rows: Vec<Result<ExpRow>> = (0..n_states)
-                .into_par_iter()
-                .map(|i| {
-                    let window = window_map[i].expect("window present");
-                    let mut row = Vec::with_capacity(n_states);
-                    let mut row_unc = Vec::with_capacity(n_states);
-                    for j in 0..n_states {
-                        let work = work_values(window, i, j)?;
-                        let delta = exp_delta_f(&work)?;
-                        row.push(delta);
-                        row_unc.push(exp_uncertainty(&work)?);
-                    }
-                    Ok((i, row, row_unc))
-                })
-                .collect::<Vec<_>>();
-            for entry in rows {
-                let (i, row, row_unc) = entry?;
-                for (j, value) in row.into_iter().enumerate() {
-                    values[i * n_states + j] = value;
-                }
-                for (j, value) in row_unc.into_iter().enumerate() {
-                    uncertainties[i * n_states + j] = value;
-                }
-            }
-        } else {
-            for i in 0..n_states {
-                let window = window_map[i].expect("window present");
-                for j in 0..n_states {
-                    let work = work_values(window, i, j)?;
-                    let delta = exp_delta_f(&work)?;
-                    values[i * n_states + j] = delta;
-                    uncertainties[i * n_states + j] = exp_uncertainty(&work)?;
-                }
+        for span in 0..forward_delta.len() {
+            for start in 0..(forward_delta.len() - span) {
+                let end = start + span + 1;
+                let forward = forward_delta[start..end].iter().sum::<f64>();
+                let reverse = reverse_delta[start..end].iter().sum::<f64>();
+                let forward_var = forward_sigma[start..end]
+                    .iter()
+                    .map(|sigma| sigma * sigma)
+                    .sum::<f64>();
+                let reverse_var = reverse_sigma[start..end]
+                    .iter()
+                    .map(|sigma| sigma * sigma)
+                    .sum::<f64>();
+
+                values[start * n_states + end] = forward;
+                uncertainties[start * n_states + end] = forward_var.sqrt();
+                values[end * n_states + start] = reverse;
+                uncertainties[end * n_states + start] = reverse_var.sqrt();
             }
         }
 
-        let lambda_labels = ensure_consistent_lambda_labels(windows)?;
         Ok(ExpFit {
             values,
             uncertainties,
@@ -168,6 +200,73 @@ impl ExpFit {
             self.lambda_labels.clone(),
         )
     }
+}
+
+fn sorted_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
+    let first = windows[0]
+        .sampled_state()
+        .ok_or_else(|| CoreError::InvalidState("sampled_state required for EXP".to_string()))?;
+    let n_lambda = first.lambdas().len();
+    let temperature = first.temperature_k();
+
+    let mut states = Vec::with_capacity(windows.len());
+    for window in windows {
+        let sampled = window
+            .sampled_state()
+            .ok_or_else(|| CoreError::InvalidState("sampled_state required for EXP".to_string()))?;
+        if sampled.lambdas().len() != n_lambda {
+            return Err(CoreError::InvalidShape {
+                expected: n_lambda,
+                found: sampled.lambdas().len(),
+            });
+        }
+        if sampled.temperature_k() != temperature {
+            return Err(CoreError::InvalidState(
+                "sampled_state temperatures differ between windows".to_string(),
+            ));
+        }
+        if find_state_index_exact(&states, sampled).is_ok() {
+            return Err(CoreError::InvalidState(
+                "multiple windows for same sampled_state".to_string(),
+            ));
+        }
+        states.push(sampled.clone());
+    }
+
+    states.sort_by(compare_state_points);
+    Ok(states)
+}
+
+fn adjacent_pair_indices(
+    window: &UNkMatrix,
+    states: &[StatePoint],
+    idx: usize,
+) -> Result<(usize, usize)> {
+    let from_idx =
+        find_state_index_exact(window.evaluated_states(), &states[idx]).map_err(|_| {
+            CoreError::InvalidState(format!(
+                "window for state {idx} is missing adjacent state {} in evaluated_states",
+                idx + 1
+            ))
+        })?;
+    let to_idx =
+        find_state_index_exact(window.evaluated_states(), &states[idx + 1]).map_err(|_| {
+            CoreError::InvalidState(format!(
+                "window for state {idx} is missing adjacent state {} in evaluated_states",
+                idx + 1
+            ))
+        })?;
+    Ok((from_idx, to_idx))
+}
+
+fn compare_state_points(left: &StatePoint, right: &StatePoint) -> std::cmp::Ordering {
+    for (lhs, rhs) in left.lambdas().iter().zip(right.lambdas().iter()) {
+        let ordering = lhs.total_cmp(rhs);
+        if ordering != std::cmp::Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.lambdas().len().cmp(&right.lambdas().len())
 }
 
 fn logsumexp(values: &[f64]) -> f64 {

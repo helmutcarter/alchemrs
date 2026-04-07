@@ -769,6 +769,52 @@ fn bar_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrel
 }
 
 #[test]
+fn exp_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrelation() {
+    let inputs = gromacs_1k_bar_inputs();
+    let output = run_cli(
+        &[
+            "exp",
+            "--temperature",
+            "298",
+            "--u-nk-observable",
+            "epot",
+            "--auto-equilibrate",
+            "--decorrelate",
+            "--output-format",
+            "json",
+        ],
+        &inputs,
+    );
+    let payload = parse_json_output(&output);
+
+    assert_close(
+        payload["delta_f"].as_f64().expect("delta_f"),
+        -12.15580721943512,
+    );
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        0.35187862240137463,
+    );
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("exp"));
+    assert_eq!(payload["provenance"]["temperature_k"].as_f64(), Some(298.0));
+    assert_eq!(
+        payload["provenance"]["u_nk_observable"].as_str(),
+        Some("epot")
+    );
+    assert_eq!(
+        payload["provenance"]["auto_equilibrate"].as_bool(),
+        Some(true)
+    );
+    assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
+    assert_eq!(payload["provenance"]["samples_in"].as_u64(), Some(33_000));
+    assert_eq!(
+        payload["provenance"]["samples_after_burnin"].as_u64(),
+        Some(9_062)
+    );
+    assert_eq!(payload["provenance"]["samples_kept"].as_u64(), Some(1_387));
+}
+
+#[test]
 fn ti_cli_outputs_expected_json_when_decorrelating() {
     let inputs = acetamide_inputs();
     let output = run_cli(&["ti", "--decorrelate", "--output-format", "json"], &inputs);

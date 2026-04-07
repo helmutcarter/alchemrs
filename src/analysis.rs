@@ -975,7 +975,7 @@ pub fn exp_convergence(
     windows: &[UNkMatrix],
     options: Option<ExpOptions>,
 ) -> Result<Vec<ConvergencePoint>> {
-    convergence_from_matrix_windows(
+    convergence_from_ordered_matrix_windows(
         windows,
         |subset| {
             ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
@@ -989,7 +989,7 @@ pub fn dexp_convergence(
     windows: &[UNkMatrix],
     options: Option<ExpOptions>,
 ) -> Result<Vec<ConvergencePoint>> {
-    convergence_from_matrix_windows(
+    convergence_from_ordered_matrix_windows(
         windows,
         |subset| {
             ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
@@ -1796,7 +1796,7 @@ pub(crate) fn exp_block_average(
     n_blocks: usize,
     options: Option<ExpOptions>,
 ) -> Result<Vec<BlockEstimate>> {
-    block_average_from_windows(
+    block_average_from_ordered_windows(
         windows,
         n_blocks,
         |subset| {
@@ -1812,7 +1812,7 @@ pub(crate) fn dexp_block_average(
     n_blocks: usize,
     options: Option<ExpOptions>,
 ) -> Result<Vec<BlockEstimate>> {
-    block_average_from_windows(
+    block_average_from_ordered_windows(
         windows,
         n_blocks,
         |subset| {
@@ -1845,6 +1845,32 @@ where
         let start = if reverse { total_windows - count } else { 0 };
         let subset = select_trimmed_windows_range(&trimmed[start..start + count], start, count)?;
         let result = fit(&subset)?;
+        points.push(convergence_point_from_matrix(count, &result, reverse)?);
+    }
+    Ok(points)
+}
+
+fn convergence_from_ordered_matrix_windows<F>(
+    windows: &[UNkMatrix],
+    fit: F,
+    reverse: bool,
+    minimum_windows: usize,
+) -> Result<Vec<ConvergencePoint>>
+where
+    F: Fn(&[UNkMatrix]) -> Result<DeltaFMatrix>,
+{
+    if windows.len() < minimum_windows {
+        return Err(CoreError::InvalidShape {
+            expected: minimum_windows,
+            found: windows.len(),
+        });
+    }
+    let ordered = sort_windows_by_sampled_state(windows)?;
+    let total_windows = ordered.len();
+    let mut points = Vec::with_capacity(windows.len() - minimum_windows + 1);
+    for count in minimum_windows..=total_windows {
+        let start = if reverse { total_windows - count } else { 0 };
+        let result = fit(&ordered[start..start + count])?;
         points.push(convergence_point_from_matrix(count, &result, reverse)?);
     }
     Ok(points)
@@ -1894,6 +1920,52 @@ where
 
     let trimmed = trim_windows_to_sampled_states(windows)?;
     let blocked = trimmed
+        .iter()
+        .map(|window| split_u_nk_window(window, n_blocks))
+        .collect::<Result<Vec<_>>>()?;
+
+    let mut points = Vec::with_capacity(n_blocks);
+    for block_index in 0..n_blocks {
+        let subset = blocked
+            .iter()
+            .map(|chunks| chunks[block_index].clone())
+            .collect::<Vec<_>>();
+        let result = fit(&subset)?;
+        points.push(block_estimate_from_matrix(
+            block_index,
+            n_blocks,
+            &result,
+            reverse,
+        )?);
+    }
+    Ok(points)
+}
+
+fn block_average_from_ordered_windows<F>(
+    windows: &[UNkMatrix],
+    n_blocks: usize,
+    fit: F,
+    reverse: bool,
+    minimum_windows: usize,
+) -> Result<Vec<BlockEstimate>>
+where
+    F: Fn(&[UNkMatrix]) -> Result<DeltaFMatrix>,
+{
+    if windows.len() < minimum_windows {
+        return Err(CoreError::InvalidShape {
+            expected: minimum_windows,
+            found: windows.len(),
+        });
+    }
+    if n_blocks == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let ordered = sort_windows_by_sampled_state(windows)?;
+    let blocked = ordered
         .iter()
         .map(|window| split_u_nk_window(window, n_blocks))
         .collect::<Result<Vec<_>>>()?;

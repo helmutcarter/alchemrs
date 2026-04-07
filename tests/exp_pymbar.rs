@@ -20,7 +20,7 @@ fn read_matrix(path: &str) -> Vec<f64> {
 }
 
 #[test]
-fn exp_matches_pymbar_matrix() {
+fn exp_matches_pymbar_adjacent_fep_chain() {
     let base = env!("CARGO_MANIFEST_DIR");
     let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/fixtures/amber/acetamide_tiny"))
         .expect("read fixture directory")
@@ -72,17 +72,69 @@ fn exp_matches_pymbar_matrix() {
     assert_eq!(values.len(), expected_delta.len());
     assert_eq!(sigma.len(), expected_sigma.len());
 
-    for (idx, (value, exp)) in values.iter().zip(expected_delta.iter()).enumerate() {
+    let n_states = result.n_states();
+    let mut expected_forward_endpoint = 0.0;
+    let mut expected_reverse_endpoint = 0.0;
+    let mut expected_forward_var = 0.0;
+    let mut expected_reverse_var = 0.0;
+
+    for state_idx in 0..(n_states - 1) {
+        let upper = state_idx * n_states + state_idx + 1;
+        let lower = (state_idx + 1) * n_states + state_idx;
+
         assert!(
-            (value - exp).abs() < 1e-6,
-            "delta_f mismatch at {idx}: {value} vs {exp}"
+            (values[upper] - expected_delta[upper]).abs() < 1e-6,
+            "forward adjacent delta_f mismatch at {upper}: {} vs {}",
+            values[upper],
+            expected_delta[upper]
         );
+        assert!(
+            (values[lower] - expected_delta[lower]).abs() < 1e-6,
+            "reverse adjacent delta_f mismatch at {lower}: {} vs {}",
+            values[lower],
+            expected_delta[lower]
+        );
+        assert!(
+            (sigma[upper] - expected_sigma[upper]).abs() < 1e-6,
+            "forward adjacent sigma mismatch at {upper}: {} vs {}",
+            sigma[upper],
+            expected_sigma[upper]
+        );
+        assert!(
+            (sigma[lower] - expected_sigma[lower]).abs() < 1e-6,
+            "reverse adjacent sigma mismatch at {lower}: {} vs {}",
+            sigma[lower],
+            expected_sigma[lower]
+        );
+
+        expected_forward_endpoint += expected_delta[upper];
+        expected_reverse_endpoint += expected_delta[lower];
+        expected_forward_var += expected_sigma[upper] * expected_sigma[upper];
+        expected_reverse_var += expected_sigma[lower] * expected_sigma[lower];
     }
 
-    for (idx, (value, exp)) in sigma.iter().zip(expected_sigma.iter()).enumerate() {
-        assert!(
-            (value - exp).abs() < 1e-6,
-            "sigma mismatch at {idx}: {value} vs {exp}"
-        );
-    }
+    assert!(
+        (values[n_states - 1] - expected_forward_endpoint).abs() < 1e-6,
+        "forward endpoint delta_f mismatch: {} vs {}",
+        values[n_states - 1],
+        expected_forward_endpoint
+    );
+    assert!(
+        (values[(n_states - 1) * n_states] - expected_reverse_endpoint).abs() < 1e-6,
+        "reverse endpoint delta_f mismatch: {} vs {}",
+        values[(n_states - 1) * n_states],
+        expected_reverse_endpoint
+    );
+    assert!(
+        (sigma[n_states - 1] - expected_forward_var.sqrt()).abs() < 1e-6,
+        "forward endpoint sigma mismatch: {} vs {}",
+        sigma[n_states - 1],
+        expected_forward_var.sqrt()
+    );
+    assert!(
+        (sigma[(n_states - 1) * n_states] - expected_reverse_var.sqrt()).abs() < 1e-6,
+        "reverse endpoint sigma mismatch: {} vs {}",
+        sigma[(n_states - 1) * n_states],
+        expected_reverse_var.sqrt()
+    );
 }

@@ -8,7 +8,6 @@ pub(crate) type CombinedWindows = (
     Option<Vec<String>>,
 );
 pub(crate) type PairEstimate = (f64, f64);
-pub(crate) type ExpRow = (usize, Vec<f64>, Vec<f64>);
 
 pub(crate) fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
     let first = windows[0].evaluated_states();

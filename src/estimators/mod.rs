@@ -776,6 +776,28 @@ mod tests {
     }
 
     #[test]
+    fn exp_supports_local_neighbor_evaluated_grids() {
+        let fit = ExpEstimator::default()
+            .fit(&make_three_state_local_bar_windows())
+            .unwrap();
+        let result = fit.result_with_uncertainty().unwrap();
+        assert_eq!(fit.n_states(), 3);
+        assert_eq!(fit.states()[0].lambdas(), &[0.0]);
+        assert_eq!(fit.states()[1].lambdas(), &[0.5]);
+        assert_eq!(fit.states()[2].lambdas(), &[1.0]);
+        assert_eq!(result.n_states(), 3);
+        assert!(result.values()[1].is_finite());
+        assert!(result.values()[2].is_finite());
+        assert!(result.values()[3].is_finite());
+        assert!(result.values()[5].is_finite());
+        assert!(result
+            .uncertainties()
+            .expect("uncertainties")
+            .iter()
+            .all(|value| value.is_finite()));
+    }
+
+    #[test]
     fn mbar_reports_local_neighbor_grid_error_informatively() {
         let err = MbarEstimator::default()
             .fit(&make_three_state_local_bar_windows())
