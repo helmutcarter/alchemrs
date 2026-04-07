@@ -348,7 +348,9 @@ mod tests {
     #[test]
     fn load_windows_accepts_multidimensional_gromacs_states_for_cli_estimators() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
+        let path = PathBuf::from(format!(
+            "{base}/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg"
+        ));
         let loaded = load_windows(
             vec![path],
             AnalysisInputOptions {
@@ -384,7 +386,9 @@ mod tests {
     #[test]
     fn load_dhdl_series_reports_multidimensional_gromacs_ti_limit() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
+        let path = PathBuf::from(format!(
+            "{base}/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg"
+        ));
         let err = match load_dhdl_series(
             vec![path],
             AnalysisInputOptions {
@@ -451,7 +455,9 @@ mod tests {
     #[test]
     fn resolve_input_temperature_uses_file_temperature_when_omitted() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
+        let path = PathBuf::from(format!(
+            "{base}/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg"
+        ));
         let temperature =
             resolve_input_temperature(&[path], None).expect("temperature should be inferred");
         assert!((temperature - 298.0).abs() < 1e-12);
@@ -460,7 +466,9 @@ mod tests {
     #[test]
     fn resolve_input_temperature_prefers_explicit_value() {
         let base = env!("CARGO_MANIFEST_DIR");
-        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
+        let path = PathBuf::from(format!(
+            "{base}/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg"
+        ));
         let temperature = resolve_input_temperature(&[path], Some(310.0))
             .expect("explicit temperature should win");
         assert!((temperature - 310.0).abs() < 1e-12);
@@ -469,7 +477,7 @@ mod tests {
     #[test]
     fn resolve_input_temperature_reports_mixed_inputs() {
         let gromacs = PathBuf::from(format!(
-            "{}/fixtures/gromacs/lambda_15.xvg",
+            "{}/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg",
             env!("CARGO_MANIFEST_DIR")
         ));
         let amber_content = r#"

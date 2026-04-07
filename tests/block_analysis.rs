@@ -237,10 +237,16 @@ fn mbar_block_average_requires_nonzero_blocks() {
 #[test]
 fn real_gromacs_windows_support_mbar_block_average_after_grid_intersection() {
     let base = env!("CARGO_MANIFEST_DIR");
-    let w2 = alchemrs::extract_u_nk(format!("{base}/fixtures/gromacs/lambda_2.xvg"), 298.0)
-        .expect("parse lambda_2");
-    let w3 = alchemrs::extract_u_nk(format!("{base}/fixtures/gromacs/lambda_3.xvg"), 298.0)
-        .expect("parse lambda_3");
+    let w2 = alchemrs::extract_u_nk(
+        format!("{base}/fixtures/gromacs/1k_bar_samples/lambda-2/dhdl.xvg"),
+        298.0,
+    )
+    .expect("parse lambda-2");
+    let w3 = alchemrs::extract_u_nk(
+        format!("{base}/fixtures/gromacs/1k_bar_samples/lambda-3/dhdl.xvg"),
+        298.0,
+    )
+    .expect("parse lambda-3");
 
     let w2 = trim_window_to_states(&w2, &[1, 2]);
     let w3 = trim_window_to_states(&w3, &[0, 1]);

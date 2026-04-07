@@ -3,30 +3,30 @@ use alchemrs::parse::gromacs::{
 };
 use alchemrs::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential, CoreError};
 
-const REAL_FIXTURE: &str = "/fixtures/gromacs/lambda_15.xvg";
+const REAL_FIXTURE: &str = "/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg";
 const WINDOW_FIXTURES: &[(&str, f64, &[f64])] = &[
     (
-        "/fixtures/gromacs/lambda_0.xvg",
+        "/fixtures/gromacs/1k_bar_samples/lambda-0/dhdl.xvg",
         0.0,
         &[0.0, 0.0, 0.0, 0.0, 0.0],
     ),
     (
-        "/fixtures/gromacs/lambda_1.xvg",
+        "/fixtures/gromacs/1k_bar_samples/lambda-1/dhdl.xvg",
         0.05,
         &[0.0, 0.0, 0.05, 0.0, 0.0],
     ),
     (
-        "/fixtures/gromacs/lambda_2.xvg",
+        "/fixtures/gromacs/1k_bar_samples/lambda-2/dhdl.xvg",
         0.1,
         &[0.0, 0.0, 0.1, 0.0, 0.0],
     ),
     (
-        "/fixtures/gromacs/lambda_3.xvg",
+        "/fixtures/gromacs/1k_bar_samples/lambda-3/dhdl.xvg",
         0.15,
         &[0.0, 0.0, 0.15, 0.0, 0.0],
     ),
     (
-        "/fixtures/gromacs/lambda_15.xvg",
+        "/fixtures/gromacs/1k_bar_samples/lambda-15/dhdl.xvg",
         0.8,
         &[0.0, 0.0, 0.8, 0.0, 0.0],
     ),
@@ -53,7 +53,7 @@ fn gromacs_extract_u_nk_from_real_multidimensional_file() {
         ]
     );
     assert_eq!(u_nk.n_states(), 3);
-    assert_eq!(u_nk.n_samples(), 200);
+    assert_eq!(u_nk.n_samples(), 1000);
     assert_eq!(
         u_nk.evaluated_states().first().unwrap().lambdas(),
         &[0.0, 0.0, 0.7, 0.0, 0.0]
@@ -106,7 +106,7 @@ fn trimmed_real_gromacs_windows_parse_across_multiple_lambda_states() {
     for (fixture, vdw_lambda, sampled) in WINDOW_FIXTURES {
         let path = format!("{base}{fixture}");
         let u_nk = extract_gromacs_u_nk(path, 298.0).expect("parse real trimmed GROMACS window");
-        assert_eq!(u_nk.n_samples(), 200);
+        assert_eq!(u_nk.n_samples(), 1000);
         assert_eq!(u_nk.sampled_state().unwrap().lambdas(), *sampled);
         assert_eq!(u_nk.sampled_state().unwrap().lambdas()[2], *vdw_lambda);
         assert_eq!(

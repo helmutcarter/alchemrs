@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -33,6 +34,7 @@ enum AdviceKind {
     UNk {
         advice: ScheduleAdvice,
         lambda_components: Option<Vec<String>>,
+        kept_samples_by_window: Vec<usize>,
     },
     Ti {
         advice: TiScheduleAdvice,
@@ -63,11 +65,13 @@ pub fn run(
                     .first()
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
+            let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
                     advice,
                     lambda_components,
+                    kept_samples_by_window,
                 },
             )
         }
@@ -102,11 +106,13 @@ pub fn run(
                     .first()
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
+            let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
                     advice,
                     lambda_components,
+                    kept_samples_by_window,
                 },
             )
         }
@@ -149,6 +155,7 @@ fn render_schedule_advice(
         AdviceKind::UNk {
             advice,
             lambda_components,
+            kept_samples_by_window: _,
         } => render_advice(
             advice,
             sample_counts,
@@ -172,12 +179,14 @@ fn render_schedule_html_report(
         AdviceKind::UNk {
             advice,
             lambda_components,
+            kept_samples_by_window,
         } => render_html_report(
             advice,
             sample_counts,
             input_options,
             run_options,
             lambda_components.clone(),
+            Some(kept_samples_by_window),
         ),
         AdviceKind::Ti { advice } => {
             render_ti_html_report(advice, sample_counts, input_options, run_options)
@@ -706,6 +715,7 @@ fn render_html_report(
     input_options: &AnalysisInputOptions,
     run_options: &AdviseRunOptions,
     lambda_components: Option<Vec<String>>,
+    kept_samples_by_window: Option<&[usize]>,
 ) -> Result<String, String> {
     let lambda_components = normalize_lambda_components(lambda_components);
     let max_priority = advice
@@ -827,7 +837,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             edge.edge_index(),
             edge.priority_score(),
             severity_name(edge.severity()),
-            escape_html(severity_name(edge.severity())),
+            escape_html(report_severity_name(edge.severity())),
             if edge.dominant_components().is_empty() {
                 "&mdash;".to_string()
             } else {
@@ -915,7 +925,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         html.push_str(&format!(
             "<div><span class=\"pill {}\">{}</span><span class=\"mono\"> edge {}: &lambda; {} -&gt; {}</span></div>",
             severity_name(edge.severity()),
-            escape_html(severity_name(edge.severity())),
+            escape_html(report_severity_name(edge.severity())),
             edge.edge_index(),
             escape_html(&format_report_state(edge.from_state().lambdas())),
             escape_html(&format_report_state(edge.to_state().lambdas()))
@@ -923,7 +933,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         html.push_str(&format!(
             "<div class=\"suggestion-title\"><span class=\"pill {}\">{}</span><span class=\"mono\">edge {}</span><span class=\"mono\">{} → {}</span></div>",
             severity_name(edge.severity()),
-            escape_html(severity_name(edge.severity())),
+            escape_html(report_severity_name(edge.severity())),
             edge.edge_index(),
             escape_html(&format_report_state(edge.from_state().lambdas())),
             escape_html(&format_report_state(edge.to_state().lambdas()))
@@ -956,6 +966,19 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             &report_option_string(edge.relative_uncertainty()),
         ));
         html.push_str(&kv_html("block CV", &report_option_string(edge.block_cv())));
+        html.push_str(&kv_html(
+            "from N_samples kept",
+            &report_usize_option(
+                kept_samples_by_window.and_then(|samples| samples.get(edge.edge_index()).copied()),
+            ),
+        ));
+        html.push_str(&kv_html(
+            "to N_samples kept",
+            &report_usize_option(
+                kept_samples_by_window
+                    .and_then(|samples| samples.get(edge.edge_index() + 1).copied()),
+            ),
+        ));
         html.push_str(&kv_html(
             "dominant components",
             &edge.dominant_components().join(", "),
@@ -2531,6 +2554,13 @@ fn severity_name(severity: EdgeSeverity) -> &'static str {
     }
 }
 
+fn report_severity_name(severity: EdgeSeverity) -> &'static str {
+    match severity {
+        EdgeSeverity::AddSampling => "extend_sampling",
+        other => severity_name(other),
+    }
+}
+
 fn ti_severity_name(severity: TiEdgeSeverity) -> &'static str {
     match severity {
         TiEdgeSeverity::Healthy => "healthy",
@@ -2594,6 +2624,12 @@ fn format_report_number(value: f64) -> String {
 
 fn report_option_string(value: Option<f64>) -> String {
     value.map(format_report_number).unwrap_or_default()
+}
+
+fn report_usize_option(value: Option<usize>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "n/a".to_string())
 }
 
 fn format_lambda_value(value: f64) -> String {
@@ -2668,6 +2704,43 @@ fn normalize_lambda_components(lambda_components: Option<Vec<String>>) -> Option
     }
 }
 
+fn sorted_u_nk_kept_samples(windows: &[alchemrs::UNkMatrix]) -> Result<Vec<usize>, String> {
+    let mut windows = windows
+        .iter()
+        .map(|window| {
+            let state = window
+                .sampled_state()
+                .cloned()
+                .ok_or_else(|| "sampled_state required for schedule advisor".to_string())?;
+            Ok((state, window.n_samples()))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    windows.sort_by(|left, right| compare_state_points_for_report(&left.0, &right.0));
+    Ok(windows
+        .into_iter()
+        .map(|(_, n_samples)| n_samples)
+        .collect())
+}
+
+fn compare_state_points_for_report(
+    left: &alchemrs::StatePoint,
+    right: &alchemrs::StatePoint,
+) -> Ordering {
+    let len_order = left.lambdas().len().cmp(&right.lambdas().len());
+    if len_order != Ordering::Equal {
+        return len_order;
+    }
+    for (lhs, rhs) in left.lambdas().iter().zip(right.lambdas().iter()) {
+        match lhs.partial_cmp(rhs).unwrap_or(Ordering::Equal) {
+            Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+    left.temperature_k()
+        .partial_cmp(&right.temperature_k())
+        .unwrap_or(Ordering::Equal)
+}
+
 fn summary_card(label: &str, value: &str, sub: &str) -> String {
     format!(
         "<div class=\"card\"><div class=\"label\">{}</div><div class=\"value\">{}</div><div class=\"sub\">{}</div></div>",
@@ -2718,13 +2791,14 @@ fn severity_class_from_suggestion(kind: SuggestionKind) -> &'static str {
 mod tests {
     use alchemrs::{
         advise_lambda_schedule, advise_ti_schedule, extract_u_nk, AdvisorEstimator, DhdlSeries,
-        ScheduleAdvisorOptions, StatePoint, TiScheduleAdvisorOptions, UNkMatrix,
+        EdgeSeverity, ScheduleAdvisorOptions, StatePoint, TiScheduleAdvisorOptions, UNkMatrix,
     };
     use serde_json::Value;
 
     use super::{
         axis_tick_values, render_advice, render_html_report, render_ti_html_report,
-        render_ti_method_plot_cards_html, zero_area_polygons, AdviseRunOptions,
+        render_ti_method_plot_cards_html, report_severity_name, zero_area_polygons,
+        AdviseRunOptions,
     };
     use crate::cli::input::{AnalysisInputOptions, AnalysisSampleCounts};
     use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat, UNkObservable};
@@ -2732,8 +2806,16 @@ mod tests {
     fn sample_advice() -> alchemrs::ScheduleAdvice {
         let base = env!("CARGO_MANIFEST_DIR");
         let windows = vec![
-            extract_u_nk(format!("{base}/fixtures/gromacs/lambda_0.xvg"), 298.0).unwrap(),
-            extract_u_nk(format!("{base}/fixtures/gromacs/lambda_1.xvg"), 298.0).unwrap(),
+            extract_u_nk(
+                format!("{base}/fixtures/gromacs/1k_bar_samples/lambda-0/dhdl.xvg"),
+                298.0,
+            )
+            .unwrap(),
+            extract_u_nk(
+                format!("{base}/fixtures/gromacs/1k_bar_samples/lambda-1/dhdl.xvg"),
+                298.0,
+            )
+            .unwrap(),
         ];
         advise_lambda_schedule(
             &windows,
@@ -2991,6 +3073,7 @@ mod tests {
                 report_path: None,
             },
             None,
+            Some(&[12, 8]),
         )
         .unwrap();
 
@@ -3004,6 +3087,10 @@ mod tests {
         assert!(output.contains("badge rationale"));
         assert!(output.contains("focused_split") || output.contains("midpoint"));
         assert!(output.contains("priority"));
+        assert!(output.contains("from N_samples kept"));
+        assert!(output.contains("to N_samples kept"));
+        assert!(output.contains(">12<"));
+        assert!(output.contains(">8<"));
         assert!(!output.contains("<svg"));
         assert!(!output.contains("Legend"));
     }
@@ -3040,6 +3127,7 @@ mod tests {
                 report_path: None,
             },
             Some(vec!["".to_string(), "   ".to_string()]),
+            None,
         )
         .unwrap();
 
@@ -3078,6 +3166,7 @@ mod tests {
                 report_path: None,
             },
             Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]),
+            None,
         )
         .unwrap();
 
@@ -3210,6 +3299,14 @@ mod tests {
         assert!(!output.contains(
             "proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"
         ));
+    }
+
+    #[test]
+    fn report_uses_extend_sampling_label_for_add_sampling_severity() {
+        assert_eq!(
+            report_severity_name(EdgeSeverity::AddSampling),
+            "extend_sampling"
+        );
     }
 
     #[test]

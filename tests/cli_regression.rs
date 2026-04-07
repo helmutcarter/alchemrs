@@ -1376,7 +1376,9 @@ fn gromacs_lambda15_input() -> Vec<PathBuf> {
     vec![repo_root()
         .join("fixtures")
         .join("gromacs")
-        .join("lambda_15.xvg")]
+        .join("1k_bar_samples")
+        .join("lambda-15")
+        .join("dhdl.xvg")]
 }
 
 fn run_cli(args: &[&str], inputs: &[PathBuf]) -> Output {
