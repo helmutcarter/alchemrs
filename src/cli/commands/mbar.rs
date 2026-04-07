@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs::{MbarEstimator, MbarOptions};
+use alchemrs::{MbarEstimator, MbarOptions, MbarSolver};
 
 use crate::cli::input::{load_windows, AnalysisInputOptions};
 use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
@@ -11,6 +11,7 @@ use crate::CliResult;
 pub struct MbarRunOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
+    pub solver: MbarSolver,
     pub no_uncertainty: bool,
     pub output_units: OutputUnits,
     pub output_format: OutputFormat,
@@ -30,6 +31,7 @@ pub fn run(
         max_iterations: run_options.max_iterations,
         tolerance: run_options.tolerance,
         parallel: run_options.parallel,
+        solver: run_options.solver,
         ..MbarOptions::default()
     });
     let fit = estimator.fit(&windows)?;

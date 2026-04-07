@@ -6,12 +6,20 @@ use std::sync::OnceLock;
 
 use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MbarSolver {
+    #[default]
+    FixedPoint,
+    Lbfgs,
+}
+
 #[derive(Debug, Clone)]
 pub struct MbarOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
     pub initial_f_k: Option<Vec<f64>>,
     pub parallel: bool,
+    pub solver: MbarSolver,
 }
 
 impl Default for MbarOptions {
@@ -21,6 +29,7 @@ impl Default for MbarOptions {
             tolerance: 1.0e-7,
             initial_f_k: None,
             parallel: false,
+            solver: MbarSolver::FixedPoint,
         }
     }
 }
@@ -64,15 +73,25 @@ impl MbarEstimator {
         let prepared = PreparedMbar::from_windows(windows)?;
         let mut f_k = initial_f_k(&self.options, prepared.states.len())?;
 
-        mbar_solve(
-            &prepared.u_kn,
-            &prepared.u_nk,
-            &prepared.n_k,
-            &mut f_k,
-            self.options.tolerance,
-            self.options.max_iterations,
-            self.options.parallel,
-        )?;
+        match self.options.solver {
+            MbarSolver::FixedPoint => mbar_solve_fixed_point(
+                &prepared.u_kn,
+                &prepared.u_nk,
+                &prepared.n_k,
+                &mut f_k,
+                self.options.tolerance,
+                self.options.max_iterations,
+                self.options.parallel,
+            )?,
+            MbarSolver::Lbfgs => mbar_solve_lbfgs(
+                &prepared.u_nk,
+                &prepared.n_k,
+                &mut f_k,
+                self.options.tolerance,
+                self.options.max_iterations,
+                self.options.parallel,
+            )?,
+        }
 
         Ok(MbarFit::new(prepared, f_k, self.options.parallel))
     }
@@ -290,7 +309,7 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
     Ok((u_kn, n_k, states, lambda_labels))
 }
 
-fn mbar_solve(
+fn mbar_solve_fixed_point(
     u_kn: &[Vec<f64>],
     u_nk: &[f64],
     n_k: &[f64],
@@ -343,6 +362,116 @@ fn mbar_solve(
     }
 
     Err(CoreError::ConvergenceFailure)
+}
+
+#[derive(Debug)]
+struct LbfgsHistoryEntry {
+    s: Vec<f64>,
+    y: Vec<f64>,
+    rho: f64,
+}
+
+fn mbar_solve_lbfgs(
+    u_nk: &[f64],
+    n_k: &[f64],
+    f_k: &mut [f64],
+    tolerance: f64,
+    max_iterations: usize,
+    parallel: bool,
+) -> Result<()> {
+    const LBFGS_HISTORY_LIMIT: usize = 10;
+    const LBFGS_C1: f64 = 1.0e-4;
+    const LBFGS_MIN_STEP: f64 = 1.0e-20;
+    const LBFGS_MAX_LINE_SEARCH_STEPS: usize = 40;
+    const LBFGS_CURVATURE_EPS: f64 = 1.0e-12;
+
+    let n_states = f_k.len();
+    if n_states == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    if n_states == 1 {
+        f_k[0] = 0.0;
+        return Ok(());
+    }
+
+    let ln_n_k = positive_log_counts(n_k)?;
+    let mut reduced_b = reduced_b_from_free_energies(&ln_n_k, f_k);
+    let mut full_b = vec![0.0; n_states];
+    fill_full_b(&reduced_b, &mut full_b);
+    let (mut objective, full_grad) =
+        mbar_objective_gradient(u_nk, n_states, n_k, &full_b, parallel);
+    let mut gradient = full_grad[1..].to_vec();
+    let mut history: Vec<LbfgsHistoryEntry> = Vec::new();
+
+    for _ in 0..max_iterations {
+        if max_abs(&gradient) < tolerance {
+            write_free_energies_from_reduced_b(&reduced_b, &ln_n_k, f_k);
+            return Ok(());
+        }
+
+        let mut direction = lbfgs_direction(&gradient, &history);
+        let mut directional_derivative = dot(&gradient, &direction);
+        if !directional_derivative.is_finite() || directional_derivative >= 0.0 {
+            direction = gradient.iter().map(|value| -*value).collect();
+            directional_derivative = -dot(&gradient, &gradient);
+        }
+
+        let mut step = 1.0;
+        let mut accepted = None;
+        for _ in 0..LBFGS_MAX_LINE_SEARCH_STEPS {
+            let trial_reduced = add_scaled(&reduced_b, &direction, step);
+            let mut trial_full = vec![0.0; n_states];
+            fill_full_b(&trial_reduced, &mut trial_full);
+            let (trial_objective, trial_full_grad) =
+                mbar_objective_gradient(u_nk, n_states, n_k, &trial_full, parallel);
+            if trial_objective <= objective + LBFGS_C1 * step * directional_derivative {
+                accepted = Some((trial_reduced, trial_objective, trial_full_grad));
+                break;
+            }
+            step *= 0.5;
+            if step < LBFGS_MIN_STEP {
+                break;
+            }
+        }
+
+        let Some((trial_reduced, trial_objective, trial_full_grad)) = accepted else {
+            break;
+        };
+        let trial_gradient = trial_full_grad[1..].to_vec();
+        let s = subtract(&trial_reduced, &reduced_b);
+        let y = subtract(&trial_gradient, &gradient);
+        let ys = dot(&y, &s);
+
+        reduced_b = trial_reduced;
+        objective = trial_objective;
+        gradient = trial_gradient;
+
+        if max_abs(&s) < tolerance && max_abs(&gradient) < tolerance {
+            write_free_energies_from_reduced_b(&reduced_b, &ln_n_k, f_k);
+            return Ok(());
+        }
+
+        if ys > LBFGS_CURVATURE_EPS {
+            history.push(LbfgsHistoryEntry {
+                s,
+                y,
+                rho: 1.0 / ys,
+            });
+            if history.len() > LBFGS_HISTORY_LIMIT {
+                history.remove(0);
+            }
+        }
+    }
+
+    if max_abs(&gradient) < tolerance {
+        write_free_energies_from_reduced_b(&reduced_b, &ln_n_k, f_k);
+        Ok(())
+    } else {
+        Err(CoreError::ConvergenceFailure)
+    }
 }
 
 fn mbar_uncertainty(
@@ -410,6 +539,175 @@ fn mbar_theta(
     let a = &identity - &sigma * &v.transpose() * &ndiag * &v * &sigma;
     let a_inv = pseudoinverse(&a, 1.0e-10)?;
     Ok(&v * &sigma * a_inv * &sigma * v.transpose())
+}
+
+fn positive_log_counts(n_k: &[f64]) -> Result<Vec<f64>> {
+    let mut values = Vec::with_capacity(n_k.len());
+    for (state_idx, &count) in n_k.iter().enumerate() {
+        if count <= 0.0 || !count.is_finite() {
+            return Err(CoreError::InvalidState(format!(
+                "MBAR solver requires a positive finite sample count for state {state_idx}"
+            )));
+        }
+        values.push(count.ln());
+    }
+    Ok(values)
+}
+
+fn reduced_b_from_free_energies(ln_n_k: &[f64], f_k: &[f64]) -> Vec<f64> {
+    let mut full_b = Vec::with_capacity(f_k.len());
+    for (&ln_n, &free_energy) in ln_n_k.iter().zip(f_k.iter()) {
+        full_b.push(-(ln_n + free_energy));
+    }
+    let shift = full_b[0];
+    for value in &mut full_b {
+        *value -= shift;
+    }
+    full_b[1..].to_vec()
+}
+
+fn write_free_energies_from_reduced_b(reduced_b: &[f64], ln_n_k: &[f64], out: &mut [f64]) {
+    out[0] = -ln_n_k[0];
+    for (state_idx, slot) in out.iter_mut().enumerate().skip(1) {
+        *slot = -reduced_b[state_idx - 1] - ln_n_k[state_idx];
+    }
+    let shift = out[0];
+    for value in out.iter_mut() {
+        *value -= shift;
+    }
+}
+
+fn fill_full_b(reduced_b: &[f64], full_b: &mut [f64]) {
+    full_b[0] = 0.0;
+    full_b[1..].copy_from_slice(reduced_b);
+}
+
+fn mbar_objective_gradient(
+    u_nk: &[f64],
+    n_states: usize,
+    n_k: &[f64],
+    full_b: &[f64],
+    parallel: bool,
+) -> (f64, Vec<f64>) {
+    let n_samples = u_nk.len() / n_states;
+    let (sum_log_denom, mut gradient) = if parallel {
+        (0..n_samples)
+            .into_par_iter()
+            .fold(
+                || (0.0, vec![0.0; n_states]),
+                |(objective_sum, mut gradient), sample_idx| {
+                    let row = sample_major_row(u_nk, n_states, sample_idx);
+                    let log_denom = row_logsumexp_with_bias(row, full_b);
+                    for (state_idx, value) in row.iter().enumerate() {
+                        gradient[state_idx] -= (-*value - full_b[state_idx] - log_denom).exp();
+                    }
+                    (objective_sum + log_denom, gradient)
+                },
+            )
+            .reduce(
+                || (0.0, vec![0.0; n_states]),
+                |(left_obj, mut left_grad), (right_obj, right_grad)| {
+                    for (lhs, rhs) in left_grad.iter_mut().zip(right_grad.iter()) {
+                        *lhs += *rhs;
+                    }
+                    (left_obj + right_obj, left_grad)
+                },
+            )
+    } else {
+        let mut objective_sum = 0.0;
+        let mut gradient = vec![0.0; n_states];
+        for sample_idx in 0..n_samples {
+            let row = sample_major_row(u_nk, n_states, sample_idx);
+            let log_denom = row_logsumexp_with_bias(row, full_b);
+            objective_sum += log_denom;
+            for (state_idx, value) in row.iter().enumerate() {
+                gradient[state_idx] -= (-*value - full_b[state_idx] - log_denom).exp();
+            }
+        }
+        (objective_sum, gradient)
+    };
+
+    let inv_n = 1.0 / n_samples as f64;
+    for (state_idx, value) in gradient.iter_mut().enumerate() {
+        *value = (*value + n_k[state_idx]) * inv_n;
+    }
+    let objective = inv_n * (sum_log_denom + dot(full_b, n_k));
+    (objective, gradient)
+}
+
+fn row_logsumexp_with_bias(row: &[f64], full_b: &[f64]) -> f64 {
+    let mut max_arg = f64::NEG_INFINITY;
+    let mut sum = 0.0;
+    for (&value, &bias) in row.iter().zip(full_b.iter()) {
+        accumulate_logsumexp(&mut max_arg, &mut sum, -value - bias);
+    }
+    max_arg + sum.ln()
+}
+
+fn lbfgs_direction(gradient: &[f64], history: &[LbfgsHistoryEntry]) -> Vec<f64> {
+    if history.is_empty() {
+        return gradient.iter().map(|value| -*value).collect();
+    }
+
+    let mut q = gradient.to_vec();
+    let mut alpha = vec![0.0; history.len()];
+    for (idx, entry) in history.iter().enumerate().rev() {
+        alpha[idx] = entry.rho * dot(&entry.s, &q);
+        axpy(&mut q, -alpha[idx], &entry.y);
+    }
+
+    let gamma = if let Some(last) = history.last() {
+        let yy = dot(&last.y, &last.y);
+        if yy > 0.0 {
+            dot(&last.s, &last.y) / yy
+        } else {
+            1.0
+        }
+    } else {
+        1.0
+    };
+    scale(&mut q, gamma);
+
+    for (idx, entry) in history.iter().enumerate() {
+        let beta = entry.rho * dot(&entry.y, &q);
+        axpy(&mut q, alpha[idx] - beta, &entry.s);
+    }
+
+    scale(&mut q, -1.0);
+    q
+}
+
+fn dot(lhs: &[f64], rhs: &[f64]) -> f64 {
+    lhs.iter().zip(rhs.iter()).map(|(l, r)| l * r).sum()
+}
+
+fn axpy(dst: &mut [f64], alpha: f64, src: &[f64]) {
+    for (lhs, rhs) in dst.iter_mut().zip(src.iter()) {
+        *lhs += alpha * rhs;
+    }
+}
+
+fn scale(values: &mut [f64], factor: f64) {
+    for value in values.iter_mut() {
+        *value *= factor;
+    }
+}
+
+fn add_scaled(lhs: &[f64], rhs: &[f64], scale: f64) -> Vec<f64> {
+    lhs.iter()
+        .zip(rhs.iter())
+        .map(|(l, r)| l + scale * r)
+        .collect()
+}
+
+fn subtract(lhs: &[f64], rhs: &[f64]) -> Vec<f64> {
+    lhs.iter().zip(rhs.iter()).map(|(l, r)| l - r).collect()
+}
+
+fn max_abs(values: &[f64]) -> f64 {
+    values
+        .iter()
+        .fold(0.0, |max_value, value| max_value.max(value.abs()))
 }
 
 fn pair_uncertainty_from_theta(

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs::{BarMethod, IntegrationMethod};
+use alchemrs::{BarMethod, IntegrationMethod, MbarSolver};
 use clap::{ArgAction, Parser, Subcommand, ValueEnum};
 
 pub mod commands;
@@ -335,6 +335,9 @@ pub enum Command {
         /// MBAR relative tolerance
         #[arg(long, default_value_t = 1.0e-7)]
         tolerance: f64,
+        /// MBAR solver backend
+        #[arg(long, value_enum, default_value_t = MbarCliSolver::FixedPoint)]
+        solver: MbarCliSolver,
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
@@ -372,6 +375,21 @@ pub enum AdviseInputKind {
     Auto,
     UNk,
     Dhdl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum MbarCliSolver {
+    FixedPoint,
+    Lbfgs,
+}
+
+impl MbarCliSolver {
+    pub fn solver(self) -> MbarSolver {
+        match self {
+            Self::FixedPoint => MbarSolver::FixedPoint,
+            Self::Lbfgs => MbarSolver::Lbfgs,
+        }
+    }
 }
 
 impl TiMethod {

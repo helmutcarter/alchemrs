@@ -2,13 +2,13 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use alchemrs::estimators::sample_ti_curve;
 use alchemrs::{
     advise_lambda_schedule, advise_ti_schedule, AdvisorEstimator, EdgeSeverity, IntegrationMethod,
     ScheduleAdvice, ScheduleAdvisorOptions, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic,
     TiScheduleAdvice, TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind,
     TiWindowDiagnostic,
 };
-use alchemrs::estimators::sample_ti_curve;
 use serde_json::{json, Map, Value};
 
 use crate::cli::input::{
@@ -1012,11 +1012,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     );
     html.push_str("<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>TI Schedule Report</h1><div class=\"lede ti\">TI-native spacing diagnostics built from dH/dλ means, block stability, local slope, and curvature.</div></header>");
     html.push_str("<section class=\"grid summary\">");
-    html.push_str(&summary_card(
-        "Mode",
-        "ti",
-        "dH/dλ schedule diagnostics",
-    ));
+    html.push_str(&summary_card("Mode", "ti", "dH/dλ schedule diagnostics"));
     html.push_str(&summary_card(
         "Windows",
         &sample_counts.windows.to_string(),
@@ -1121,7 +1117,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             html.push_str("<div class=\"kv\">");
             if let Some(state) = suggestion.proposed_state() {
                 html.push_str(&kv_html(
-                "proposed λ",
+                    "proposed λ",
                     &format_report_state(state.lambdas()),
                 ));
             }
@@ -1788,7 +1784,11 @@ struct TiPlotSeries {
     points: Vec<(f64, f64)>,
 }
 
-fn ti_method_curves(lambdas: &[f64], values: &[f64], samples_per_interval: usize) -> Vec<TiPlotSeries> {
+fn ti_method_curves(
+    lambdas: &[f64],
+    values: &[f64],
+    samples_per_interval: usize,
+) -> Vec<TiPlotSeries> {
     let mut curves = Vec::new();
     for method in [
         IntegrationMethod::Trapezoidal,
@@ -2720,8 +2720,7 @@ mod tests {
 
     use super::{
         axis_tick_values, render_advice, render_html_report, render_ti_html_report,
-        render_ti_method_plot_cards_html, AdviseRunOptions,
-        zero_area_polygons,
+        render_ti_method_plot_cards_html, zero_area_polygons, AdviseRunOptions,
     };
     use crate::cli::input::{AnalysisInputOptions, AnalysisSampleCounts};
     use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat, UNkObservable};
@@ -3149,11 +3148,17 @@ mod tests {
         assert!(output.contains("<th>Interval</th><th>Endpoints</th><th>Slope</th><th>Curvature</th><th>Priority</th><th>Suggestion</th>"));
         assert!(output.contains(": λ "));
         assert!(output.contains("<span class=\"mono\"> interval 0: λ "));
-        assert!(output.contains("mean <span class=\"keep-case\">dH/dλ</span> at <span class=\"keep-case\">λ</span>=0"));
+        assert!(output.contains(
+            "mean <span class=\"keep-case\">dH/dλ</span> at <span class=\"keep-case\">λ</span>=0"
+        ));
         assert!(output.contains("kept samples at <span class=\"keep-case\">λ</span>=0"));
         assert!(output.contains("high_curvature"));
-        assert!(output.contains("proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">0.495"));
-        assert!(!output.contains("proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"));
+        assert!(output.contains(
+            "proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">0.495"
+        ));
+        assert!(!output.contains(
+            "proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"
+        ));
     }
 
     #[test]
@@ -3198,7 +3203,9 @@ mod tests {
         assert!(output.contains("∫Δ dλ"));
         assert!(output.contains("Simpson"));
         assert!(output.contains("high_block_cv"));
-        assert!(!output.contains("proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"));
+        assert!(!output.contains(
+            "proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"
+        ));
     }
 
     #[test]

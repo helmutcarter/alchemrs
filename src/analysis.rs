@@ -1380,7 +1380,10 @@ pub fn recommend_ti_method(
     let cross_method_spread = if supported_deltas.is_empty() {
         None
     } else {
-        let min = supported_deltas.iter().copied().fold(f64::INFINITY, f64::min);
+        let min = supported_deltas
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
         let max = supported_deltas
             .iter()
             .copied()
@@ -1475,9 +1478,7 @@ fn choose_ti_method(
                 "supported methods disagree materially, and monotone dH/dlambda means favor shape-preserving PCHIP".to_string(),
             );
         }
-        if !has_sampling_issue
-            && supports_ti_method(assessments, IntegrationMethod::Akima)
-        {
+        if !has_sampling_issue && supports_ti_method(assessments, IntegrationMethod::Akima) {
             return (
                 IntegrationMethod::Akima,
                 "supported methods disagree materially on a nonuniform schedule, so Akima is the most local smooth interpolant available".to_string(),
@@ -1489,7 +1490,10 @@ fn choose_ti_method(
         );
     }
 
-    if !has_sampling_issue && monotone_means && supports_ti_method(assessments, IntegrationMethod::Pchip) {
+    if !has_sampling_issue
+        && monotone_means
+        && supports_ti_method(assessments, IntegrationMethod::Pchip)
+    {
         return (
             IntegrationMethod::Pchip,
             "healthy nonuniform schedule with monotone dH/dlambda means favors shape-preserving PCHIP".to_string(),
@@ -1517,10 +1521,7 @@ fn choose_ti_method(
     )
 }
 
-fn supports_ti_method(
-    assessments: &[TiMethodAssessment],
-    method: IntegrationMethod,
-) -> bool {
+fn supports_ti_method(assessments: &[TiMethodAssessment], method: IntegrationMethod) -> bool {
     assessments
         .iter()
         .find(|assessment| assessment.method() == method)
@@ -1546,8 +1547,7 @@ fn supported_ti_method_rationale(
             }
         }
         IntegrationMethod::CubicSpline => {
-            "supported as a smooth global cubic interpolant with propagated uncertainty"
-                .to_string()
+            "supported as a smooth global cubic interpolant with propagated uncertainty".to_string()
         }
         IntegrationMethod::Pchip => {
             if monotone_means {
@@ -2045,7 +2045,10 @@ fn validate_ti_method_recommendation_options(
 ) -> Result<TiMethodRecommendationOptions> {
     let schedule = validate_ti_schedule_advisor_options(options.schedule)?;
     for (name, value) in [
-        ("disagreement_sigma_factor", options.disagreement_sigma_factor),
+        (
+            "disagreement_sigma_factor",
+            options.disagreement_sigma_factor,
+        ),
         ("absolute_delta_tolerance", options.absolute_delta_tolerance),
     ] {
         if !value.is_finite() || value < 0.0 {
@@ -3203,9 +3206,7 @@ mod tests {
             recommendation.recommended_method(),
             IntegrationMethod::GaussianQuadrature
         );
-        assert!(recommendation
-            .reason()
-            .contains("Gauss-Legendre"));
+        assert!(recommendation.reason().contains("Gauss-Legendre"));
     }
 
     #[test]
@@ -3232,7 +3233,10 @@ mod tests {
         ];
 
         let recommendation = recommend_ti_method(&series, None).unwrap();
-        assert_eq!(recommendation.recommended_method(), IntegrationMethod::Simpson);
+        assert_eq!(
+            recommendation.recommended_method(),
+            IntegrationMethod::Simpson
+        );
     }
 
     #[test]
@@ -3265,7 +3269,10 @@ mod tests {
         ];
 
         let recommendation = recommend_ti_method(&series, None).unwrap();
-        assert_eq!(recommendation.recommended_method(), IntegrationMethod::Pchip);
+        assert_eq!(
+            recommendation.recommended_method(),
+            IntegrationMethod::Pchip
+        );
         let simpson = recommendation
             .assessments()
             .iter()

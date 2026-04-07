@@ -871,7 +871,10 @@ fn ti_cli_rejects_nonquadrature_schedule_for_gaussian_quadrature() {
 #[test]
 fn ti_cli_auto_reports_recommended_method_in_json() {
     let inputs = acetamide_inputs();
-    let output = run_cli(&["ti", "--method", "auto", "--output-format", "json"], &inputs);
+    let output = run_cli(
+        &["ti", "--method", "auto", "--output-format", "json"],
+        &inputs,
+    );
     let payload = parse_json_output(&output);
 
     let series = inputs

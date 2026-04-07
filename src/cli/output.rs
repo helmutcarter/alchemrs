@@ -288,12 +288,12 @@ fn render_csv(result: &RenderedScalarResult<'_>) -> Result<String, String> {
             .u_nk_observable
             .unwrap_or_default()
             .to_string(),
+        result.provenance.ti_method.unwrap_or_default().to_string(),
         result
             .provenance
-            .ti_method
-            .unwrap_or_default()
-            .to_string(),
-        result.provenance.ti_method_reason.clone().unwrap_or_default(),
+            .ti_method_reason
+            .clone()
+            .unwrap_or_default(),
         result
             .provenance
             .lambda_components

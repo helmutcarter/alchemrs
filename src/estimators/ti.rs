@@ -177,7 +177,9 @@ pub fn sample_ti_curve(
     }
 
     match method {
-        IntegrationMethod::Trapezoidal => sample_trapezoidal_curve(lambdas, values, samples_per_interval),
+        IntegrationMethod::Trapezoidal => {
+            sample_trapezoidal_curve(lambdas, values, samples_per_interval)
+        }
         IntegrationMethod::Simpson => sample_simpson_curve(lambdas, values, samples_per_interval),
         IntegrationMethod::CubicSpline => {
             let second = natural_cubic_second_derivatives(lambdas, values)?;
@@ -486,9 +488,8 @@ fn sample_cubic_spline_curve(
             let x = x0 + h * t;
             let a = (x1 - x) / h;
             let b = (x - x0) / h;
-            let y = a * y0
-                + b * y1
-                + (((a * a * a) - a) * m0 + ((b * b * b) - b) * m1) * (h * h) / 6.0;
+            let y =
+                a * y0 + b * y1 + (((a * a * a) - a) * m0 + ((b * b * b) - b) * m1) * (h * h) / 6.0;
             points.push((x, y));
         }
     }

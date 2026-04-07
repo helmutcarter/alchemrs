@@ -6,7 +6,7 @@ mod ti;
 
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{ExpEstimator, ExpFit, ExpOptions};
-pub use mbar::{MbarEstimator, MbarFit, MbarOptions};
+pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
 #[cfg(test)]
@@ -17,7 +17,7 @@ mod tests {
     use super::bar::{bar_estimate, BarEstimator, BarMethod, BarOptions};
     use super::common::work_values;
     use super::exp::{ExpEstimator, ExpOptions};
-    use super::mbar::{MbarEstimator, MbarOptions};
+    use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
@@ -135,6 +135,24 @@ mod tests {
                     assert!((*x - *y).abs() < 1e-12, "mismatch at {idx}: {x} vs {y}");
                 }
             }
+            _ => panic!("option mismatch"),
+        }
+    }
+
+    fn assert_slice_close(left: &[f64], right: &[f64], tolerance: f64) {
+        assert_eq!(left.len(), right.len());
+        for (idx, (lhs, rhs)) in left.iter().zip(right.iter()).enumerate() {
+            assert!(
+                (*lhs - *rhs).abs() < tolerance,
+                "mismatch at {idx}: {lhs} vs {rhs}"
+            );
+        }
+    }
+
+    fn assert_option_slice_close(left: Option<&[f64]>, right: Option<&[f64]>, tolerance: f64) {
+        match (left, right) {
+            (None, None) => {}
+            (Some(a), Some(b)) => assert_slice_close(a, b, tolerance),
             _ => panic!("option mismatch"),
         }
     }
@@ -630,6 +648,66 @@ mod tests {
         let serial_overlap = serial.overlap_matrix().unwrap();
         let parallel_overlap = parallel.overlap_matrix().unwrap();
         assert_eq!(serial_overlap.values(), parallel_overlap.values());
+    }
+
+    #[test]
+    fn mbar_lbfgs_matches_fixed_point() {
+        let windows = make_two_state_windows();
+        let fixed_point = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::FixedPoint,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let lbfgs = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::Lbfgs,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_slice_close(fixed_point.free_energies(), lbfgs.free_energies(), 1e-8);
+        assert_slice_close(fixed_point.log_weights(), lbfgs.log_weights(), 1e-8);
+
+        let fixed_point_result = fixed_point.result_with_uncertainty().unwrap();
+        let lbfgs_result = lbfgs.result_with_uncertainty().unwrap();
+        assert_slice_close(fixed_point_result.values(), lbfgs_result.values(), 1e-8);
+        assert_option_slice_close(
+            fixed_point_result.uncertainties(),
+            lbfgs_result.uncertainties(),
+            1e-8,
+        );
+    }
+
+    #[test]
+    fn mbar_lbfgs_parallel_matches_serial() {
+        let windows = make_two_state_windows();
+        let serial = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::Lbfgs,
+            parallel: false,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let parallel = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::Lbfgs,
+            parallel: true,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_slice_close(serial.free_energies(), parallel.free_energies(), 1e-12);
+        assert_slice_close(serial.log_weights(), parallel.log_weights(), 1e-12);
+
+        let serial_result = serial.result_with_uncertainty().unwrap();
+        let parallel_result = parallel.result_with_uncertainty().unwrap();
+        assert_slice_close(serial_result.values(), parallel_result.values(), 1e-12);
+        assert_option_slice_close(
+            serial_result.uncertainties(),
+            parallel_result.uncertainties(),
+            1e-12,
+        );
     }
 
     #[test]

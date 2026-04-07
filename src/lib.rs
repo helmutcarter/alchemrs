@@ -60,7 +60,9 @@ pub use data::{
 };
 pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
-pub use estimators::{ExpEstimator, ExpFit, ExpOptions, MbarEstimator, MbarFit, MbarOptions};
+pub use estimators::{
+    ExpEstimator, ExpFit, ExpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
+};
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
 #[cfg(feature = "plotting")]
