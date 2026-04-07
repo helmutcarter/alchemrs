@@ -1139,15 +1139,16 @@ fn schedule_edge_metrics_bar(
         let pair_windows =
             select_windows_for_states(&windows[edge_index..edge_index + 2], &pair_states)?;
         let pair_result = fit_pair(&pair_windows, options.estimator)?;
-        let pair_overlap = overlap_matrix(&pair_windows, Some(MbarOptions::default()))?;
+        let (overlap_forward, overlap_reverse) =
+            bar_pair_overlap(&pair_windows, pair_result.values()[1])?;
         let block_stats = pair_block_stats(&pair_windows, options)?;
         metrics.push(EdgeMetrics {
             edge_index,
             from_state: pair_result.states()[0].clone(),
             to_state: pair_result.states()[1].clone(),
             lambda_labels: pair_result.lambda_labels().map(|values| values.to_vec()),
-            overlap_forward: pair_overlap.values()[1],
-            overlap_reverse: pair_overlap.values()[2],
+            overlap_forward,
+            overlap_reverse,
             delta_f: pair_result.values()[1],
             uncertainty: pair_result.uncertainties().map(|values| values[1]),
             block_mean: block_stats.map(|(mean, _, _)| mean),
@@ -1157,6 +1158,63 @@ fn schedule_edge_metrics_bar(
     }
 
     Ok(metrics)
+}
+
+fn bar_pair_overlap(windows: &[UNkMatrix], delta_f: f64) -> Result<(f64, f64)> {
+    if windows.len() != 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: windows.len(),
+        });
+    }
+
+    for window in windows {
+        if window.n_states() != 2 {
+            return Err(CoreError::InvalidShape {
+                expected: 2,
+                found: window.n_states(),
+            });
+        }
+    }
+
+    let n0 = windows[0].n_samples() as f64;
+    let n1 = windows[1].n_samples() as f64;
+    if n0 <= 0.0 || n1 <= 0.0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let ln_n0 = n0.ln();
+    let ln_n1 = n1.ln();
+    let mut sum_product = 0.0;
+
+    for window in windows {
+        for row in window.data().chunks_exact(2) {
+            let log_denom = logsumexp_pair(ln_n0 - row[0], ln_n1 + delta_f - row[1])?;
+            let log_w0 = -row[0] - log_denom;
+            let log_w1 = delta_f - row[1] - log_denom;
+            sum_product += (log_w0 + log_w1).exp();
+        }
+    }
+
+    Ok((n1 * sum_product, n0 * sum_product))
+}
+
+fn logsumexp_pair(left: f64, right: f64) -> Result<f64> {
+    match (left.is_finite(), right.is_finite()) {
+        (true, true) => {
+            let max_arg = left.max(right);
+            let min_arg = left.min(right);
+            Ok(max_arg + (min_arg - max_arg).exp().ln_1p())
+        }
+        (true, false) => Ok(left),
+        (false, true) => Ok(right),
+        (false, false) => Err(CoreError::NonFiniteValue(
+            "pair overlap denominator became non-finite".to_string(),
+        )),
+    }
 }
 
 pub fn advise_ti_schedule(
@@ -2898,12 +2956,13 @@ fn block_estimate_from_matrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        advise_lambda_schedule, advise_ti_schedule, recommend_ti_method, schedule_suggestion,
+        advise_lambda_schedule, advise_ti_schedule, bar_pair_overlap, fit_pair, overlap_matrix,
+        recommend_ti_method, schedule_suggestion, select_windows_for_states,
         AdjacentEdgeDiagnostic, AdvisorEstimator, EdgeSeverity, ProposalStrategy,
         ScheduleAdvisorOptions, TiEdgeSeverity, TiScheduleAdvisorOptions,
     };
     use crate::data::{StatePoint, UNkMatrix};
-    use crate::{DhdlSeries, IntegrationMethod};
+    use crate::{DhdlSeries, IntegrationMethod, MbarOptions};
 
     fn build_window(
         sampled_lambda: f64,
@@ -3161,6 +3220,44 @@ mod tests {
             .edges()
             .iter()
             .all(|edge| edge.overlap_forward().is_finite() && edge.overlap_reverse().is_finite()));
+    }
+
+    #[test]
+    fn bar_pair_overlap_matches_two_state_mbar_overlap() {
+        let windows = vec![
+            build_variable_window(
+                0.0,
+                &[
+                    vec![0.0, 0.4],
+                    vec![0.0, 0.5],
+                    vec![0.0, 0.6],
+                    vec![0.0, 0.7],
+                ],
+                &[0.0, 0.5],
+            ),
+            build_variable_window(
+                0.5,
+                &[
+                    vec![0.3, 0.0],
+                    vec![0.4, 0.0],
+                    vec![0.5, 0.0],
+                    vec![0.6, 0.0],
+                ],
+                &[0.0, 0.5],
+            ),
+        ];
+        let pair_states = windows
+            .iter()
+            .map(|window| window.sampled_state().cloned().unwrap())
+            .collect::<Vec<_>>();
+        let pair_windows = select_windows_for_states(&windows, &pair_states).unwrap();
+        let pair_result = fit_pair(&pair_windows, AdvisorEstimator::Bar).unwrap();
+        let overlap = overlap_matrix(&pair_windows, Some(MbarOptions::default())).unwrap();
+        let (overlap_forward, overlap_reverse) =
+            bar_pair_overlap(&pair_windows, pair_result.values()[1]).unwrap();
+
+        assert!((overlap_forward - overlap.values()[1]).abs() < 1.0e-12);
+        assert!((overlap_reverse - overlap.values()[2]).abs() < 1.0e-12);
     }
 
     #[test]
