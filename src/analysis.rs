@@ -1477,6 +1477,10 @@ const TI_METHOD_CANDIDATES: [IntegrationMethod; 6] = [
     IntegrationMethod::GaussianQuadrature,
 ];
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Boolean TI method selection inputs are clearer here than an extra wrapper type"
+)]
 fn choose_ti_method(
     assessments: &[TiMethodAssessment],
     uniform_spacing: bool,
@@ -2338,6 +2342,10 @@ fn z_score(value: f64, mean: Option<f64>, stddev: Option<f64>) -> Option<f64> {
     Some(((value - mean) / stddev).max(0.0))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Scoring left and right TI endpoint diagnostics inline keeps the weighting logic local"
+)]
 fn ti_priority_score(
     slope_z: Option<f64>,
     curvature_z: Option<f64>,

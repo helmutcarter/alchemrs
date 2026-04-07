@@ -1904,6 +1904,10 @@ fn axis_tick_values(min: f64, max: f64, include_zero: bool) -> Vec<f64> {
     ticks
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The TI plot renderer is easier to read with explicit call-site arguments"
+)]
 fn render_ti_series_plot_svg(
     line_points: &[(f64, f64)],
     marker_points: &[(f64, f64)],
