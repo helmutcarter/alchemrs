@@ -2,9 +2,7 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{
-    ensure_consistent_lambda_labels, ensure_consistent_states, work_values, PairEstimate,
-};
+use super::common::{ensure_consistent_lambda_labels, work_values, PairEstimate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarMethod {
@@ -57,7 +55,7 @@ impl BarEstimator {
                 found: windows.len(),
             });
         }
-        let eval_states = ensure_consistent_states(windows)?;
+        let eval_states = sorted_sampled_states(windows)?;
         let lambda_labels = ensure_consistent_lambda_labels(windows)?;
         let mut window_by_index: Vec<Option<&UNkMatrix>> = vec![None; eval_states.len()];
         for window in windows {
@@ -84,8 +82,10 @@ impl BarEstimator {
                     let win_r = window_by_index[idx + 1].ok_or_else(|| {
                         CoreError::InvalidState(format!("missing window for state {}", idx + 1))
                     })?;
-                    let w_f = work_values(win_f, idx, idx + 1)?;
-                    let w_r = work_values(win_r, idx, idx + 1)?
+                    let (idx_f0, idx_f1) = adjacent_pair_indices(win_f, &eval_states, idx)?;
+                    let (idx_r0, idx_r1) = adjacent_pair_indices(win_r, &eval_states, idx)?;
+                    let w_f = work_values(win_f, idx_f0, idx_f1)?;
+                    let w_r = work_values(win_r, idx_r0, idx_r1)?
                         .into_iter()
                         .map(|w| -w)
                         .collect::<Vec<_>>();
@@ -108,8 +108,10 @@ impl BarEstimator {
                 let win_r = window_by_index[idx + 1].ok_or_else(|| {
                     CoreError::InvalidState(format!("missing window for state {}", idx + 1))
                 })?;
-                let w_f = work_values(win_f, idx, idx + 1)?;
-                let w_r = work_values(win_r, idx, idx + 1)?
+                let (idx_f0, idx_f1) = adjacent_pair_indices(win_f, &eval_states, idx)?;
+                let (idx_r0, idx_r1) = adjacent_pair_indices(win_r, &eval_states, idx)?;
+                let w_f = work_values(win_f, idx_f0, idx_f1)?;
+                let w_r = work_values(win_r, idx_r0, idx_r1)?
                     .into_iter()
                     .map(|w| -w)
                     .collect::<Vec<_>>();
@@ -188,6 +190,73 @@ impl BarEstimator {
     ) -> Result<Vec<BlockEstimate>> {
         analysis::bar_block_average(windows, n_blocks, Some(self.options.clone()))
     }
+}
+
+fn sorted_sampled_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
+    let first = windows[0]
+        .sampled_state()
+        .ok_or_else(|| CoreError::InvalidState("sampled_state required for BAR".to_string()))?;
+    let n_lambda = first.lambdas().len();
+    let temperature = first.temperature_k();
+
+    let mut states = Vec::with_capacity(windows.len());
+    for window in windows {
+        let sampled = window
+            .sampled_state()
+            .ok_or_else(|| CoreError::InvalidState("sampled_state required for BAR".to_string()))?;
+        if sampled.lambdas().len() != n_lambda {
+            return Err(CoreError::InvalidShape {
+                expected: n_lambda,
+                found: sampled.lambdas().len(),
+            });
+        }
+        if sampled.temperature_k() != temperature {
+            return Err(CoreError::InvalidState(
+                "sampled_state temperatures differ between windows".to_string(),
+            ));
+        }
+        if find_state_index_exact(&states, sampled).is_ok() {
+            return Err(CoreError::InvalidState(
+                "multiple windows for same sampled_state".to_string(),
+            ));
+        }
+        states.push(sampled.clone());
+    }
+
+    states.sort_by(compare_state_points);
+    Ok(states)
+}
+
+fn adjacent_pair_indices(
+    window: &UNkMatrix,
+    states: &[StatePoint],
+    idx: usize,
+) -> Result<(usize, usize)> {
+    let from_idx =
+        find_state_index_exact(window.evaluated_states(), &states[idx]).map_err(|_| {
+            CoreError::InvalidState(format!(
+                "window for state {idx} is missing adjacent state {} in evaluated_states",
+                idx + 1
+            ))
+        })?;
+    let to_idx =
+        find_state_index_exact(window.evaluated_states(), &states[idx + 1]).map_err(|_| {
+            CoreError::InvalidState(format!(
+                "window for state {idx} is missing adjacent state {} in evaluated_states",
+                idx + 1
+            ))
+        })?;
+    Ok((from_idx, to_idx))
+}
+
+fn compare_state_points(left: &StatePoint, right: &StatePoint) -> std::cmp::Ordering {
+    for (lhs, rhs) in left.lambdas().iter().zip(right.lambdas().iter()) {
+        let ordering = lhs.total_cmp(rhs);
+        if ordering != std::cmp::Ordering::Equal {
+            return ordering;
+        }
+    }
+    left.lambdas().len().cmp(&right.lambdas().len())
 }
 
 impl BarFit {

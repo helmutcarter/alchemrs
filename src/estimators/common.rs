@@ -23,10 +23,11 @@ pub(crate) fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<Stat
     for window in windows.iter().skip(1) {
         let states = window.evaluated_states();
         if states.len() != first.len() {
-            return Err(CoreError::InvalidShape {
-                expected: first.len(),
-                found: states.len(),
-            });
+            return Err(CoreError::InvalidState(format!(
+                "evaluated_states differ between windows: expected {} states but found {}. This usually means the inputs only contain local-neighbor Delta H evaluations rather than a common full u_nk grid. MBAR requires a common full state grid. Use BAR for adjacent-state data; pairwise EXP/DEXP may still be possible, but this estimator path expects a consistent evaluated-state grid",
+                first.len(),
+                states.len()
+            )));
         }
         for (a, b) in first.iter().zip(states.iter()) {
             if a.lambdas().len() != b.lambdas().len() {

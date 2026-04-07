@@ -123,6 +123,43 @@ mod tests {
         ]
     }
 
+    fn make_three_state_local_bar_windows() -> Vec<UNkMatrix> {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let time = vec![0.0, 1.0, 2.0];
+
+        let w0 = UNkMatrix::new(
+            3,
+            2,
+            vec![0.0, 0.2, 0.1, 0.3, 0.2, 0.4],
+            time.clone(),
+            Some(s0.clone()),
+            vec![s0.clone(), s1.clone()],
+        )
+        .unwrap();
+        let w1 = UNkMatrix::new(
+            3,
+            3,
+            vec![0.2, 0.0, 0.3, 0.3, 0.1, 0.2, 0.4, 0.2, 0.1],
+            time.clone(),
+            Some(s1.clone()),
+            vec![s0, s1.clone(), s2.clone()],
+        )
+        .unwrap();
+        let w2 = UNkMatrix::new(
+            3,
+            2,
+            vec![0.3, 0.0, 0.2, 0.1, 0.4, 0.2],
+            time,
+            Some(s2),
+            vec![s1, StatePoint::new(vec![1.0], 300.0).unwrap()],
+        )
+        .unwrap();
+
+        vec![w0, w1, w2]
+    }
+
     fn assert_vec_eq_with_nan(left: Option<&[f64]>, right: Option<&[f64]>) {
         match (left, right) {
             (None, None) => {}
@@ -719,8 +756,37 @@ mod tests {
 
         let err = BarEstimator::default().fit(&windows).unwrap_err();
         assert!(
-            matches!(err, CoreError::InvalidState(message) if message == "evaluated_states differ between windows")
+            matches!(err, CoreError::InvalidState(message) if message == "window for state 0 is missing adjacent state 1 in evaluated_states")
         );
+    }
+
+    #[test]
+    fn bar_supports_local_neighbor_evaluated_grids() {
+        let fit = BarEstimator::default()
+            .fit(&make_three_state_local_bar_windows())
+            .unwrap();
+        let result = fit.result().unwrap();
+        assert_eq!(fit.n_states(), 3);
+        assert_eq!(fit.states()[0].lambdas(), &[0.0]);
+        assert_eq!(fit.states()[1].lambdas(), &[0.5]);
+        assert_eq!(fit.states()[2].lambdas(), &[1.0]);
+        assert_eq!(result.n_states(), 3);
+        assert!(result.values()[1].is_finite());
+        assert!(result.values()[5].is_finite());
+    }
+
+    #[test]
+    fn mbar_reports_local_neighbor_grid_error_informatively() {
+        let err = MbarEstimator::default()
+            .fit(&make_three_state_local_bar_windows())
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            CoreError::InvalidState(message)
+                if message.contains("local-neighbor Delta H evaluations")
+                    && message.contains("Use BAR")
+                    && message.contains("MBAR requires a common full state grid")
+        ));
     }
 
     #[test]
