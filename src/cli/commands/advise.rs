@@ -5,10 +5,10 @@ use std::path::PathBuf;
 
 use alchemrs::estimators::sample_ti_curve;
 use alchemrs::{
-    advise_lambda_schedule, advise_ti_schedule, AdvisorEstimator, EdgeSeverity, IntegrationMethod,
-    ScheduleAdvice, ScheduleAdvisorOptions, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic,
-    TiScheduleAdvice, TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind,
-    TiWindowDiagnostic,
+    advise_lambda_schedule, advise_ti_schedule, overlap_matrix, AdvisorEstimator, EdgeSeverity,
+    IntegrationMethod, MbarOptions, OverlapMatrix, ScheduleAdvice, ScheduleAdvisorOptions,
+    SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiScheduleAdvice,
+    TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };
 use serde_json::{json, Map, Value};
 
@@ -37,6 +37,7 @@ enum AdviceKind {
         advice: ScheduleAdvice,
         lambda_components: Option<Vec<String>>,
         kept_samples_by_window: Vec<usize>,
+        overlap_matrix: OverlapMatrix,
     },
     Ti {
         advice: TiScheduleAdvice,
@@ -68,12 +69,14 @@ pub fn run(
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
             let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
+            let overlap_matrix = overlap_matrix(&loaded.windows, Some(MbarOptions::default()))?;
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
                     advice,
                     lambda_components,
                     kept_samples_by_window,
+                    overlap_matrix,
                 },
             )
         }
@@ -109,12 +112,14 @@ pub fn run(
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
             let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
+            let overlap_matrix = overlap_matrix(&loaded.windows, Some(MbarOptions::default()))?;
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
                     advice,
                     lambda_components,
                     kept_samples_by_window,
+                    overlap_matrix,
                 },
             )
         }
@@ -158,6 +163,7 @@ fn render_schedule_advice(
             advice,
             lambda_components,
             kept_samples_by_window: _,
+            overlap_matrix: _,
         } => render_advice(
             advice,
             sample_counts,
@@ -182,6 +188,7 @@ fn render_schedule_html_report(
             advice,
             lambda_components,
             kept_samples_by_window,
+            overlap_matrix,
         } => render_html_report(
             advice,
             sample_counts,
@@ -189,6 +196,7 @@ fn render_schedule_html_report(
             run_options,
             lambda_components.clone(),
             Some(kept_samples_by_window),
+            Some(overlap_matrix),
         ),
         AdviceKind::Ti { advice } => {
             render_ti_html_report(advice, sample_counts, input_options, run_options)
@@ -426,13 +434,38 @@ fn render_ti_csv(
                 format_state_csv(interval.from_state().lambdas()),
                 format_state_csv(interval.to_state().lambdas()),
                 interval.delta_lambda().to_string(),
-                convert_energy_value(interval.left_mean_dhdl(), input_options.temperature, run_options).to_string(),
-                convert_energy_value(interval.right_mean_dhdl(), input_options.temperature, run_options).to_string(),
-                convert_energy_value(interval.trapezoid_contribution(), input_options.temperature, run_options).to_string(),
-                convert_energy_value(interval.slope(), input_options.temperature, run_options).to_string(),
-                convert_energy_value(interval.abs_slope(), input_options.temperature, run_options).to_string(),
-                option_energy_string_csv(interval.curvature(), input_options.temperature, run_options),
-                option_energy_string_csv(interval.interval_uncertainty(), input_options.temperature, run_options),
+                convert_energy_value(
+                    interval.left_mean_dhdl(),
+                    input_options.temperature,
+                    run_options,
+                )
+                .to_string(),
+                convert_energy_value(
+                    interval.right_mean_dhdl(),
+                    input_options.temperature,
+                    run_options,
+                )
+                .to_string(),
+                convert_energy_value(
+                    interval.trapezoid_contribution(),
+                    input_options.temperature,
+                    run_options,
+                )
+                .to_string(),
+                convert_energy_value(interval.slope(), input_options.temperature, run_options)
+                    .to_string(),
+                convert_energy_value(interval.abs_slope(), input_options.temperature, run_options)
+                    .to_string(),
+                option_energy_string_csv(
+                    interval.curvature(),
+                    input_options.temperature,
+                    run_options,
+                ),
+                option_energy_string_csv(
+                    interval.interval_uncertainty(),
+                    input_options.temperature,
+                    run_options,
+                ),
                 format_units(run_options.output_units).to_string(),
                 ti_severity_name(interval.severity()).to_string(),
                 interval.priority_score().to_string(),
@@ -616,7 +649,10 @@ fn render_json(
     provenance.insert("overlap_min".to_string(), json!(run_options.overlap_min));
     provenance.insert("block_cv_min".to_string(), json!(run_options.block_cv_min));
     provenance.insert("n_blocks".to_string(), json!(run_options.n_blocks));
-    provenance.insert("units".to_string(), json!(format_units(run_options.output_units)));
+    provenance.insert(
+        "units".to_string(),
+        json!(format_units(run_options.output_units)),
+    );
     provenance.insert(
         "lambda_components".to_string(),
         lambda_components
@@ -692,11 +728,20 @@ fn render_csv(
                 edge.overlap_reverse().to_string(),
                 edge.overlap_min().to_string(),
                 option_string(edge.relative_overlap()),
-                convert_energy_value(edge.delta_f(), input_options.temperature, run_options).to_string(),
-                option_energy_string_csv(edge.uncertainty(), input_options.temperature, run_options),
+                convert_energy_value(edge.delta_f(), input_options.temperature, run_options)
+                    .to_string(),
+                option_energy_string_csv(
+                    edge.uncertainty(),
+                    input_options.temperature,
+                    run_options,
+                ),
                 option_string(edge.relative_uncertainty()),
                 option_energy_string_csv(edge.block_mean(), input_options.temperature, run_options),
-                option_energy_string_csv(edge.block_stddev(), input_options.temperature, run_options),
+                option_energy_string_csv(
+                    edge.block_stddev(),
+                    input_options.temperature,
+                    run_options,
+                ),
                 option_string(edge.block_cv()),
                 format_string_list(edge.dominant_components()),
                 edge.priority_score().to_string(),
@@ -735,6 +780,7 @@ fn render_html_report(
     run_options: &AdviseRunOptions,
     lambda_components: Option<Vec<String>>,
     kept_samples_by_window: Option<&[usize]>,
+    overlap_matrix: Option<&OverlapMatrix>,
 ) -> Result<String, String> {
     let lambda_components = normalize_lambda_components(lambda_components);
     let max_priority = advice
@@ -758,6 +804,7 @@ fn render_html_report(
 *{box-sizing:border-box}body{margin:0;font-family:Georgia,\"Times New Roman\",serif;background:radial-gradient(circle at top,#fffaf0,var(--bg));color:var(--ink)}\
 .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
 h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.lede.ti{max-width:none;white-space:nowrap}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}\
+ .plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-frame.overlap-matrix-frame{display:block}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}.plot-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;width:100%}.plot-zoom-group{display:flex;align-items:center;gap:8px}.plot-zoom-button{border:1px solid var(--line);background:#fffaf0;border-radius:999px;padding:5px 10px;color:var(--ink);font:600 12px/1.2 ui-monospace,Consolas,monospace;cursor:pointer}.plot-zoom-button:hover{border-color:var(--accent);color:var(--accent)}.plot-zoom-range{accent-color:var(--accent);width:140px}.plot-zoom-value{color:var(--muted);font:500 12px/1.2 ui-monospace,Consolas,monospace}.overlap-matrix-shell{display:grid;justify-items:center;gap:10px;width:100%}.overlap-matrix-plot{width:min(calc(var(--overlap-matrix-scale,1) * 340px),100%);height:auto;margin:0 auto;display:block}\
 .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.keep-case{text-transform:none}\
 .value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}\
 .stack{display:grid;gap:14px}.pill{display:inline-block;padding:4px 10px;border-radius:999px;font:600 12px/1.2 ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;background:#efe7d6;color:var(--ink)}\
@@ -830,7 +877,10 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         "block CV min",
         &format_report_number(run_options.block_cv_min),
     ));
-    html.push_str(&kv_html("output units", format_units(run_options.output_units)));
+    html.push_str(&kv_html(
+        "output units",
+        format_units(run_options.output_units),
+    ));
     html.push_str(&kv_html("n blocks", &run_options.n_blocks.to_string()));
     if let Some(labels) = lambda_components
         .as_ref()
@@ -839,6 +889,14 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         html.push_str(&kv_html("lambda components", &labels.join(", ")));
     }
     html.push_str("</div></div></section>");
+
+    if let Some(overlap_matrix) = overlap_matrix {
+        html.push_str(
+            "<section class=\"section\"><h2>Overlap Matrix</h2><div class=\"grid plot-grid\">",
+        );
+        html.push_str(&render_overlap_matrix_card_html(overlap_matrix));
+        html.push_str("</div></section>");
+    }
 
     let mut ranked_edges = advice.edges().iter().collect::<Vec<_>>();
     ranked_edges.sort_by(|left, right| {
@@ -1008,8 +1066,10 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     html.push_str("</div></section>");
 
     html.push_str(
-        "<div class=\"footer\">Report generated by <span class=\"mono\">alchemrs advise-schedule</span>. Use the JSON output for exact machine-readable values.</div></div></body></html>",
+        "<div class=\"footer\">Report generated by <span class=\"mono\">alchemrs advise-schedule</span>. Use the JSON output for exact machine-readable values.</div>",
     );
+    html.push_str(OVERLAP_MATRIX_ZOOM_SCRIPT);
+    html.push_str("</div></body></html>");
     Ok(html)
 }
 
@@ -1084,7 +1144,10 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         &input_options.auto_equilibrate.to_string(),
     ));
     html.push_str(&kv_html("n blocks", &run_options.n_blocks.to_string()));
-    html.push_str(&kv_html("output units", format_units(run_options.output_units)));
+    html.push_str(&kv_html(
+        "output units",
+        format_units(run_options.output_units),
+    ));
     html.push_str(&kv_html(
         "block CV min",
         &format_report_number(run_options.block_cv_min),
@@ -1216,11 +1279,19 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         ));
         html.push_str(&kv_html(
             &left_lambda_label,
-            &format_energy_number(interval.left_mean_dhdl(), input_options.temperature, run_options),
+            &format_energy_number(
+                interval.left_mean_dhdl(),
+                input_options.temperature,
+                run_options,
+            ),
         ));
         html.push_str(&kv_html(
             &right_lambda_label,
-            &format_energy_number(interval.right_mean_dhdl(), input_options.temperature, run_options),
+            &format_energy_number(
+                interval.right_mean_dhdl(),
+                input_options.temperature,
+                run_options,
+            ),
         ));
         html.push_str(&kv_html(
             &left_samples_label,
@@ -1243,7 +1314,10 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             &option_energy_string(interval.curvature(), input_options.temperature, run_options),
         ));
         html.push_str(&kv_html(
-            &format!("interval uncertainty ({})", format_units(run_options.output_units)),
+            &format!(
+                "interval uncertainty ({})",
+                format_units(run_options.output_units)
+            ),
             &option_energy_string(
                 interval.interval_uncertainty(),
                 input_options.temperature,
@@ -1257,12 +1331,156 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
 }
 
 fn plot_card_html(title: &str, subtitle: &str, body: &str) -> String {
+    plot_card_html_with_frame_class(title, subtitle, body, None)
+}
+
+fn render_overlap_matrix_card_html(overlap: &OverlapMatrix) -> String {
+    let body = format!(
+        "<div class=\"overlap-matrix-shell\">\
+<div class=\"plot-toolbar\" data-zoom-card>\
+<div class=\"plot-zoom-group\">\
+<button type=\"button\" class=\"plot-zoom-button\" data-zoom-action=\"decrease\">-</button>\
+<input class=\"plot-zoom-range\" type=\"range\" min=\"0.6\" max=\"2.0\" step=\"0.1\" value=\"1.0\" data-zoom-range>\
+<button type=\"button\" class=\"plot-zoom-button\" data-zoom-action=\"increase\">+</button>\
+<button type=\"button\" class=\"plot-zoom-button\" data-zoom-action=\"reset\">reset</button>\
+</div>\
+<div class=\"plot-zoom-value\" data-zoom-value>100%</div>\
+</div>{}</div>",
+        render_overlap_matrix_heatmap_svg(overlap)
+    );
+    plot_card_html_with_frame_class(
+        "Adjacent-State Overlap Matrix",
+        "MBAR-derived overlap matrix across sampled lambda states. Healthy schedules should retain substantial adjacent-state overlap.",
+        &body,
+        Some("overlap-matrix-frame"),
+    )
+}
+
+fn plot_card_html_with_frame_class(
+    title: &str,
+    subtitle: &str,
+    body: &str,
+    frame_class: Option<&str>,
+) -> String {
+    let frame_class = frame_class
+        .map(|class_name| format!("plot-frame {}", escape_html(class_name)))
+        .unwrap_or_else(|| "plot-frame".to_string());
     format!(
-        "<div class=\"card plot-stack\"><h3 class=\"plot-title\">{}</h3><p class=\"plot-sub\">{}</p><div class=\"plot-frame\">{}</div></div>",
+        "<div class=\"card plot-stack\"><h3 class=\"plot-title\">{}</h3><p class=\"plot-sub\">{}</p><div class=\"{}\">{}</div></div>",
         escape_html(title),
         escape_html(subtitle),
+        frame_class,
         body
     )
+}
+
+const OVERLAP_MATRIX_ZOOM_SCRIPT: &str = r#"<script>
+document.querySelectorAll('[data-zoom-card]').forEach((card) => {
+  const plot = card.parentElement?.querySelector('.overlap-matrix-plot');
+  const range = card.querySelector('[data-zoom-range]');
+  const value = card.querySelector('[data-zoom-value]');
+  if (!plot || !range || !value) return;
+
+  const clamp = (raw) => Math.max(0.6, Math.min(2.0, raw));
+  const apply = (raw) => {
+    const scale = clamp(raw);
+    plot.style.setProperty('--overlap-matrix-scale', scale.toFixed(2));
+    range.value = scale.toFixed(1);
+    value.textContent = `${Math.round(scale * 100)}%`;
+  };
+
+  apply(parseFloat(range.value || '1.0'));
+
+  range.addEventListener('input', () => apply(parseFloat(range.value || '1.0')));
+  card.querySelectorAll('[data-zoom-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.getAttribute('data-zoom-action');
+      const current = parseFloat(range.value || '1.0');
+      if (action === 'increase') apply(current + 0.1);
+      if (action === 'decrease') apply(current - 0.1);
+      if (action === 'reset') apply(1.0);
+    });
+  });
+});
+</script>"#;
+
+fn render_overlap_matrix_heatmap_svg(overlap: &OverlapMatrix) -> String {
+    let n_states = overlap.n_states();
+    if n_states == 0 {
+        return "<div class=\"plot-empty\">Not enough states to render overlap matrix.</div>"
+            .to_string();
+    }
+
+    let cell = 42.0;
+    let left_margin = 96.0;
+    let right_margin = 18.0;
+    let top_margin = 44.0;
+    let bottom_margin = 18.0;
+    let width = left_margin + (n_states as f64 * cell) + right_margin;
+    let height = top_margin + (n_states as f64 * cell) + bottom_margin;
+    let labels = overlap
+        .states()
+        .iter()
+        .map(|state| format_report_state(state.lambdas()))
+        .collect::<Vec<_>>();
+
+    let mut svg = format!(
+        "<svg class=\"ti-series-plot overlap-matrix-plot\" viewBox=\"0 0 {width} {height}\" xmlns=\"http://www.w3.org/2000/svg\">"
+    );
+    svg.push_str(&format!(
+        "<text x=\"{}\" y=\"{}\" class=\"axis-label\" text-anchor=\"middle\">λ</text>",
+        left_margin - 22.0,
+        top_margin - 8.0
+    ));
+
+    for (index, label) in labels.iter().enumerate() {
+        let x = left_margin + (index as f64 * cell) + cell * 0.5;
+        let y = top_margin + (index as f64 * cell) + cell * 0.5;
+        svg.push_str(&format!(
+            "<text x=\"{x}\" y=\"{}\" class=\"tick-label\" text-anchor=\"middle\">{}</text>",
+            top_margin - 8.0,
+            escape_html(label)
+        ));
+        svg.push_str(&format!(
+            "<text x=\"{}\" y=\"{}\" class=\"tick-label\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>",
+            left_margin - 8.0,
+            y,
+            escape_html(label)
+        ));
+    }
+
+    for row in 0..n_states {
+        for col in 0..n_states {
+            let value = overlap.values()[row * n_states + col].clamp(0.0, 1.0);
+            let x = left_margin + (col as f64 * cell);
+            let y = top_margin + (row as f64 * cell);
+            let (fill, text_fill) = overlap_heatmap_colors(value);
+            svg.push_str(&format!(
+                "<rect x=\"{x}\" y=\"{y}\" width=\"{cell}\" height=\"{cell}\" rx=\"6\" fill=\"{fill}\" stroke=\"#f7f4ec\" stroke-width=\"1.5\"/>"
+            ));
+            svg.push_str(&format!(
+                "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-family=\"ui-monospace,Consolas,monospace\" font-size=\"10\" fill=\"{text_fill}\">{}</text>",
+                x + cell * 0.5,
+                y + cell * 0.54,
+                trim_trailing_zeros(&format!("{value:.2}"))
+            ));
+        }
+    }
+
+    svg.push_str("</svg>");
+    svg
+}
+
+fn overlap_heatmap_colors(value: f64) -> (&'static str, &'static str) {
+    if value >= 0.75 {
+        ("#1f5e5b", "#fffaf0")
+    } else if value >= 0.25 {
+        ("#8db8a3", "#1d1b19")
+    } else if value >= 0.03 {
+        ("#d8b56b", "#1d1b19")
+    } else {
+        ("#b5483d", "#fffaf0")
+    }
 }
 
 fn render_u_nk_suggestion_rationale_badges_html(
@@ -2943,6 +3161,12 @@ mod tests {
         .unwrap()
     }
 
+    fn sample_overlap_matrix() -> alchemrs::OverlapMatrix {
+        let state0 = StatePoint::new(vec![0.0], 298.0).unwrap();
+        let state1 = StatePoint::new(vec![1.0], 298.0).unwrap();
+        alchemrs::OverlapMatrix::new(vec![1.0, 0.25, 0.25, 1.0], 2, vec![state0, state1]).unwrap()
+    }
+
     fn build_window_with_labels(
         sampled_lambdas: Vec<f64>,
         rows: &[[f64; 3]],
@@ -3134,10 +3358,13 @@ mod tests {
             },
             None,
             Some(&[12, 8]),
+            Some(&sample_overlap_matrix()),
         )
         .unwrap();
 
         assert!(output.contains("Lambda Schedule Report"));
+        assert!(output.contains("Overlap Matrix"));
+        assert!(output.contains("Adjacent-State Overlap Matrix"));
         assert!(output.contains("Priority Queue"));
         assert!(output.contains("Weakest Component"));
         assert!(output.contains("href=\"#edge-"));
@@ -3151,7 +3378,7 @@ mod tests {
         assert!(output.contains("to N_samples kept"));
         assert!(output.contains(">12<"));
         assert!(output.contains(">8<"));
-        assert!(!output.contains("<svg"));
+        assert!(output.contains("<svg"));
         assert!(!output.contains("Legend"));
     }
 
@@ -3189,6 +3416,7 @@ mod tests {
             },
             Some(vec!["".to_string(), "   ".to_string()]),
             None,
+            Some(&sample_overlap_matrix()),
         )
         .unwrap();
 
@@ -3228,6 +3456,7 @@ mod tests {
                 report_path: None,
             },
             Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]),
+            None,
             None,
         )
         .unwrap();

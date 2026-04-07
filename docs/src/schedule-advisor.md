@@ -71,6 +71,7 @@ JSON output includes:
 If `--report` is provided, the CLI also writes a standalone HTML report with:
 
 - a configuration summary
+- for `u_nk` workflows, an MBAR-derived overlap-matrix heatmap with interactive size controls
 - a top priority queue of the highest-risk edges, including their weakest components
 - ranked schedule suggestions
 - edge-level diagnostics with severity badges
@@ -80,6 +81,8 @@ If `--report` is provided, the CLI also writes a standalone HTML report with:
 - an in-report legend for source, target, proposal, delta-bar, and status semantics
 - per-component rows for multidimensional schedules showing which lambda components are bisected, held at the source state, dominant, or fixed
 - normalized delta bars so the largest component jump on each edge is immediately visible
+
+The `u_nk` overlap-matrix panel is included as a visual overlap diagnostic in the same spirit as the overlap-matrix discussion and example shown in Fig. 7b of Klimovich, Shirts, and Mobley, "Guidelines for the analysis of free energy calculations", J Comput Aided Mol Des 29, 397-411 (2015), doi:10.1007/s10822-015-9840-9.
 
 Each edge records:
 

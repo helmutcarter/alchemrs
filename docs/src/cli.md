@@ -167,6 +167,7 @@ Purpose:
 
 - Run schedule diagnostics instead of computing a final scalar free-energy estimate.
 - Supports both `u_nk`-based schedule analysis and TI-style `dH/dλ` schedule analysis.
+- In `u_nk` report mode, includes an MBAR-derived overlap-matrix view inspired by the overlap-matrix diagnostic discussed in Klimovich, Shirts, and Mobley, "Guidelines for the analysis of free energy calculations", J Comput Aided Mol Des 29, 397-411 (2015), doi:10.1007/s10822-015-9840-9.
 
 Arguments:
 

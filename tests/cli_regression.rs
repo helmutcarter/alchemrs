@@ -383,10 +383,12 @@ fn advise_schedule_cli_writes_html_report() {
 
     let written = fs::read_to_string(&report_path).expect("read HTML report");
     assert!(written.contains("Lambda Schedule Report"));
+    assert!(written.contains("Overlap Matrix"));
+    assert!(written.contains("Adjacent-State Overlap Matrix"));
     assert!(written.contains("Suggestions"));
     assert!(written.contains("Edges"));
     assert!(written.contains("priority"));
-    assert!(!written.contains("<svg"));
+    assert!(written.contains("<svg"));
 
     fs::remove_file(&report_path).expect("remove HTML report");
 }

@@ -981,8 +981,8 @@ mod tests {
         let windows = make_three_state_local_bar_windows();
         let result = BarEstimator::default().estimate(&windows).unwrap();
         let uncertainties = result.uncertainties().expect("uncertainties");
-        let expected = (uncertainties[1] * uncertainties[1] + uncertainties[5] * uncertainties[5])
-            .sqrt();
+        let expected =
+            (uncertainties[1] * uncertainties[1] + uncertainties[5] * uncertainties[5]).sqrt();
         assert!((uncertainties[2] - expected).abs() < 1e-12);
         assert!((uncertainties[6] - expected).abs() < 1e-12);
     }

@@ -978,7 +978,8 @@ pub fn exp_convergence(
     convergence_from_ordered_matrix_windows(
         windows,
         |subset| {
-            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default())
+                .estimate_with_uncertainty(subset)
         },
         false,
         2,
@@ -992,7 +993,8 @@ pub fn dexp_convergence(
     convergence_from_ordered_matrix_windows(
         windows,
         |subset| {
-            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default())
+                .estimate_with_uncertainty(subset)
         },
         true,
         2,
@@ -1800,7 +1802,8 @@ pub(crate) fn exp_block_average(
         windows,
         n_blocks,
         |subset| {
-            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default())
+                .estimate_with_uncertainty(subset)
         },
         false,
         2,
@@ -1816,7 +1819,8 @@ pub(crate) fn dexp_block_average(
         windows,
         n_blocks,
         |subset| {
-            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default())
+                .estimate_with_uncertainty(subset)
         },
         true,
         2,
