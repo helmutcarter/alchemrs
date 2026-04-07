@@ -61,7 +61,6 @@ The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyze
 
 ```bash
 alchemrs advise-schedule \
-  --temperature 300 \
   --decorrelate \
   --u-nk-observable de \
   --report schedule-report.html \
@@ -143,7 +142,6 @@ The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyze
 
 ```bash
 alchemrs advise-schedule \
-  --temperature 300 \
   --decorrelate \
   --u-nk-observable de \
   --report schedule-report.html \
@@ -165,7 +163,6 @@ For TI spacing diagnostics:
 
 ```bash
 alchemrs advise-schedule \
-  --temperature 300 \
   --input-kind dhdl \
   --decorrelate \
   --report ti-schedule-report.html \
@@ -179,7 +176,6 @@ CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
 ```bash
 alchemrs bar \
-  --temperature 300 \
   --output-format csv \
   /path/to/*/prod.out
 ```
@@ -194,7 +190,6 @@ delta_f,uncertainty,from_lambda,to_lambda,units,overlap_scalar,overlap_eigenvalu
 
 ```bash
 alchemrs ti \
-  --temperature 300 \
   --method trapezoidal \
   --remove-burnin 125 \
   /path/to/*/prod.out
@@ -207,7 +202,6 @@ To let the CLI choose a method automatically and record why it was selected:
 
 ```bash
 alchemrs ti \
-  --temperature 300 \
   --method auto \
   --output-format json \
   /path/to/*/prod.out
@@ -219,8 +213,6 @@ TI outputs now include `ti_method` and, for `--method auto`, `ti_method_reason` 
 
 ```bash
 alchemrs bar \
-  --temperature 300 \
-  --method false-position \
   --decorrelate \
   /path/to/*/prod.out
 ```
@@ -231,10 +223,7 @@ Note: BAR uncertainties are only computed for adjacent windows; non-adjacent sta
 
 ```bash
 alchemrs mbar \
-  --temperature 300 \
   --decorrelate \
-  --max-iterations 10000 \
-  --tolerance 1e-7 \
   /path/to/*/prod.out
 ```
 
@@ -242,11 +231,9 @@ alchemrs mbar \
 
 ```bash
 alchemrs iexp \
-  --temperature 300 \
   /path/to/*/prod.out
 
 alchemrs dexp \
-  --temperature 300 \
   /path/to/*/prod.out
 ```
 
