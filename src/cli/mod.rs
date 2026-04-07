@@ -22,9 +22,9 @@ pub enum Command {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Temperature in K
-        #[arg(long, default_value_t = 300.0)]
-        temperature: f64,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
         /// Estimator to use for adjacent edge estimates
         #[arg(long, value_enum, default_value_t = AdvisorEstimatorArg::Mbar)]
         estimator: AdvisorEstimatorArg,
@@ -85,9 +85,9 @@ pub enum Command {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Temperature in K
-        #[arg(long, default_value_t = 300.0)]
-        temperature: f64,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
         /// Integration method
         #[arg(long, value_enum, default_value_t = TiMethod::Trapezoidal)]
         method: TiMethod,
@@ -136,9 +136,9 @@ pub enum Command {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Temperature in K
-        #[arg(long, default_value_t = 300.0)]
-        temperature: f64,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
         /// BAR method
         #[arg(long, value_enum, default_value_t = BarMethodArg::FalsePosition)]
         method: BarMethodArg,
@@ -190,9 +190,9 @@ pub enum Command {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Temperature in K
-        #[arg(long, default_value_t = 300.0)]
-        temperature: f64,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
         /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,
@@ -244,9 +244,9 @@ pub enum Command {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Temperature in K
-        #[arg(long, default_value_t = 300.0)]
-        temperature: f64,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
         /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,
@@ -298,9 +298,9 @@ pub enum Command {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
-        /// Temperature in K
-        #[arg(long, default_value_t = 300.0)]
-        temperature: f64,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
         /// Apply decorrelation to each window using the selected u_nk observable
         #[arg(long)]
         decorrelate: bool,

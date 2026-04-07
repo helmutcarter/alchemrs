@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, GromacsParseError};
+use alchemrs::parse::infer_temperature;
 use alchemrs::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
@@ -40,6 +41,41 @@ pub struct AnalysisInputOptions {
     pub conservative: bool,
     pub nskip: usize,
     pub u_nk_observable: Option<UNkObservable>,
+}
+
+pub fn resolve_input_temperature(
+    inputs: &[PathBuf],
+    explicit_temperature: Option<f64>,
+) -> CliResult<f64> {
+    if let Some(temperature) = explicit_temperature {
+        return Ok(temperature);
+    }
+    if inputs.is_empty() {
+        return Err("at least one input is required to infer temperature".into());
+    }
+
+    let mut inferred = None;
+    let mut source_path = None;
+    for path in inputs {
+        let temperature = infer_temperature(path)?;
+        match inferred {
+            None => {
+                inferred = Some(temperature);
+                source_path = Some(path);
+            }
+            Some(previous) if (previous - temperature).abs() <= 1.0e-2 => {}
+            Some(previous) => {
+                let source = source_path.expect("source path must exist").display();
+                return Err(format!(
+                    "input temperatures differ: {source} reports {previous:.2} K but {} reports {temperature:.2} K",
+                    path.display()
+                )
+                .into());
+            }
+        }
+    }
+
+    Ok(inferred.expect("temperature inferred from non-empty inputs"))
 }
 
 impl AnalysisInputOptions {
@@ -302,11 +338,12 @@ fn trim_values(values: Vec<f64>, remove_burnin: usize) -> CliResult<Vec<f64>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
     use std::path::PathBuf;
 
     use crate::cli::UNkObservable;
 
-    use super::{load_dhdl_series, load_windows, AnalysisInputOptions};
+    use super::{load_dhdl_series, load_windows, resolve_input_temperature, AnalysisInputOptions};
 
     #[test]
     fn load_windows_accepts_multidimensional_gromacs_states_for_cli_estimators() {
@@ -409,5 +446,44 @@ mod tests {
         assert!(equilibration.fast);
         assert!(!equilibration.conservative);
         assert_eq!(equilibration.nskip, 7);
+    }
+
+    #[test]
+    fn resolve_input_temperature_uses_file_temperature_when_omitted() {
+        let base = env!("CARGO_MANIFEST_DIR");
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
+        let temperature =
+            resolve_input_temperature(&[path], None).expect("temperature should be inferred");
+        assert!((temperature - 298.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn resolve_input_temperature_prefers_explicit_value() {
+        let base = env!("CARGO_MANIFEST_DIR");
+        let path = PathBuf::from(format!("{base}/fixtures/gromacs/lambda_15.xvg"));
+        let temperature = resolve_input_temperature(&[path], Some(310.0))
+            .expect("explicit temperature should win");
+        assert!((temperature - 310.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn resolve_input_temperature_reports_mixed_inputs() {
+        let gromacs = PathBuf::from(format!(
+            "{}/fixtures/gromacs/lambda_15.xvg",
+            env!("CARGO_MANIFEST_DIR")
+        ));
+        let amber_content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.0000
+"#;
+        let mut amber = tempfile::NamedTempFile::new().unwrap();
+        amber.write_all(amber_content.as_bytes()).unwrap();
+
+        let err = resolve_input_temperature(&[gromacs, amber.path().to_path_buf()], None)
+            .expect_err("mixed temperatures should fail");
+        assert!(err.to_string().contains("input temperatures differ"));
     }
 }

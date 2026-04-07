@@ -195,6 +195,10 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     DhdlSeries::new(state, time_ps, gradients).map_err(Into::into)
 }
 
+pub fn extract_temperature(path: impl AsRef<Path>) -> Result<f64> {
+    read_temperature(path.as_ref())
+}
+
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {
     let (u_nk, _potential) = extract_u_nk_internal(path.as_ref(), temperature_k, false)?;
     Ok(u_nk)
@@ -387,6 +391,34 @@ struct UNkHeader {
     bar_intervall: f64,
     t0: f64,
     mbar_lambdas: Vec<f64>,
+}
+
+fn read_temperature(path: &Path) -> Result<f64> {
+    let file = File::open(path).map_err(|err| AmberParseError::Io {
+        operation: "open",
+        message: err.to_string(),
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| AmberParseError::Io {
+                operation: "read",
+                message: err.to_string(),
+            })?;
+        if bytes == 0 {
+            break;
+        }
+        let line = line.trim_end_matches(&['\r', '\n'][..]);
+        if let Some(temp0) = capture_field(line, "temp0")? {
+            return Ok(temp0);
+        }
+    }
+
+    Err(AmberParseError::MissingField { field: "temp0" })
 }
 
 fn capture_field(line: &str, field: &'static str) -> Result<Option<f64>> {

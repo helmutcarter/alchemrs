@@ -20,6 +20,14 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> CoreResult<Dh
     }
 }
 
+pub fn infer_temperature(path: impl AsRef<Path>) -> CoreResult<f64> {
+    let path = path.as_ref();
+    match detect_format(path)? {
+        ParseFormat::Amber => amber::extract_temperature(path).map_err(Into::into),
+        ParseFormat::Gromacs => gromacs::extract_temperature(path).map_err(Into::into),
+    }
+}
+
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> CoreResult<UNkMatrix> {
     match detect_format(path.as_ref())? {
         ParseFormat::Amber => amber::extract_u_nk(path, temperature_k).map_err(Into::into),

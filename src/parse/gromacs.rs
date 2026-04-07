@@ -114,6 +114,10 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     DhdlSeries::new(state, time_ps, values).map_err(Into::into)
 }
 
+pub fn extract_temperature(path: impl AsRef<Path>) -> Result<f64> {
+    Ok(read_header(path.as_ref())?.temperature_k)
+}
+
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {
     let (u_nk, _potential) = extract_u_nk_internal(path.as_ref(), temperature_k, false)?;
     Ok(u_nk)

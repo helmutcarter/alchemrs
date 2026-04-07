@@ -4,7 +4,7 @@ mod exp;
 mod mbar;
 mod ti;
 
-use crate::cli::input::AnalysisInputOptions;
+use crate::cli::input::{resolve_input_temperature, AnalysisInputOptions};
 use crate::cli::Command;
 use crate::CliResult;
 
@@ -29,30 +29,33 @@ pub fn run(command: Command) -> CliResult<()> {
             output_format,
             output,
             report,
-        } => advise::run(
-            inputs,
-            AnalysisInputOptions {
-                temperature,
-                decorrelate,
-                remove_burnin,
-                auto_equilibrate,
-                fast,
-                conservative,
-                nskip,
-                u_nk_observable: Some(u_nk_observable),
-            },
-            advise::AdviseRunOptions {
-                estimator,
-                input_kind,
-                overlap_min,
-                block_cv_min,
-                n_blocks,
-                suggest_midpoints: !no_midpoints,
-                output_format,
-                output_path: output,
-                report_path: report,
-            },
-        ),
+        } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
+            advise::run(
+                inputs,
+                AnalysisInputOptions {
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    u_nk_observable: Some(u_nk_observable),
+                },
+                advise::AdviseRunOptions {
+                    estimator,
+                    input_kind,
+                    overlap_min,
+                    block_cv_min,
+                    n_blocks,
+                    suggest_midpoints: !no_midpoints,
+                    output_format,
+                    output_path: output,
+                    report_path: report,
+                },
+            )
+        }
         Command::Ti {
             inputs,
             temperature,
@@ -69,6 +72,7 @@ pub fn run(command: Command) -> CliResult<()> {
             nskip,
             u_nk_observable,
         } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
             if u_nk_observable.is_some() {
                 return Err(
                     "--u-nk-observable is only valid for bar, mbar, exp, and dexp; ti uses dH/dlambda for preprocessing."
@@ -110,27 +114,30 @@ pub fn run(command: Command) -> CliResult<()> {
             conservative,
             nskip,
             u_nk_observable,
-        } => bar::run(
-            inputs,
-            AnalysisInputOptions {
-                temperature,
-                decorrelate,
-                remove_burnin,
-                auto_equilibrate,
-                fast,
-                conservative,
-                nskip,
-                u_nk_observable: Some(u_nk_observable),
-            },
-            bar::BarRunOptions {
-                method,
-                output_units,
-                output_format,
-                output_path: output,
-                overlap_summary,
-                parallel,
-            },
-        ),
+        } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
+            bar::run(
+                inputs,
+                AnalysisInputOptions {
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    u_nk_observable: Some(u_nk_observable),
+                },
+                bar::BarRunOptions {
+                    method,
+                    output_units,
+                    output_format,
+                    output_path: output,
+                    overlap_summary,
+                    parallel,
+                },
+            )
+        }
         Command::Exp {
             inputs,
             temperature,
@@ -147,27 +154,30 @@ pub fn run(command: Command) -> CliResult<()> {
             output,
             overlap_summary,
             parallel,
-        } => exp::run_forward(
-            inputs,
-            AnalysisInputOptions {
-                temperature,
-                decorrelate,
-                remove_burnin,
-                auto_equilibrate,
-                fast,
-                conservative,
-                nskip,
-                u_nk_observable: Some(u_nk_observable),
-            },
-            exp::ExpRunOptions {
-                no_uncertainty,
-                output_units,
-                output_format,
-                output_path: output,
-                overlap_summary,
-                parallel,
-            },
-        ),
+        } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
+            exp::run_forward(
+                inputs,
+                AnalysisInputOptions {
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    u_nk_observable: Some(u_nk_observable),
+                },
+                exp::ExpRunOptions {
+                    no_uncertainty,
+                    output_units,
+                    output_format,
+                    output_path: output,
+                    overlap_summary,
+                    parallel,
+                },
+            )
+        }
         Command::Dexp {
             inputs,
             temperature,
@@ -184,27 +194,30 @@ pub fn run(command: Command) -> CliResult<()> {
             output,
             overlap_summary,
             parallel,
-        } => exp::run_reverse(
-            inputs,
-            AnalysisInputOptions {
-                temperature,
-                decorrelate,
-                remove_burnin,
-                auto_equilibrate,
-                fast,
-                conservative,
-                nskip,
-                u_nk_observable: Some(u_nk_observable),
-            },
-            exp::ExpRunOptions {
-                no_uncertainty,
-                output_units,
-                output_format,
-                output_path: output,
-                overlap_summary,
-                parallel,
-            },
-        ),
+        } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
+            exp::run_reverse(
+                inputs,
+                AnalysisInputOptions {
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    u_nk_observable: Some(u_nk_observable),
+                },
+                exp::ExpRunOptions {
+                    no_uncertainty,
+                    output_units,
+                    output_format,
+                    output_path: output,
+                    overlap_summary,
+                    parallel,
+                },
+            )
+        }
         Command::Mbar {
             inputs,
             temperature,
@@ -224,29 +237,32 @@ pub fn run(command: Command) -> CliResult<()> {
             output,
             overlap_summary,
             parallel,
-        } => mbar::run(
-            inputs,
-            AnalysisInputOptions {
-                temperature,
-                decorrelate,
-                remove_burnin,
-                auto_equilibrate,
-                fast,
-                conservative,
-                nskip,
-                u_nk_observable: Some(u_nk_observable),
-            },
-            mbar::MbarRunOptions {
-                max_iterations,
-                tolerance,
-                solver: solver.solver(),
-                no_uncertainty,
-                output_units,
-                output_format,
-                output_path: output,
-                overlap_summary,
-                parallel,
-            },
-        ),
+        } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
+            mbar::run(
+                inputs,
+                AnalysisInputOptions {
+                    temperature,
+                    decorrelate,
+                    remove_burnin,
+                    auto_equilibrate,
+                    fast,
+                    conservative,
+                    nskip,
+                    u_nk_observable: Some(u_nk_observable),
+                },
+                mbar::MbarRunOptions {
+                    max_iterations,
+                    tolerance,
+                    solver: solver.solver(),
+                    no_uncertainty,
+                    output_units,
+                    output_format,
+                    output_path: output,
+                    overlap_summary,
+                    parallel,
+                },
+            )
+        }
     }
 }
