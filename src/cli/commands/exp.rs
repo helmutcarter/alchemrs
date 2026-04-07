@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs::{ExpEstimator, ExpOptions, MbarOptions};
+use alchemrs::{IexpEstimator, IexpOptions, MbarOptions};
 
 use crate::cli::input::{load_windows, AnalysisInputOptions};
 use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
@@ -52,7 +52,7 @@ fn run(
     } else {
         None
     };
-    let estimator = ExpEstimator::new(ExpOptions {
+    let estimator = IexpEstimator::new(IexpOptions {
         parallel: run_options.parallel,
     });
     let fit = estimator.fit(&windows)?;
@@ -89,7 +89,7 @@ fn run(
             temperature: input_options.temperature,
             overlap,
             provenance: OutputProvenance {
-                estimator: if reverse { "dexp" } else { "exp" },
+                estimator: if reverse { "dexp" } else { "iexp" },
                 decorrelate: input_options.decorrelate,
                 remove_burnin: input_options.remove_burnin,
                 auto_equilibrate: input_options.auto_equilibrate,

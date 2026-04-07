@@ -128,13 +128,15 @@ Typical usage:
 
 The analysis layer uses MBAR-derived log weights to compute overlap diagnostics.
 
-## EXP and DEXP
+## IEXP and DEXP
+
+Several different free energy methods utilize perturbation to estimate free energy differences, but when people say Free Energy Perturbation (FEP) they are typically referring to an exponential averaging scheme based on perturbing potential energies from one lambda state to another. This perturbation can take place in either the forward or the reverse direction. In accordance with Klimovich, Shirts, and Mobley's 2016 [Guidelines for the analysis of free energy calculations](https://pmc.ncbi.nlm.nih.gov/articles/PMC4420631/), we define `iexp` as insertion exponential averaging, typically proceeding in the direction of decreasing entropy, and `dexp` as deletion exponential averaging, typically proceeding in the direction of increasing entropy.
 
 Types:
 
-- `ExpEstimator`
-- `ExpFit`
-- `ExpOptions`
+- `IexpEstimator`
+- `IexpFit`
+- `IexpOptions`
 
 Input:
 
@@ -143,23 +145,22 @@ Input:
 Behavior:
 
 - computes exponential averaging from each sampled-state window to all evaluated states
-- `fit(...)` returns `ExpFit`
+- `fit(...)` returns `IexpFit`
 - `result()` materializes the full pairwise `DeltaFMatrix`
 - `result_with_uncertainty()` includes uncertainty estimates
 - preserves `lambda_labels()` from the input windows when available
 
 CLI direction conventions:
 
-- `exp` reports the forward direction
+- `iexp` reports the forward direction
 - `dexp` reports the reverse direction
 
 `DEXP` is not a separate estimator type in the library; it is a CLI convention over the same estimator results.
 
 ## Parallel execution
 
-Some estimators support a `parallel` option and use Rayon-backed parallel loops internally.
+Some estimators support a `parallel` option and use Rayon-backed parallel loops internally to speed up calculations.
 
-Parallelism affects performance, not the conceptual API.
 
 ## Common API shape
 

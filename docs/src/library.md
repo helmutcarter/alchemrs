@@ -87,7 +87,7 @@ if let Some(labels) = windows[0].lambda_labels() {
 }
 ```
 
-The same `analysis` module also provides plot-ready convergence series for TI, BAR, MBAR, EXP,
+The same `analysis` module also provides plot-ready convergence series for TI, BAR, MBAR, IEXP,
 and DEXP:
 
 ```rust

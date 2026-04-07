@@ -88,7 +88,7 @@ It stores:
 - the ordered state list
 - `lambda_labels`, when present, naming the lambda-vector components in state order
 
-This is used by BAR, MBAR, EXP, and DEXP.
+This is used by BAR, MBAR, IEXP, and DEXP.
 
 ## `OverlapMatrix`
 

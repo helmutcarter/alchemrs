@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/EXP/DEXP estimators, and computing diagnostics such as overlap analysis and schedule advice. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
+`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP estimators, and computing diagnostics such as overlap analysis and schedule advice. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
 
 Native SVG plotting is available as an optional `plotting` feature.
 
@@ -14,7 +14,7 @@ Commands:
 - `ti`
 - `bar`
 - `mbar`
-- `exp`
+- `iexp`
 - `dexp`
 
 ### Build
@@ -47,12 +47,12 @@ cargo build --release
 - `--auto-equilibrate`: use `pymbar`-style equilibration detection as described [here](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 - `--decorrelate`: subsample to reduce correlation before estimating.
   - `ti` uses the parsed `dH/dlambda` series.
-  - `bar`, `exp`, `dexp`, and `mbar` use the observable selected by `--u-nk-observable <de|all|epot>`.
-- `--u-nk-observable <de|all|epot>`: choose the scalar observable used for `u_nk` auto-equilibration and decorrelation on `bar`, `exp`, `dexp`, and `mbar` runs. The default is `de`.
+  - `bar`, `iexp`, `dexp`, and `mbar` use the observable selected by `--u-nk-observable <de|all|epot>`.
+- `--u-nk-observable <de|all|epot>`: choose the scalar observable used for `u_nk` auto-equilibration and decorrelation on `bar`, `iexp`, `dexp`, and `mbar` runs. The default is `de`.
 - `--output-units <kt|kcal|kj>`: output energy units (default `kt`).
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
 - `--output <PATH>`: write the formatted result to a file instead of stdout.
-- `--overlap-summary`: include overlap scalar and overlap eigenvalues for BAR/EXP/DEXP/MBAR runs.
+- `--overlap-summary`: include overlap scalar and overlap eigenvalues for BAR/IEXP/DEXP/MBAR runs.
 
 
 ### Schedule advisor
@@ -238,10 +238,10 @@ alchemrs mbar \
   /path/to/*/prod.out
 ```
 
-### EXP / DEXP
+### IEXP / DEXP
 
 ```bash
-alchemrs exp \
+alchemrs iexp \
   --temperature 300 \
   /path/to/*/prod.out
 
@@ -250,7 +250,7 @@ alchemrs dexp \
   /path/to/*/prod.out
 ```
 
-EXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
+IEXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
 
 ## Documentation
 

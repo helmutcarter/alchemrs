@@ -12,7 +12,7 @@ use alchemrs::{
 };
 use alchemrs::{
     overlap_eigenvalues, overlap_matrix, BarEstimator, BarMethod, BarOptions, DhdlSeries,
-    ExpEstimator, ExpOptions, MbarEstimator, MbarOptions, TiEstimator, TiOptions, UNkMatrix,
+    IexpEstimator, IexpOptions, MbarEstimator, MbarOptions, TiEstimator, TiOptions, UNkMatrix,
 };
 use serde_json::Value;
 
@@ -773,7 +773,7 @@ fn exp_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrel
     let inputs = gromacs_1k_bar_inputs();
     let output = run_cli(
         &[
-            "exp",
+            "iexp",
             "--temperature",
             "298",
             "--u-nk-observable",
@@ -795,7 +795,7 @@ fn exp_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrel
         payload["uncertainty"].as_f64().expect("uncertainty"),
         0.35187862240137463,
     );
-    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("exp"));
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("iexp"));
     assert_eq!(payload["provenance"]["temperature_k"].as_f64(), Some(298.0));
     assert_eq!(
         payload["provenance"]["u_nk_observable"].as_str(),
@@ -932,7 +932,7 @@ fn ti_cli_rejects_u_nk_observable_with_explanatory_error() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains(
-            "--u-nk-observable is only valid for bar, mbar, exp, and dexp; ti uses dH/dlambda for preprocessing."
+            "--u-nk-observable is only valid for bar, mbar, iexp, and dexp; ti uses dH/dlambda for preprocessing."
         ),
         "unexpected stderr:\n{stderr}"
     );
@@ -1004,7 +1004,7 @@ fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let inputs = acetamide_inputs();
     let output = run_cli(
         &[
-            "exp",
+            "iexp",
             "--decorrelate",
             "--output-format",
             "json",
@@ -1015,7 +1015,7 @@ fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let payload = parse_json_output(&output);
 
     let windows = load_decorrelated_windows(&inputs);
-    let estimator = ExpEstimator::new(ExpOptions { parallel: false });
+    let estimator = IexpEstimator::new(IexpOptions { parallel: false });
     let fit = estimator.fit(&windows).expect("fit EXP");
     let result = fit
         .result_with_uncertainty()
@@ -1034,7 +1034,7 @@ fn exp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     );
     assert_close(payload["from_lambda"].as_f64().expect("from_lambda"), 0.0);
     assert_close(payload["to_lambda"].as_f64().expect("to_lambda"), 1.0);
-    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("exp"));
+    assert_eq!(payload["provenance"]["estimator"].as_str(), Some("iexp"));
     assert_eq!(payload["provenance"]["decorrelate"].as_bool(), Some(true));
     assert_eq!(
         payload["provenance"]["u_nk_observable"].as_str(),
@@ -1068,7 +1068,7 @@ fn dexp_cli_outputs_expected_json_with_overlap_summary_when_decorrelating() {
     let payload = parse_json_output(&output);
 
     let windows = load_decorrelated_windows(&inputs);
-    let estimator = ExpEstimator::new(ExpOptions { parallel: false });
+    let estimator = IexpEstimator::new(IexpOptions { parallel: false });
     let fit = estimator.fit(&windows).expect("fit DEXP");
     let result = fit
         .result_with_uncertainty()

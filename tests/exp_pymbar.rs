@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use alchemrs::{extract_u_nk, ExpEstimator};
+use alchemrs::{extract_u_nk, IexpEstimator};
 
 fn read_matrix(path: &str) -> Vec<f64> {
     let content = fs::read_to_string(path).expect("read expected matrix");
@@ -56,7 +56,7 @@ fn exp_matches_pymbar_adjacent_fep_chain() {
         windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
     }
 
-    let estimator = ExpEstimator::default();
+    let estimator = IexpEstimator::default();
     let fit = estimator.fit(&windows).expect("EXP fit");
     let result = fit
         .result_with_uncertainty()

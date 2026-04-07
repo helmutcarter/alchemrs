@@ -25,6 +25,9 @@ pub enum Command {
         /// Temperature in K; inferred from the input files when omitted
         #[arg(long)]
         temperature: Option<f64>,
+        /// Output units for energy-valued diagnostics
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
         /// Estimator to use for adjacent edge estimates
         #[arg(long, value_enum, default_value_t = AdvisorEstimatorArg::Mbar)]
         estimator: AdvisorEstimatorArg,
@@ -186,7 +189,7 @@ pub enum Command {
         #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
         u_nk_observable: UNkObservable,
     },
-    Exp {
+    Iexp {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
         inputs: Vec<PathBuf>,
@@ -456,7 +459,7 @@ mod tests {
         for args in [
             ["alchemrs", "ti", "window.out"].as_slice(),
             ["alchemrs", "bar", "window.out"].as_slice(),
-            ["alchemrs", "exp", "window.out"].as_slice(),
+            ["alchemrs", "iexp", "window.out"].as_slice(),
             ["alchemrs", "dexp", "window.out"].as_slice(),
             ["alchemrs", "mbar", "window.out"].as_slice(),
             ["alchemrs", "advise-schedule", "window.out"].as_slice(),
@@ -471,7 +474,7 @@ mod tests {
         for args in [
             ["alchemrs", "ti", "--conservative=false", "window.out"].as_slice(),
             ["alchemrs", "bar", "--conservative=false", "window.out"].as_slice(),
-            ["alchemrs", "exp", "--conservative=false", "window.out"].as_slice(),
+            ["alchemrs", "iexp", "--conservative=false", "window.out"].as_slice(),
             ["alchemrs", "dexp", "--conservative=false", "window.out"].as_slice(),
             ["alchemrs", "mbar", "--conservative=false", "window.out"].as_slice(),
             [
@@ -562,7 +565,7 @@ mod tests {
             Command::AdviseSchedule { conservative, .. }
             | Command::Ti { conservative, .. }
             | Command::Bar { conservative, .. }
-            | Command::Exp { conservative, .. }
+            | Command::Iexp { conservative, .. }
             | Command::Dexp { conservative, .. }
             | Command::Mbar { conservative, .. } => conservative,
         }

@@ -5,29 +5,29 @@ use crate::error::{CoreError, Result};
 use super::common::{ensure_consistent_lambda_labels, work_values};
 
 #[derive(Debug, Clone, Default)]
-pub struct ExpOptions {
+pub struct IexpOptions {
     pub parallel: bool,
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ExpEstimator {
-    pub options: ExpOptions,
+pub struct IexpEstimator {
+    pub options: IexpOptions,
 }
 
 #[derive(Debug, Clone)]
-pub struct ExpFit {
+pub struct IexpFit {
     values: Vec<f64>,
     uncertainties: Vec<f64>,
     states: Vec<StatePoint>,
     lambda_labels: Option<Vec<String>>,
 }
 
-impl ExpEstimator {
-    pub fn new(options: ExpOptions) -> Self {
+impl IexpEstimator {
+    pub fn new(options: IexpOptions) -> Self {
         Self { options }
     }
 
-    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<ExpFit> {
+    pub fn fit(&self, windows: &[UNkMatrix]) -> Result<IexpFit> {
         if windows.len() < 2 {
             return Err(CoreError::InvalidShape {
                 expected: 2,
@@ -135,7 +135,7 @@ impl ExpEstimator {
             }
         }
 
-        Ok(ExpFit {
+        Ok(IexpFit {
             values,
             uncertainties,
             states,
@@ -168,7 +168,7 @@ impl ExpEstimator {
     }
 }
 
-impl ExpFit {
+impl IexpFit {
     pub fn n_states(&self) -> usize {
         self.states.len()
     }

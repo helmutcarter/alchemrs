@@ -6,7 +6,7 @@ The project is organized as one package containing a library crate and a single 
 
 - parsing supported AMBER and GROMACS outputs into typed Rust data structures
 - preprocessing time series by trimming and decorrelation
-- estimating free energies with TI, BAR, MBAR, EXP, and DEXP
+- estimating free energies with TI, BAR, MBAR, IEXP, and DEXP
 - computing overlap diagnostics
 - exposing the workflow through a CLI and a clean top-level Rust API
 

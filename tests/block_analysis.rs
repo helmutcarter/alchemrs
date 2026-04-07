@@ -1,5 +1,5 @@
 use alchemrs::{
-    BarEstimator, CoreError, DhdlSeries, ExpEstimator, MbarEstimator, StatePoint, TiEstimator,
+    BarEstimator, CoreError, DhdlSeries, IexpEstimator, MbarEstimator, StatePoint, TiEstimator,
     UNkMatrix,
 };
 fn build_window(sampled: StatePoint, evaluated: &[StatePoint], n_samples: usize) -> UNkMatrix {
@@ -190,7 +190,7 @@ fn exp_block_average_returns_requested_blocks() {
     let w0 = build_window(s0.clone(), &evaluated, 4);
     let w1 = build_window(s1.clone(), &evaluated, 4);
 
-    let blocks = ExpEstimator::default()
+    let blocks = IexpEstimator::default()
         .block_average(&[w0, w1], 2)
         .expect("exp blocks");
     assert_eq!(blocks.len(), 2);
@@ -208,7 +208,7 @@ fn dexp_block_average_uses_reverse_endpoints() {
     let w0 = build_window(s0.clone(), &evaluated, 4);
     let w1 = build_window(s1.clone(), &evaluated, 4);
 
-    let blocks = ExpEstimator::default()
+    let blocks = IexpEstimator::default()
         .reverse_block_average(&[w0, w1], 2)
         .expect("dexp blocks");
     assert_eq!(blocks.len(), 2);

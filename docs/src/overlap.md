@@ -46,7 +46,7 @@ This is the scalar overlap diagnostic currently surfaced by the CLI.
 
 ## CLI usage
 
-`bar`, `mbar`, `exp`, and `dexp` can include overlap diagnostics with:
+`bar`, `mbar`, `iexp`, and `dexp` can include overlap diagnostics with:
 
 ```bash
 --overlap-summary

@@ -6,7 +6,7 @@
 //!
 //! - AMBER and GROMACS parsers for `dH/dlambda` and `u_nk` data
 //! - preprocessing utilities for burn-in removal, equilibration detection, and decorrelation
-//! - estimators including TI, BAR, MBAR, EXP, and DEXP
+//! - estimators including TI, BAR, MBAR, IEXP, and DEXP
 //! - overlap diagnostics built on top of MBAR weights
 //! - optional SVG plotting helpers behind the `plotting` feature
 //!
@@ -61,7 +61,7 @@ pub use data::{
 pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{
-    ExpEstimator, ExpFit, ExpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
+    IexpEstimator, IexpFit, IexpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
 };
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};

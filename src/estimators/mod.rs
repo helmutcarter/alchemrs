@@ -5,7 +5,7 @@ mod mbar;
 mod ti;
 
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
-pub use exp::{ExpEstimator, ExpFit, ExpOptions};
+pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
@@ -16,7 +16,7 @@ mod tests {
 
     use super::bar::{bar_estimate, BarEstimator, BarMethod, BarOptions};
     use super::common::work_values;
-    use super::exp::{ExpEstimator, ExpOptions};
+    use super::exp::{IexpEstimator, IexpOptions};
     use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
 
@@ -632,10 +632,10 @@ mod tests {
     #[test]
     fn exp_parallel_matches_serial() {
         let windows = make_two_state_windows();
-        let serial = ExpEstimator::new(ExpOptions { parallel: false })
+        let serial = IexpEstimator::new(IexpOptions { parallel: false })
             .estimate_with_uncertainty(&windows)
             .unwrap();
-        let parallel = ExpEstimator::new(ExpOptions { parallel: true })
+        let parallel = IexpEstimator::new(IexpOptions { parallel: true })
             .estimate_with_uncertainty(&windows)
             .unwrap();
 
@@ -777,7 +777,7 @@ mod tests {
 
     #[test]
     fn exp_supports_local_neighbor_evaluated_grids() {
-        let fit = ExpEstimator::default()
+        let fit = IexpEstimator::default()
             .fit(&make_three_state_local_bar_windows())
             .unwrap();
         let result = fit.result_with_uncertainty().unwrap();
@@ -868,7 +868,7 @@ mod tests {
 
     #[test]
     fn exp_supports_multidimensional_lambda_states() {
-        let fit = ExpEstimator::default()
+        let fit = IexpEstimator::default()
             .fit(&make_multidimensional_windows())
             .unwrap();
         let result = fit.result_with_uncertainty().unwrap();
@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn exp_supports_positive_infinity_work_values() {
         let windows = make_two_state_windows_with_positive_infinity();
-        let result = ExpEstimator::default()
+        let result = IexpEstimator::default()
             .estimate_with_uncertainty(&windows)
             .unwrap();
         assert!(result.values().iter().all(|value| value.is_finite()));

@@ -13,6 +13,7 @@ pub fn run(command: Command) -> CliResult<()> {
         Command::AdviseSchedule {
             inputs,
             temperature,
+            output_units,
             estimator,
             decorrelate,
             remove_burnin,
@@ -44,6 +45,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     u_nk_observable: Some(u_nk_observable),
                 },
                 advise::AdviseRunOptions {
+                    output_units,
                     estimator,
                     input_kind,
                     overlap_min,
@@ -75,7 +77,7 @@ pub fn run(command: Command) -> CliResult<()> {
             let temperature = resolve_input_temperature(&inputs, temperature)?;
             if u_nk_observable.is_some() {
                 return Err(
-                    "--u-nk-observable is only valid for bar, mbar, exp, and dexp; ti uses dH/dlambda for preprocessing."
+                    "--u-nk-observable is only valid for bar, mbar, iexp, and dexp; ti uses dH/dlambda for preprocessing."
                         .into(),
                 );
             }
@@ -138,7 +140,7 @@ pub fn run(command: Command) -> CliResult<()> {
                 },
             )
         }
-        Command::Exp {
+        Command::Iexp {
             inputs,
             temperature,
             decorrelate,

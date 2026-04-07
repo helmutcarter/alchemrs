@@ -15,7 +15,7 @@ The `alchemrs` crate is organized into modules rather than separate library crat
 - `error`: shared crate-level error handling
 - `parse`: engine-specific parsers for AMBER outputs and GROMACS `dhdl.xvg` files
 - `prep`: time-series preparation such as duplicate cleanup, sorting, equilibration detection, and decorrelation
-- `estimators`: TI, BAR, MBAR, EXP, and DEXP implementations
+- `estimators`: TI, BAR, MBAR, IEXP, and DEXP implementations
 - `analysis`: overlap diagnostics and plot-ready convergence series
 - `plot`: optional SVG rendering helpers behind the `plotting` feature
 

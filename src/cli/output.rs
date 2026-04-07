@@ -365,7 +365,7 @@ fn format_overlap_eigenvalues(summary: &OverlapSummary) -> String {
         .join(";")
 }
 
-fn convert_value(value: f64, units: OutputUnits, temperature: f64) -> f64 {
+pub(crate) fn convert_value(value: f64, units: OutputUnits, temperature: f64) -> f64 {
     match units {
         OutputUnits::KT => value,
         OutputUnits::Kcal => value * (K_B_KCAL_PER_MOL_K * temperature),
@@ -373,7 +373,7 @@ fn convert_value(value: f64, units: OutputUnits, temperature: f64) -> f64 {
     }
 }
 
-fn format_units(units: OutputUnits) -> &'static str {
+pub(crate) fn format_units(units: OutputUnits) -> &'static str {
     match units {
         OutputUnits::KT => "kT",
         OutputUnits::Kcal => "kcal/mol",

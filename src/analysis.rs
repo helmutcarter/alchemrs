@@ -4,7 +4,7 @@ use crate::data::{
 };
 use crate::error::{CoreError, Result};
 use crate::estimators::{
-    BarEstimator, BarOptions, ExpEstimator, ExpOptions, IntegrationMethod, MbarEstimator,
+    BarEstimator, BarOptions, IexpEstimator, IexpOptions, IntegrationMethod, MbarEstimator,
     MbarOptions, TiEstimator, TiOptions,
 };
 use nalgebra::{DMatrix, Schur};
@@ -973,12 +973,12 @@ pub fn mbar_convergence(
 
 pub fn exp_convergence(
     windows: &[UNkMatrix],
-    options: Option<ExpOptions>,
+    options: Option<IexpOptions>,
 ) -> Result<Vec<ConvergencePoint>> {
     convergence_from_ordered_matrix_windows(
         windows,
         |subset| {
-            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
         },
         false,
         2,
@@ -987,12 +987,12 @@ pub fn exp_convergence(
 
 pub fn dexp_convergence(
     windows: &[UNkMatrix],
-    options: Option<ExpOptions>,
+    options: Option<IexpOptions>,
 ) -> Result<Vec<ConvergencePoint>> {
     convergence_from_ordered_matrix_windows(
         windows,
         |subset| {
-            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
         },
         true,
         2,
@@ -1794,13 +1794,13 @@ pub(crate) fn bar_block_average(
 pub(crate) fn exp_block_average(
     windows: &[UNkMatrix],
     n_blocks: usize,
-    options: Option<ExpOptions>,
+    options: Option<IexpOptions>,
 ) -> Result<Vec<BlockEstimate>> {
     block_average_from_ordered_windows(
         windows,
         n_blocks,
         |subset| {
-            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
         },
         false,
         2,
@@ -1810,13 +1810,13 @@ pub(crate) fn exp_block_average(
 pub(crate) fn dexp_block_average(
     windows: &[UNkMatrix],
     n_blocks: usize,
-    options: Option<ExpOptions>,
+    options: Option<IexpOptions>,
 ) -> Result<Vec<BlockEstimate>> {
     block_average_from_ordered_windows(
         windows,
         n_blocks,
         |subset| {
-            ExpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
+            IexpEstimator::new(options.clone().unwrap_or_default()).estimate_with_uncertainty(subset)
         },
         true,
         2,

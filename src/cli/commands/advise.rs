@@ -15,10 +15,12 @@ use serde_json::{json, Map, Value};
 use crate::cli::input::{
     load_dhdl_series, load_windows, AnalysisInputOptions, AnalysisSampleCounts,
 };
-use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat};
+use crate::cli::output::{convert_value, format_units};
+use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat, OutputUnits};
 use crate::CliResult;
 
 pub struct AdviseRunOptions {
+    pub output_units: OutputUnits,
     pub estimator: AdvisorEstimatorArg,
     pub input_kind: AdviseInputKind,
     pub overlap_min: f64,
@@ -216,7 +218,7 @@ fn render_advice(
             run_options,
             lambda_components,
         ),
-        OutputFormat::Csv => render_csv(advice, run_options),
+        OutputFormat::Csv => render_csv(advice, input_options, run_options),
     }
 }
 
@@ -234,18 +236,19 @@ fn render_ti_advice(
             run_options,
         )),
         OutputFormat::Json => render_ti_json(advice, sample_counts, input_options, run_options),
-        OutputFormat::Csv => render_ti_csv(advice, run_options),
+        OutputFormat::Csv => render_ti_csv(advice, input_options, run_options),
     }
 }
 
 fn render_ti_text(
     advice: &TiScheduleAdvice,
     sample_counts: AnalysisSampleCounts,
-    _input_options: &AnalysisInputOptions,
+    input_options: &AnalysisInputOptions,
     run_options: &AdviseRunOptions,
 ) -> String {
+    let units = format_units(run_options.output_units);
     let mut output = format!(
-        "advisor_mode: ti\nwindows: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\nblock_cv_min_threshold: {}\nn_blocks: {}\nintervals:\n",
+        "advisor_mode: ti\nunits: {units}\nwindows: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\nblock_cv_min_threshold: {}\nn_blocks: {}\nintervals:\n",
         sample_counts.windows,
         sample_counts.samples_in,
         sample_counts.samples_after_burnin,
@@ -255,14 +258,19 @@ fn render_ti_text(
     );
     for interval in advice.intervals() {
         output.push_str(&format!(
-            "  - interval {}: {} -> {}, delta_lambda={}, slope={}, curvature={}, interval_uncertainty={}, severity={}, priority_score={}\n",
+            "  - interval {}: {} -> {}, delta_lambda={}, slope={} {}, curvature={}, interval_uncertainty={}, severity={}, priority_score={}\n",
             interval.interval_index(),
             format_state_text(interval.from_state().lambdas()),
             format_state_text(interval.to_state().lambdas()),
             interval.delta_lambda(),
-            interval.slope(),
-            option_string(interval.curvature()),
-            option_string(interval.interval_uncertainty()),
+            convert_energy_value(interval.slope(), input_options.temperature, run_options),
+            units,
+            option_energy_string(interval.curvature(), input_options.temperature, run_options),
+            option_energy_string(
+                interval.interval_uncertainty(),
+                input_options.temperature,
+                run_options,
+            ),
             ti_severity_name(interval.severity()),
             interval.priority_score(),
         ));
@@ -304,12 +312,12 @@ fn render_ti_json(
             json!({
                 "window_index": window.window_index(),
                 "lambda": json_state(window.state().lambdas()),
-                "mean_dhdl": window.mean_dhdl(),
-                "sem_dhdl": window.sem_dhdl(),
-                "block_mean": window.block_mean(),
-                "block_stddev": window.block_stddev(),
+                "mean_dhdl": convert_energy_value(window.mean_dhdl(), input_options.temperature, run_options),
+                "sem_dhdl": window.sem_dhdl().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
+                "block_mean": window.block_mean().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
+                "block_stddev": window.block_stddev().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
                 "block_cv": window.block_cv(),
-                "split_half_dhdl_delta": window.split_half_dhdl_delta(),
+                "split_half_dhdl_delta": window.split_half_dhdl_delta().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
             })
         })
         .collect::<Vec<_>>();
@@ -322,13 +330,13 @@ fn render_ti_json(
                 "from_lambda": json_state(interval.from_state().lambdas()),
                 "to_lambda": json_state(interval.to_state().lambdas()),
                 "delta_lambda": interval.delta_lambda(),
-                "left_mean_dhdl": interval.left_mean_dhdl(),
-                "right_mean_dhdl": interval.right_mean_dhdl(),
-                "trapezoid_contribution": interval.trapezoid_contribution(),
-                "slope": interval.slope(),
-                "abs_slope": interval.abs_slope(),
-                "curvature": interval.curvature(),
-                "interval_uncertainty": interval.interval_uncertainty(),
+                "left_mean_dhdl": convert_energy_value(interval.left_mean_dhdl(), input_options.temperature, run_options),
+                "right_mean_dhdl": convert_energy_value(interval.right_mean_dhdl(), input_options.temperature, run_options),
+                "trapezoid_contribution": convert_energy_value(interval.trapezoid_contribution(), input_options.temperature, run_options),
+                "slope": convert_energy_value(interval.slope(), input_options.temperature, run_options),
+                "abs_slope": convert_energy_value(interval.abs_slope(), input_options.temperature, run_options),
+                "curvature": interval.curvature().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
+                "interval_uncertainty": interval.interval_uncertainty().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
                 "severity": ti_severity_name(interval.severity()),
                 "priority_score": interval.priority_score(),
             })
@@ -367,6 +375,7 @@ fn render_ti_json(
             "input_kind": advise_input_kind_name(run_options.input_kind),
             "n_blocks": run_options.n_blocks,
             "block_cv_min": run_options.block_cv_min,
+            "units": format_units(run_options.output_units),
         },
         "windows": windows,
         "intervals": intervals,
@@ -379,7 +388,8 @@ fn render_ti_json(
 
 fn render_ti_csv(
     advice: &TiScheduleAdvice,
-    _run_options: &AdviseRunOptions,
+    input_options: &AnalysisInputOptions,
+    run_options: &AdviseRunOptions,
 ) -> Result<String, String> {
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
@@ -397,6 +407,7 @@ fn render_ti_csv(
             "abs_slope",
             "curvature",
             "interval_uncertainty",
+            "units",
             "severity",
             "priority_score",
             "suggestion_kind",
@@ -415,13 +426,14 @@ fn render_ti_csv(
                 format_state_csv(interval.from_state().lambdas()),
                 format_state_csv(interval.to_state().lambdas()),
                 interval.delta_lambda().to_string(),
-                interval.left_mean_dhdl().to_string(),
-                interval.right_mean_dhdl().to_string(),
-                interval.trapezoid_contribution().to_string(),
-                interval.slope().to_string(),
-                interval.abs_slope().to_string(),
-                option_string(interval.curvature()),
-                option_string(interval.interval_uncertainty()),
+                convert_energy_value(interval.left_mean_dhdl(), input_options.temperature, run_options).to_string(),
+                convert_energy_value(interval.right_mean_dhdl(), input_options.temperature, run_options).to_string(),
+                convert_energy_value(interval.trapezoid_contribution(), input_options.temperature, run_options).to_string(),
+                convert_energy_value(interval.slope(), input_options.temperature, run_options).to_string(),
+                convert_energy_value(interval.abs_slope(), input_options.temperature, run_options).to_string(),
+                option_energy_string_csv(interval.curvature(), input_options.temperature, run_options),
+                option_energy_string_csv(interval.interval_uncertainty(), input_options.temperature, run_options),
+                format_units(run_options.output_units).to_string(),
                 ti_severity_name(interval.severity()).to_string(),
                 interval.priority_score().to_string(),
                 suggestion
@@ -449,8 +461,9 @@ fn render_text(
     lambda_components: Option<Vec<String>>,
 ) -> String {
     let lambda_components = normalize_lambda_components(lambda_components);
+    let units = format_units(run_options.output_units);
     let mut output = format!(
-        "advisor_estimator: {}\nwindows: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\noverlap_min_threshold: {}\nblock_cv_min_threshold: {}\nn_blocks: {}\n",
+        "advisor_estimator: {}\nunits: {units}\nwindows: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\noverlap_min_threshold: {}\nblock_cv_min_threshold: {}\nn_blocks: {}\n",
         estimator_name(run_options.estimator),
         sample_counts.windows,
         sample_counts.samples_in,
@@ -469,14 +482,15 @@ fn render_text(
     output.push_str("edges:\n");
     for edge in advice.edges() {
         output.push_str(&format!(
-            "  - edge {}: {} -> {}, overlap_min={}, relative_overlap={}, delta_f={} kT, uncertainty={}, relative_uncertainty={}, block_cv={}, severity={}, dominant_components={}, priority_score={}\n",
+            "  - edge {}: {} -> {}, overlap_min={}, relative_overlap={}, delta_f={} {}, uncertainty={}, relative_uncertainty={}, block_cv={}, severity={}, dominant_components={}, priority_score={}\n",
             edge.edge_index(),
             format_state_text(edge.from_state().lambdas()),
             format_state_text(edge.to_state().lambdas()),
             edge.overlap_min(),
             option_string(edge.relative_overlap()),
-            edge.delta_f(),
-            option_string(edge.uncertainty()),
+            convert_energy_value(edge.delta_f(), input_options.temperature, run_options),
+            units,
+            option_energy_string(edge.uncertainty(), input_options.temperature, run_options),
             option_string(edge.relative_uncertainty()),
             option_string(edge.block_cv()),
             severity_name(edge.severity()),
@@ -540,10 +554,10 @@ fn render_json(
                 "overlap_forward": edge.overlap_forward(),
                 "overlap_reverse": edge.overlap_reverse(),
                 "overlap_min": edge.overlap_min(),
-                "delta_f": edge.delta_f(),
-                "uncertainty": edge.uncertainty(),
-                "block_mean": edge.block_mean(),
-                "block_stddev": edge.block_stddev(),
+                "delta_f": convert_energy_value(edge.delta_f(), input_options.temperature, run_options),
+                "uncertainty": edge.uncertainty().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
+                "block_mean": edge.block_mean().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
+                "block_stddev": edge.block_stddev().map(|value| convert_energy_value(value, input_options.temperature, run_options)),
                 "block_cv": edge.block_cv(),
                 "relative_overlap": edge.relative_overlap(),
                 "relative_uncertainty": edge.relative_uncertainty(),
@@ -602,6 +616,7 @@ fn render_json(
     provenance.insert("overlap_min".to_string(), json!(run_options.overlap_min));
     provenance.insert("block_cv_min".to_string(), json!(run_options.block_cv_min));
     provenance.insert("n_blocks".to_string(), json!(run_options.n_blocks));
+    provenance.insert("units".to_string(), json!(format_units(run_options.output_units)));
     provenance.insert(
         "lambda_components".to_string(),
         lambda_components
@@ -626,7 +641,11 @@ fn render_json(
     Ok(output)
 }
 
-fn render_csv(advice: &ScheduleAdvice, run_options: &AdviseRunOptions) -> Result<String, String> {
+fn render_csv(
+    advice: &ScheduleAdvice,
+    input_options: &AnalysisInputOptions,
+    run_options: &AdviseRunOptions,
+) -> Result<String, String> {
     let mut writer = csv::WriterBuilder::new()
         .has_headers(true)
         .from_writer(Vec::new());
@@ -673,11 +692,11 @@ fn render_csv(advice: &ScheduleAdvice, run_options: &AdviseRunOptions) -> Result
                 edge.overlap_reverse().to_string(),
                 edge.overlap_min().to_string(),
                 option_string(edge.relative_overlap()),
-                edge.delta_f().to_string(),
-                option_string(edge.uncertainty()),
+                convert_energy_value(edge.delta_f(), input_options.temperature, run_options).to_string(),
+                option_energy_string_csv(edge.uncertainty(), input_options.temperature, run_options),
                 option_string(edge.relative_uncertainty()),
-                option_string(edge.block_mean()),
-                option_string(edge.block_stddev()),
+                option_energy_string_csv(edge.block_mean(), input_options.temperature, run_options),
+                option_energy_string_csv(edge.block_stddev(), input_options.temperature, run_options),
                 option_string(edge.block_cv()),
                 format_string_list(edge.dominant_components()),
                 edge.priority_score().to_string(),
@@ -811,6 +830,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         "block CV min",
         &format_report_number(run_options.block_cv_min),
     ));
+    html.push_str(&kv_html("output units", format_units(run_options.output_units)));
     html.push_str(&kv_html("n blocks", &run_options.n_blocks.to_string()));
     if let Some(labels) = lambda_components
         .as_ref()
@@ -954,12 +974,12 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             &report_option_string(edge.relative_overlap()),
         ));
         html.push_str(&kv_html(
-            "delta_f (kT)",
-            &format_report_number(edge.delta_f()),
+            &format!("delta_f ({})", format_units(run_options.output_units)),
+            &format_energy_number(edge.delta_f(), input_options.temperature, run_options),
         ));
         html.push_str(&kv_html(
             "uncertainty",
-            &report_option_string(edge.uncertainty()),
+            &option_energy_string(edge.uncertainty(), input_options.temperature, run_options),
         ));
         html.push_str(&kv_html(
             "relative uncertainty",
@@ -1064,6 +1084,7 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         &input_options.auto_equilibrate.to_string(),
     ));
     html.push_str(&kv_html("n blocks", &run_options.n_blocks.to_string()));
+    html.push_str(&kv_html("output units", format_units(run_options.output_units)));
     html.push_str(&kv_html(
         "block CV min",
         &format_report_number(run_options.block_cv_min),
@@ -1107,8 +1128,8 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             interval.interval_index(),
             escape_html(&format_report_state(interval.from_state().lambdas())),
             escape_html(&format_report_state(interval.to_state().lambdas())),
-            format_report_number(interval.slope()),
-            report_option_string(interval.curvature()),
+            format_energy_number(interval.slope(), input_options.temperature, run_options),
+            option_energy_string(interval.curvature(), input_options.temperature, run_options),
             interval.priority_score(),
             ti_severity_name(interval.severity()),
             ti_severity_name(interval.severity())
@@ -1195,11 +1216,11 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         ));
         html.push_str(&kv_html(
             &left_lambda_label,
-            &format_report_number(interval.left_mean_dhdl()),
+            &format_energy_number(interval.left_mean_dhdl(), input_options.temperature, run_options),
         ));
         html.push_str(&kv_html(
             &right_lambda_label,
-            &format_report_number(interval.right_mean_dhdl()),
+            &format_energy_number(interval.right_mean_dhdl(), input_options.temperature, run_options),
         ));
         html.push_str(&kv_html(
             &left_samples_label,
@@ -1213,14 +1234,21 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
                 .map(|window| window.kept_samples().to_string())
                 .unwrap_or_else(|| "n/a".to_string()),
         ));
-        html.push_str(&kv_html("slope", &format_report_number(interval.slope())));
         html.push_str(&kv_html(
-            "curvature",
-            &report_option_string(interval.curvature()),
+            &format!("slope ({})", format_units(run_options.output_units)),
+            &format_energy_number(interval.slope(), input_options.temperature, run_options),
         ));
         html.push_str(&kv_html(
-            "interval uncertainty",
-            &report_option_string(interval.interval_uncertainty()),
+            &format!("curvature ({})", format_units(run_options.output_units)),
+            &option_energy_string(interval.curvature(), input_options.temperature, run_options),
+        ));
+        html.push_str(&kv_html(
+            &format!("interval uncertainty ({})", format_units(run_options.output_units)),
+            &option_energy_string(
+                interval.interval_uncertainty(),
+                input_options.temperature,
+                run_options,
+            ),
         ));
         html.push_str("</div></article>");
     }
@@ -2622,6 +2650,34 @@ fn format_report_number(value: f64) -> String {
     trim_trailing_zeros(&format!("{value:.3}"))
 }
 
+fn convert_energy_value(value: f64, temperature: f64, run_options: &AdviseRunOptions) -> f64 {
+    convert_value(value, run_options.output_units, temperature)
+}
+
+fn format_energy_number(value: f64, temperature: f64, run_options: &AdviseRunOptions) -> String {
+    format_report_number(convert_energy_value(value, temperature, run_options))
+}
+
+fn option_energy_string(
+    value: Option<f64>,
+    temperature: f64,
+    run_options: &AdviseRunOptions,
+) -> String {
+    value
+        .map(|value| format_energy_number(value, temperature, run_options))
+        .unwrap_or_default()
+}
+
+fn option_energy_string_csv(
+    value: Option<f64>,
+    temperature: f64,
+    run_options: &AdviseRunOptions,
+) -> String {
+    value
+        .map(|value| convert_energy_value(value, temperature, run_options).to_string())
+        .unwrap_or_default()
+}
+
 fn report_option_string(value: Option<f64>) -> String {
     value.map(format_report_number).unwrap_or_default()
 }
@@ -2801,7 +2857,9 @@ mod tests {
         AdviseRunOptions,
     };
     use crate::cli::input::{AnalysisInputOptions, AnalysisSampleCounts};
-    use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat, UNkObservable};
+    use crate::cli::{
+        AdviseInputKind, AdvisorEstimatorArg, OutputFormat, OutputUnits, UNkObservable,
+    };
 
     fn sample_advice() -> alchemrs::ScheduleAdvice {
         let base = env!("CARGO_MANIFEST_DIR");
@@ -3017,6 +3075,7 @@ mod tests {
                 u_nk_observable: Some(UNkObservable::De),
             },
             &AdviseRunOptions {
+                output_units: OutputUnits::KT,
                 estimator: AdvisorEstimatorArg::Mbar,
                 input_kind: AdviseInputKind::UNk,
                 overlap_min: 0.03,
@@ -3062,6 +3121,7 @@ mod tests {
                 u_nk_observable: Some(UNkObservable::De),
             },
             &AdviseRunOptions {
+                output_units: OutputUnits::KT,
                 estimator: AdvisorEstimatorArg::Mbar,
                 input_kind: AdviseInputKind::UNk,
                 overlap_min: 0.03,
@@ -3116,6 +3176,7 @@ mod tests {
                 u_nk_observable: Some(UNkObservable::De),
             },
             &AdviseRunOptions {
+                output_units: OutputUnits::KT,
                 estimator: AdvisorEstimatorArg::Mbar,
                 input_kind: AdviseInputKind::UNk,
                 overlap_min: 0.03,
@@ -3155,6 +3216,7 @@ mod tests {
                 u_nk_observable: Some(UNkObservable::De),
             },
             &AdviseRunOptions {
+                output_units: OutputUnits::KT,
                 estimator: AdvisorEstimatorArg::Mbar,
                 input_kind: AdviseInputKind::UNk,
                 overlap_min: 0.03,
@@ -3201,6 +3263,7 @@ mod tests {
                 u_nk_observable: None,
             },
             &AdviseRunOptions {
+                output_units: OutputUnits::KT,
                 estimator: AdvisorEstimatorArg::Mbar,
                 input_kind: AdviseInputKind::Dhdl,
                 overlap_min: 0.03,
@@ -3275,6 +3338,7 @@ mod tests {
                 u_nk_observable: None,
             },
             &AdviseRunOptions {
+                output_units: OutputUnits::KT,
                 estimator: AdvisorEstimatorArg::Mbar,
                 input_kind: AdviseInputKind::Dhdl,
                 overlap_min: 0.03,
