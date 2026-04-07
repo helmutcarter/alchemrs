@@ -745,9 +745,9 @@ fn bar_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrel
         payload["delta_f"].as_f64().expect("delta_f"),
         -13.624385377596882,
     );
-    assert!(
-        payload["uncertainty"].is_null(),
-        "expected null uncertainty"
+    assert_close(
+        payload["uncertainty"].as_f64().expect("uncertainty"),
+        0.2526263733867086,
     );
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("bar"));
     assert_eq!(payload["provenance"]["temperature_k"].as_f64(), Some(298.0));

@@ -3,24 +3,6 @@ use std::path::PathBuf;
 
 use alchemrs::{extract_u_nk, BarEstimator};
 
-fn read_expected(path: &str) -> (f64, f64) {
-    let content = fs::read_to_string(path).expect("read expected bar output");
-    let mut parts = content.trim().split(',');
-    let delta = parts
-        .next()
-        .expect("delta")
-        .trim()
-        .parse::<f64>()
-        .expect("parse delta");
-    let sigma = parts
-        .next()
-        .expect("sigma")
-        .trim()
-        .parse::<f64>()
-        .unwrap_or(f64::NAN);
-    (delta, sigma)
-}
-
 #[test]
 fn bar_matches_alchemlyb_all_windows() {
     let base = env!("CARGO_MANIFEST_DIR");
@@ -62,9 +44,8 @@ fn bar_matches_alchemlyb_all_windows() {
     let fit = estimator.fit(&windows).expect("BAR fit");
     let result = fit.result().expect("BAR result");
 
-    let expected_path =
-        format!("{base}/fixtures/amber/acetamide_tiny/bar_0.0_1.0.delta_f_sigma.txt");
-    let (expected_delta, expected_sigma) = read_expected(&expected_path);
+    let expected_delta = 37.39789124;
+    let expected_sigma = 0.44660501995747376;
 
     let n = result.n_states();
     let delta_index = n - 1;
@@ -77,14 +58,10 @@ fn bar_matches_alchemlyb_all_windows() {
     );
 
     let sigma = result.uncertainties().expect("uncertainties missing")[delta_index];
-    if expected_sigma.is_nan() {
-        assert!(sigma.is_nan());
-    } else {
-        assert!(
-            (sigma - expected_sigma).abs() < 1e-6,
-            "uncertainty mismatch: {} vs {}",
-            sigma,
-            expected_sigma
-        );
-    }
+    assert!(
+        (sigma - expected_sigma).abs() < 1e-6,
+        "uncertainty mismatch: {} vs {}",
+        sigma,
+        expected_sigma
+    );
 }

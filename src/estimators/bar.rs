@@ -137,15 +137,19 @@ impl BarEstimator {
 
         let n_states = eval_states.len();
         let mut adelta = vec![0.0; n_states * n_states];
-        let mut ad_delta = vec![f64::NAN; n_states * n_states];
+        let mut ad_delta = vec![0.0; n_states * n_states];
 
         for j in 0..deltas.len() {
             let mut out = Vec::new();
             let mut dout = Vec::new();
             for i in 0..(deltas.len() - j) {
                 out.push(deltas[i..=i + j].iter().sum::<f64>());
-                if j == 0 {
-                    dout.push(d_deltas[i..=i + j].iter().sum::<f64>());
+                let variances = d_deltas[i..=i + j]
+                    .iter()
+                    .map(|sigma| sigma * sigma)
+                    .collect::<Vec<_>>();
+                if variances.iter().all(|variance| variance.is_finite()) {
+                    dout.push(variances.iter().sum::<f64>().sqrt());
                 } else {
                     dout.push(f64::NAN);
                 }

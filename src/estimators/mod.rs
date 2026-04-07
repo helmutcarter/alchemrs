@@ -977,6 +977,17 @@ mod tests {
     }
 
     #[test]
+    fn bar_cumulative_uncertainty_propagates_adjacent_sigmas() {
+        let windows = make_three_state_local_bar_windows();
+        let result = BarEstimator::default().estimate(&windows).unwrap();
+        let uncertainties = result.uncertainties().expect("uncertainties");
+        let expected = (uncertainties[1] * uncertainties[1] + uncertainties[5] * uncertainties[5])
+            .sqrt();
+        assert!((uncertainties[2] - expected).abs() < 1e-12);
+        assert!((uncertainties[6] - expected).abs() < 1e-12);
+    }
+
+    #[test]
     fn mbar_supports_positive_infinity_reduced_potentials() {
         let windows = make_two_state_windows_with_positive_infinity();
         let result = MbarEstimator::new(MbarOptions::default())
