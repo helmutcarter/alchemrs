@@ -11,7 +11,7 @@ use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
 use crate::error::CoreError;
 
 const FP_RE: &str = r"[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?";
-const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
+const K_B_KJ_PER_MOL_K: f64 = 0.00831446261815324;
 
 pub type Result<T> = std::result::Result<T, GromacsParseError>;
 
@@ -175,7 +175,7 @@ fn extract_u_nk_internal(
     let sampled_idx = *state_to_column
         .get(&sampled_key)
         .expect("sampled state indexed");
-    let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+    let beta = 1.0 / (K_B_KJ_PER_MOL_K * temperature_k);
 
     let mut time_ps = Vec::new();
     let mut data = Vec::new();
@@ -580,7 +580,7 @@ mod tests {
         file.write_all(content.as_bytes()).unwrap();
 
         let u_nk = extract_u_nk(file.path(), 300.0).unwrap();
-        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        let beta = 1.0 / (0.00831446261815324 * 300.0);
         assert_eq!(u_nk.n_samples(), 2);
         assert_eq!(u_nk.n_states(), 3);
         assert_eq!(u_nk.time_ps(), &[0.0, 2.0]);
