@@ -1,5 +1,6 @@
 use crate::data::{find_scalar_lambda_state_index_exact, DhdlSeries, UNkMatrix};
 use crate::error::{CoreError, Result};
+use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UNkSeriesMethod {
@@ -44,15 +45,15 @@ pub struct EquilibrationResult {
 }
 
 pub fn decorrelate_dhdl(series: &DhdlSeries, options: &DecorrelationOptions) -> Result<DhdlSeries> {
-    let (time, values) = prepare_series(
+    let (time, values) = prepare_series_view(
         series.time_ps(),
         series.values(),
         options.drop_duplicates,
         options.sort,
     )?;
-    let (time, values) = apply_time_slice(&time, &values, options)?;
-    let indices = subsample_indices(&values, options)?;
-    let (time, values) = apply_indices(&time, &values, &indices);
+    let (time, values) = apply_time_slice_view(time.as_ref(), values.as_ref(), options)?;
+    let indices = subsample_indices(values.as_ref(), options)?;
+    let (time, values) = apply_indices(time.as_ref(), values.as_ref(), &indices);
     DhdlSeries::new(series.state().clone(), time, values)
 }
 
@@ -60,14 +61,14 @@ pub fn detect_equilibration_dhdl(
     series: &DhdlSeries,
     options: &DecorrelationOptions,
 ) -> Result<EquilibrationResult> {
-    let (time, values) = prepare_series(
+    let (time, values) = prepare_series_view(
         series.time_ps(),
         series.values(),
         options.drop_duplicates,
         options.sort,
     )?;
-    let (_time, values) = apply_time_slice(&time, &values, options)?;
-    detect_equilibration(&values, options.fast, options.nskip)
+    let (_time, values) = apply_time_slice_view(time.as_ref(), values.as_ref(), options)?;
+    detect_equilibration(values.as_ref(), options.fast, options.nskip)
 }
 
 pub fn decorrelate_u_nk(
@@ -162,39 +163,46 @@ pub fn detect_equilibration_observable(
     detect_equilibration(observable, fast, nskip)
 }
 
-fn prepare_series(
-    time: &[f64],
-    values: &[f64],
+fn prepare_series_view<'a>(
+    time: &'a [f64],
+    values: &'a [f64],
     drop_duplicates: bool,
     sort: bool,
-) -> Result<(Vec<f64>, Vec<f64>)> {
+) -> Result<(Cow<'a, [f64]>, Cow<'a, [f64]>)> {
     if time.len() != values.len() {
         return Err(CoreError::InvalidShape {
             expected: time.len(),
             found: values.len(),
         });
     }
+
+    let has_duplicates = has_duplicates(time);
+    if has_duplicates && !drop_duplicates {
+        return Err(CoreError::InvalidState(
+            "duplicate time values found".to_string(),
+        ));
+    }
+
+    let sorted = is_sorted(time);
+    if !sorted && !sort {
+        return Err(CoreError::InvalidTimeOrder(
+            "time values are not sorted".to_string(),
+        ));
+    }
+
+    if !has_duplicates && sorted {
+        return Ok((Cow::Borrowed(time), Cow::Borrowed(values)));
+    }
+
     let mut time = time.to_vec();
     let mut values = values.to_vec();
-    if has_duplicates(&time) {
-        if drop_duplicates {
-            (time, values) = drop_duplicate_times(&time, &values);
-        } else {
-            return Err(CoreError::InvalidState(
-                "duplicate time values found".to_string(),
-            ));
-        }
+    if has_duplicates {
+        (time, values) = drop_duplicate_times(&time, &values);
     }
-    if !is_sorted(&time) {
-        if sort {
-            (time, values) = sort_by_time(&time, &values);
-        } else {
-            return Err(CoreError::InvalidTimeOrder(
-                "time values are not sorted".to_string(),
-            ));
-        }
+    if !sorted {
+        (time, values) = sort_by_time(&time, &values);
     }
-    Ok((time, values))
+    Ok((Cow::Owned(time), Cow::Owned(values)))
 }
 
 fn prepare_u_nk(
@@ -286,13 +294,24 @@ fn prepare_u_nk_with_observable(
     Ok((time, data, observable))
 }
 
-fn apply_time_slice(
-    time: &[f64],
-    values: &[f64],
+fn apply_time_slice_view<'a>(
+    time: &'a [f64],
+    values: &'a [f64],
     options: &DecorrelationOptions,
-) -> Result<(Vec<f64>, Vec<f64>)> {
+) -> Result<(Cow<'a, [f64]>, Cow<'a, [f64]>)> {
+    if options.lower.is_none() && options.upper.is_none() && options.step.is_none() {
+        if time.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        return Ok((Cow::Borrowed(time), Cow::Borrowed(values)));
+    }
+
     let indices = slice_time_indices(time, options)?;
-    Ok(apply_indices(time, values, &indices))
+    let (time, values) = apply_indices(time, values, &indices);
+    Ok((Cow::Owned(time), Cow::Owned(values)))
 }
 
 fn apply_time_slice_u_nk(

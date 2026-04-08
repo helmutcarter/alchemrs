@@ -109,8 +109,10 @@ pub fn extract_dhdl_with_options(
     let mut t0: Option<f64> = None;
 
     let mut gradients: Vec<f64> = Vec::new();
-    let mut sample_steps: Vec<usize> = Vec::new();
+    let mut time_ps: Vec<f64> = Vec::new();
     let mut summary_state: Option<DvdlSummaryState> = None;
+    let mut summary_dt: Option<f64> = None;
+    let mut summary_t0: Option<f64> = None;
     let mut line = Vec::new();
 
     loop {
@@ -134,21 +136,30 @@ pub fn extract_dhdl_with_options(
                 continue;
             }
             if let Some(step) = state.next_retained_step() {
-                let value = parse_dvdl_summary_value(parse_line_bytes(line)?)?;
+                let value = parse_dvdl_summary_value_bytes(line)?;
                 gradients.push(value);
-                sample_steps.push(step);
+                time_ps.push(
+                    summary_t0.expect("summary t0 set")
+                        + (step as f64) * summary_dt.expect("summary dt set"),
+                );
             }
             continue;
         }
 
         if is_dvdl_summary_start(line) {
-            let line = parse_line_bytes(line)?;
             let ntpr = ntpr.ok_or(AmberParseError::MissingField { field: "ntpr" })?;
-            summary_state = Some(DvdlSummaryState::new(
-                parse_dvdl_summary_count(line)?,
+            let dt = dt.ok_or(AmberParseError::MissingField { field: "dt" })?;
+            let t0 = t0.ok_or(AmberParseError::MissingField { field: "t0" })?;
+            let summary = DvdlSummaryState::new(
+                parse_dvdl_summary_count_bytes(line)?,
                 summary_stride(ntpr),
                 options.input_stride,
-            ));
+            );
+            gradients.reserve(summary.retained_len());
+            time_ps.reserve(summary.retained_len());
+            summary_dt = Some(dt);
+            summary_t0 = Some(t0);
+            summary_state = Some(summary);
             continue;
         }
 
@@ -194,9 +205,9 @@ pub fn extract_dhdl_with_options(
         });
     }
     let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
-    let dt = dt.ok_or(AmberParseError::MissingField { field: "dt" })?;
+    let _dt = dt.ok_or(AmberParseError::MissingField { field: "dt" })?;
     ntpr.ok_or(AmberParseError::MissingField { field: "ntpr" })?;
-    let t0 = t0.ok_or(AmberParseError::MissingField { field: "t0" })?;
+    let _t0 = t0.ok_or(AmberParseError::MissingField { field: "t0" })?;
 
     if gradients.is_empty() {
         return Err(AmberParseError::NoGradients);
@@ -206,11 +217,6 @@ pub fn extract_dhdl_with_options(
     for value in gradients.iter_mut() {
         *value *= beta;
     }
-
-    let time_ps: Vec<f64> = sample_steps
-        .iter()
-        .map(|step| t0 + (*step as f64) * dt)
-        .collect();
 
     let state = StatePoint::new(vec![clambda], temperature_k)?;
     DhdlSeries::new(state, time_ps, gradients).map_err(Into::into)
@@ -594,23 +600,139 @@ fn is_dvdl_summary_end(line: &[u8]) -> bool {
     trim_ascii_start_bytes(line).starts_with(b"End of dvdl summary")
 }
 
-fn parse_dvdl_summary_count(line: &str) -> Result<usize> {
-    line.split_whitespace()
-        .find_map(|token| token.parse::<usize>().ok())
-        .ok_or(AmberParseError::InvalidField {
-            field: "dvdl_summary_steps",
-            value: line.to_string(),
-        })
+fn trim_ascii_bytes(line: &[u8]) -> &[u8] {
+    let mut start = 0;
+    let mut end = line.len();
+    while start < end && line[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    while end > start && line[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+    &line[start..end]
 }
 
-fn parse_dvdl_summary_value(line: &str) -> Result<f64> {
-    let value = line.trim();
-    value
-        .parse::<f64>()
-        .map_err(|_| AmberParseError::InvalidField {
-            field: "DV/DL",
-            value: value.to_string(),
-        })
+fn parse_dvdl_summary_count_bytes(line: &[u8]) -> Result<usize> {
+    let trimmed = trim_ascii_bytes(line);
+    let mut idx = 0;
+    while idx < trimmed.len() {
+        if trimmed[idx].is_ascii_digit() {
+            let start = idx;
+            idx += 1;
+            while idx < trimmed.len() && trimmed[idx].is_ascii_digit() {
+                idx += 1;
+            }
+            return parse_ascii_usize(&trimmed[start..idx]).ok_or_else(|| {
+                AmberParseError::InvalidField {
+                    field: "dvdl_summary_steps",
+                    value: String::from_utf8_lossy(trimmed).into_owned(),
+                }
+            });
+        }
+        idx += 1;
+    }
+    Err(AmberParseError::InvalidField {
+        field: "dvdl_summary_steps",
+        value: String::from_utf8_lossy(trimmed).into_owned(),
+    })
+}
+
+fn parse_dvdl_summary_value_bytes(line: &[u8]) -> Result<f64> {
+    let trimmed = trim_ascii_bytes(line);
+    parse_ascii_f64(trimmed).ok_or_else(|| AmberParseError::InvalidField {
+        field: "DV/DL",
+        value: String::from_utf8_lossy(trimmed).into_owned(),
+    })
+}
+
+fn parse_ascii_usize(bytes: &[u8]) -> Option<usize> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut value = 0usize;
+    for byte in bytes {
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        value = value.checked_mul(10)?.checked_add((byte - b'0') as usize)?;
+    }
+    Some(value)
+}
+
+fn parse_ascii_f64(bytes: &[u8]) -> Option<f64> {
+    if bytes.is_empty() {
+        return None;
+    }
+
+    let mut idx = 0usize;
+    let mut sign = 1.0f64;
+    match bytes[idx] {
+        b'+' => idx += 1,
+        b'-' => {
+            sign = -1.0;
+            idx += 1;
+        }
+        _ => {}
+    }
+    if idx >= bytes.len() {
+        return None;
+    }
+
+    let mut value = 0.0f64;
+    let mut saw_digit = false;
+    while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+        value = value * 10.0 + (bytes[idx] - b'0') as f64;
+        idx += 1;
+        saw_digit = true;
+    }
+
+    if idx < bytes.len() && bytes[idx] == b'.' {
+        idx += 1;
+        let mut scale = 0.1f64;
+        while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+            value += (bytes[idx] - b'0') as f64 * scale;
+            scale *= 0.1;
+            idx += 1;
+            saw_digit = true;
+        }
+    }
+
+    if !saw_digit {
+        return None;
+    }
+
+    if idx < bytes.len() && matches!(bytes[idx], b'e' | b'E') {
+        idx += 1;
+        if idx >= bytes.len() {
+            return None;
+        }
+        let mut exponent_sign = 1i32;
+        match bytes[idx] {
+            b'+' => idx += 1,
+            b'-' => {
+                exponent_sign = -1;
+                idx += 1;
+            }
+            _ => {}
+        }
+        if idx >= bytes.len() || !bytes[idx].is_ascii_digit() {
+            return None;
+        }
+        let mut exponent = 0i32;
+        while idx < bytes.len() && bytes[idx].is_ascii_digit() {
+            exponent = exponent
+                .checked_mul(10)?
+                .checked_add((bytes[idx] - b'0') as i32)?;
+            idx += 1;
+        }
+        value *= 10f64.powi(exponent_sign * exponent);
+    }
+
+    if idx != bytes.len() {
+        return None;
+    }
+
+    Some(sign * value)
 }
 
 fn summary_stride(ntpr: f64) -> usize {
@@ -626,6 +748,7 @@ enum DvdlSummaryMode {
 #[derive(Debug, Clone, Copy)]
 struct DvdlSummaryState {
     mode: DvdlSummaryMode,
+    total_steps: usize,
     index: usize,
 }
 
@@ -640,7 +763,11 @@ impl DvdlSummaryState {
                 stride: input_stride.unwrap_or(default_stride),
             }
         };
-        Self { mode, index: 0 }
+        Self {
+            mode,
+            total_steps,
+            index: 0,
+        }
     }
 
     fn next_retained_step(&mut self) -> Option<usize> {
@@ -650,6 +777,13 @@ impl DvdlSummaryState {
         };
         self.index += 1;
         retained
+    }
+
+    fn retained_len(&self) -> usize {
+        match self.mode {
+            DvdlSummaryMode::Dense { stride } => self.total_steps.div_ceil(stride),
+            DvdlSummaryMode::Compact { .. } => self.total_steps,
+        }
     }
 }
 

@@ -11,6 +11,7 @@ use alchemrs::{
     extract_u_nk, extract_u_nk_with_potential, CoreError, DecorrelationOptions, DhdlSeries,
     UNkMatrix, UNkSeriesMethod,
 };
+use rayon::prelude::*;
 use thiserror::Error;
 
 use crate::cli::UNkObservable;
@@ -264,23 +265,38 @@ pub fn load_dhdl_series(
     inputs: Vec<PathBuf>,
     options: AnalysisInputOptions,
 ) -> CliResult<LoadedDhdlSeries> {
-    let mut series = Vec::with_capacity(inputs.len());
+    let loaded: Result<Vec<(DhdlSeries, usize, usize, usize)>, String> = inputs
+        .into_par_iter()
+        .map(|path| {
+            let mut dhdl = extract_cli_dhdl(&path, options.temperature, options.input_stride)
+                .map_err(|error| error.to_string())?;
+            let samples_in = dhdl.values().len();
+            dhdl = trim_dhdl(dhdl, options.remove_burnin).map_err(|error| error.to_string())?;
+            if options.auto_equilibrate {
+                let equilibration =
+                    detect_equilibration_dhdl(&dhdl, &options.equilibration_options())
+                        .map_err(|error| error.to_string())?;
+                dhdl = trim_dhdl(dhdl, equilibration.t0).map_err(|error| error.to_string())?;
+            }
+            let samples_after_burnin = dhdl.values().len();
+            if options.decorrelate {
+                dhdl = decorrelate_dhdl(&dhdl, &options.decorrelation_options())
+                    .map_err(|error| error.to_string())?;
+            }
+            let samples_kept = dhdl.values().len();
+            Ok((dhdl, samples_in, samples_after_burnin, samples_kept))
+        })
+        .collect();
+
+    let loaded = loaded.map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+    let mut series = Vec::with_capacity(loaded.len());
     let mut samples_in = 0;
     let mut samples_after_burnin = 0;
     let mut samples_kept = 0;
-    for path in inputs {
-        let mut dhdl = extract_cli_dhdl(&path, options.temperature, options.input_stride)?;
-        samples_in += dhdl.values().len();
-        dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
-        if options.auto_equilibrate {
-            let equilibration = detect_equilibration_dhdl(&dhdl, &options.equilibration_options())?;
-            dhdl = trim_dhdl(dhdl, equilibration.t0)?;
-        }
-        samples_after_burnin += dhdl.values().len();
-        if options.decorrelate {
-            dhdl = decorrelate_dhdl(&dhdl, &options.decorrelation_options())?;
-        }
-        samples_kept += dhdl.values().len();
+    for (dhdl, series_in, series_after_burnin, series_kept) in loaded {
+        samples_in += series_in;
+        samples_after_burnin += series_after_burnin;
+        samples_kept += series_kept;
         series.push(dhdl);
     }
     Ok(LoadedDhdlSeries {
