@@ -1,5 +1,6 @@
 use crate::data::{find_scalar_lambda_state_index_exact, DhdlSeries, UNkMatrix};
 use crate::error::{CoreError, Result};
+use rustfft::{num_complex::Complex, FftPlanner};
 use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -552,7 +553,14 @@ fn statistical_inefficiency(values: &[f64], fast: bool) -> Result<f64> {
         ));
     }
 
-    let n = values.len();
+    if d_values.len() < 1024 {
+        return statistical_inefficiency_direct(&d_values, sigma2, fast);
+    }
+    statistical_inefficiency_fft(&d_values, sigma2, fast)
+}
+
+fn statistical_inefficiency_direct(d_values: &[f64], sigma2: f64, fast: bool) -> Result<f64> {
+    let n = d_values.len();
     let mut g = 1.0;
     let mut t = 1usize;
     let mut increment = 1usize;
@@ -577,6 +585,56 @@ fn statistical_inefficiency(values: &[f64], fast: bool) -> Result<f64> {
         g = 1.0;
     }
     Ok(g)
+}
+
+fn statistical_inefficiency_fft(d_values: &[f64], sigma2: f64, fast: bool) -> Result<f64> {
+    let n = d_values.len();
+    let autocov = autocovariance_fft(d_values);
+    let mut g = 1.0;
+    let mut t = 1usize;
+    let mut increment = 1usize;
+    let mintime = 3usize;
+    while t < n - 1 {
+        let c = autocov[t] / ((n - t) as f64 * sigma2);
+        if c <= 0.0 && t > mintime {
+            break;
+        }
+        g += 2.0 * c * (1.0 - (t as f64) / (n as f64)) * (increment as f64);
+        t += increment;
+        if fast {
+            increment += 1;
+        }
+    }
+    if g < 1.0 {
+        g = 1.0;
+    }
+    Ok(g)
+}
+
+fn autocovariance_fft(d_values: &[f64]) -> Vec<f64> {
+    let n = d_values.len();
+    let fft_len = (n * 2).next_power_of_two();
+    let mut planner = FftPlanner::<f64>::new();
+    let forward = planner.plan_fft_forward(fft_len);
+    let inverse = planner.plan_fft_inverse(fft_len);
+
+    let mut buffer = vec![Complex::new(0.0, 0.0); fft_len];
+    for (slot, &value) in buffer.iter_mut().zip(d_values.iter()) {
+        slot.re = value;
+    }
+
+    forward.process(&mut buffer);
+    for value in &mut buffer {
+        *value *= value.conj();
+    }
+    inverse.process(&mut buffer);
+
+    let scale = 1.0 / fft_len as f64;
+    buffer
+        .into_iter()
+        .take(n)
+        .map(|value| value.re * scale)
+        .collect()
 }
 
 fn subsample_correlated_data(
@@ -675,6 +733,7 @@ fn best_equilibration_result(
 mod tests {
     use super::*;
     use crate::data::StatePoint;
+    use std::time::Instant;
 
     #[test]
     fn decorrelate_dhdl_drops_duplicates() {
@@ -857,5 +916,53 @@ mod tests {
 
         assert_eq!(result.n_samples(), 4);
         assert_eq!(result.data()[3], f64::INFINITY);
+    }
+
+    #[test]
+    fn statistical_inefficiency_fft_matches_direct_for_long_series() {
+        let values: Vec<f64> = (0..4096)
+            .map(|idx| {
+                let x = idx as f64;
+                (x / 17.0).sin() + 0.3 * (x / 31.0).cos() + 0.05 * (x / 7.0).sin()
+            })
+            .collect();
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        let centered: Vec<f64> = values.iter().map(|value| value - mean).collect();
+        let sigma2 =
+            centered.iter().map(|value| value * value).sum::<f64>() / centered.len() as f64;
+
+        let direct = statistical_inefficiency_direct(&centered, sigma2, false).unwrap();
+        let fft = statistical_inefficiency_fft(&centered, sigma2, false).unwrap();
+
+        assert!((fft - direct).abs() < 1.0e-9, "{fft} vs {direct}");
+    }
+
+    #[test]
+    #[ignore = "benchmark"]
+    fn benchmark_statistical_inefficiency_backends() {
+        let values: Vec<f64> = (0..262_144)
+            .map(|idx| {
+                let x = idx as f64;
+                (x / 17.0).sin() + 0.3 * (x / 31.0).cos() + 0.05 * (x / 7.0).sin()
+            })
+            .collect();
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        let centered: Vec<f64> = values.iter().map(|value| value - mean).collect();
+        let sigma2 =
+            centered.iter().map(|value| value * value).sum::<f64>() / centered.len() as f64;
+
+        let start = Instant::now();
+        let direct = statistical_inefficiency_direct(&centered, sigma2, false).unwrap();
+        let direct_elapsed = start.elapsed();
+
+        let start = Instant::now();
+        let fft = statistical_inefficiency_fft(&centered, sigma2, false).unwrap();
+        let fft_elapsed = start.elapsed();
+
+        eprintln!(
+            "direct={direct_elapsed:?} fft={fft_elapsed:?} speedup={:.2}x",
+            direct_elapsed.as_secs_f64() / fft_elapsed.as_secs_f64()
+        );
+        assert!((fft - direct).abs() < 1.0e-9, "{fft} vs {direct}");
     }
 }

@@ -12,6 +12,9 @@ pub mod overlap;
 #[command(name = "alchemrs")]
 #[command(about = "Alchemical free energy analysis CLI")]
 pub struct Cli {
+    /// Number of worker threads to use for internal parallelism
+    #[arg(long)]
+    pub threads: Option<usize>,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -570,6 +573,13 @@ mod tests {
             Command::Ti { input_stride, .. } => assert_eq!(input_stride, Some(1)),
             _ => panic!("expected ti command"),
         }
+    }
+
+    #[test]
+    fn cli_accepts_global_threads_flag() {
+        let cli = Cli::parse_from(["alchemrs", "--threads", "8", "ti", "window.out"]);
+        assert_eq!(cli.threads, Some(8));
+        assert!(matches!(cli.command, Command::Ti { .. }));
     }
 
     fn command_conservative(command: Command) -> bool {
