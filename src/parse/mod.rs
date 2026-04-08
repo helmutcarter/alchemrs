@@ -127,6 +127,39 @@ Free energy options:
     }
 
     #[test]
+    fn parse_multiline_amber_dhdl_block() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Nature and format of output:
+ ntpr =       10
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.5000
+   3.  ATOMIC
+ begin time coords = 0.0
+   4.  RESULTS
+ NSTEP =       10  TIME(PS) =       0.02
+ DV/DL =     1.0000
+ ---
+ NSTEP =       20  TIME(PS) =       0.04
+ DV/DL =     2.0000
+ ---
+   5.  TIMINGS
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let series = extract_dhdl(file.path(), 300.0).unwrap();
+        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        let expected = vec![1.0 * beta, 2.0 * beta];
+        assert_eq!(series.values(), expected.as_slice());
+        assert_eq!(series.time_ps(), &[0.02, 0.04]);
+        assert_eq!(series.state().lambdas(), &[0.5]);
+    }
+
+    #[test]
     fn parse_simple_amber_u_nk() {
         let content = r#"
    2.  CONTROL  DATA  FOR  THE  RUN

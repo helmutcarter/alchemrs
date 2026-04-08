@@ -99,7 +99,7 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
 
     let mut gradients: Vec<f64> = Vec::new();
     let mut last_nstep: Option<i64> = None;
-    let mut pending_block: Option<String> = None;
+    let mut pending_block: Option<PendingGradientBlock> = None;
     let mut line = String::new();
 
     loop {
@@ -141,21 +141,20 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
             }
         }
 
-        if let Some(mut block) = pending_block.take() {
-            block.push(' ');
-            block.push_str(line);
-            if line.trim_start().starts_with("---") {
-                handle_gradient_block(&block, &mut last_nstep, &mut gradients)?;
-            } else {
-                pending_block = Some(block);
+        if let Some(block) = pending_block.as_mut() {
+            block.capture_line(line)?;
+            if is_nstep_block_terminator(line) {
+                let block = pending_block.take().expect("pending block exists");
+                handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
             }
             continue;
         }
 
         if line.starts_with(" NSTEP") || line.starts_with("NSTEP") {
-            let block = line.to_string();
-            if line.trim_start().starts_with("---") {
-                handle_gradient_block(&block, &mut last_nstep, &mut gradients)?;
+            let mut block = PendingGradientBlock::default();
+            block.capture_line(line)?;
+            if is_nstep_block_terminator(line) {
+                handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
             } else {
                 pending_block = Some(block);
             }
@@ -163,7 +162,7 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     }
 
     if let Some(block) = pending_block {
-        handle_gradient_block(&block, &mut last_nstep, &mut gradients)?;
+        handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
     }
 
     let temp0 = temp0.ok_or(AmberParseError::MissingField { field: "temp0" })?;
@@ -537,6 +536,10 @@ fn is_mbar_energy_start(line: &str) -> bool {
     line.trim_start().starts_with("MBAR Energy analysis:")
 }
 
+fn is_nstep_block_terminator(line: &str) -> bool {
+    line.trim_start().starts_with("---")
+}
+
 fn parse_mbar_lambda_line(line: &str, mbar_lambdas: &mut Vec<f64>) -> Result<()> {
     for token in line.split_whitespace() {
         if token.contains('.') {
@@ -659,20 +662,39 @@ fn finalize_mbar_block(
     Ok(())
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct PendingGradientBlock {
+    nstep: Option<i64>,
+    dvdl: Option<f64>,
+}
+
+impl PendingGradientBlock {
+    fn capture_line(&mut self, line: &str) -> Result<()> {
+        if self.nstep.is_none() {
+            self.nstep = capture_field(line, "NSTEP")?.map(|value| value as i64);
+        }
+        if self.dvdl.is_none() {
+            self.dvdl = capture_field(line, "DV/DL")?;
+        }
+        Ok(())
+    }
+}
+
 fn handle_gradient_block(
-    block: &str,
+    block: PendingGradientBlock,
     last_nstep: &mut Option<i64>,
     gradients: &mut Vec<f64>,
 ) -> Result<()> {
-    let nstep = capture_field(block, "NSTEP")?
-        .map(|value| value as i64)
+    let nstep = block
+        .nstep
         .ok_or(AmberParseError::MissingGradientField { field: "NSTEP" })?;
     if let Some(prev) = last_nstep {
         if *prev == nstep {
             return Ok(());
         }
     }
-    let dvdl = capture_field(block, "DV/DL")?
+    let dvdl = block
+        .dvdl
         .ok_or(AmberParseError::MissingGradientField { field: "DV/DL" })?;
     gradients.push(dvdl);
     *last_nstep = Some(nstep);
