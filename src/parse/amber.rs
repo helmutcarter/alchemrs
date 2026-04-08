@@ -100,12 +100,12 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     let mut gradients: Vec<f64> = Vec::new();
     let mut last_nstep: Option<i64> = None;
     let mut pending_block: Option<PendingGradientBlock> = None;
-    let mut line = String::new();
+    let mut line = Vec::new();
 
     loop {
         line.clear();
         let bytes = reader
-            .read_line(&mut line)
+            .read_until(b'\n', &mut line)
             .map_err(|err| AmberParseError::Io {
                 operation: "read",
                 message: err.to_string(),
@@ -113,8 +113,28 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
         if bytes == 0 {
             break;
         }
-        let line = line.trim_end_matches(&['\r', '\n'][..]);
+        let line = trim_line_end_bytes(&line);
 
+        let starts_nstep = is_nstep_line(line);
+        let terminates_nstep = is_nstep_block_terminator_bytes(line);
+
+        if let Some(block) = pending_block.as_mut() {
+            let line = parse_line_bytes(line)?;
+            block.capture_line(line)?;
+            if terminates_nstep {
+                let block = pending_block.take().expect("pending block exists");
+                handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
+            }
+            continue;
+        }
+
+        let needs_header_parse =
+            temp0.is_none() || clambda.is_none() || dt.is_none() || ntpr.is_none() || t0.is_none();
+        if !needs_header_parse && !starts_nstep {
+            continue;
+        }
+
+        let line = parse_line_bytes(line)?;
         if temp0.is_none() {
             if let Some(value) = capture_field(line, "temp0")? {
                 temp0 = Some(value);
@@ -135,25 +155,16 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
                 ntpr = Some(value);
             }
         }
-        if t0.is_none() && line.contains("begin time") {
+        if t0.is_none() && line_contains_begin_time(line.as_bytes()) {
             if let Some(value) = capture_field(line, "coords")? {
                 t0 = Some(value);
             }
         }
 
-        if let Some(block) = pending_block.as_mut() {
-            block.capture_line(line)?;
-            if is_nstep_block_terminator(line) {
-                let block = pending_block.take().expect("pending block exists");
-                handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
-            }
-            continue;
-        }
-
-        if line.starts_with(" NSTEP") || line.starts_with("NSTEP") {
+        if starts_nstep {
             let mut block = PendingGradientBlock::default();
             block.capture_line(line)?;
-            if is_nstep_block_terminator(line) {
+            if terminates_nstep {
                 handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
             } else {
                 pending_block = Some(block);
@@ -536,8 +547,40 @@ fn is_mbar_energy_start(line: &str) -> bool {
     line.trim_start().starts_with("MBAR Energy analysis:")
 }
 
-fn is_nstep_block_terminator(line: &str) -> bool {
-    line.trim_start().starts_with("---")
+fn trim_line_end_bytes(line: &[u8]) -> &[u8] {
+    let mut end = line.len();
+    while end > 0 && matches!(line[end - 1], b'\n' | b'\r') {
+        end -= 1;
+    }
+    &line[..end]
+}
+
+fn parse_line_bytes(line: &[u8]) -> Result<&str> {
+    std::str::from_utf8(line).map_err(|err| AmberParseError::Io {
+        operation: "read",
+        message: format!("invalid UTF-8 in AMBER output: {err}"),
+    })
+}
+
+fn trim_ascii_start_bytes(line: &[u8]) -> &[u8] {
+    let start = line
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(line.len());
+    &line[start..]
+}
+
+fn is_nstep_line(line: &[u8]) -> bool {
+    trim_ascii_start_bytes(line).starts_with(b"NSTEP")
+}
+
+fn is_nstep_block_terminator_bytes(line: &[u8]) -> bool {
+    trim_ascii_start_bytes(line).starts_with(b"---")
+}
+
+fn line_contains_begin_time(line: &[u8]) -> bool {
+    line.windows(b"begin time".len())
+        .any(|window| window == b"begin time")
 }
 
 fn parse_mbar_lambda_line(line: &str, mbar_lambdas: &mut Vec<f64>) -> Result<()> {
