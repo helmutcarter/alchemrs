@@ -33,8 +33,6 @@ pub enum AmberParseError {
         input_temperature_k: f64,
     },
     #[error("missing {field} in NSTEP block")]
-    MissingGradientField { field: &'static str },
-    #[error("missing {field} in NSTEP block")]
     MissingPotentialField { field: &'static str },
     #[error("no DV/DL gradients found in AMBER output")]
     NoGradients,
@@ -98,8 +96,8 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     let mut t0: Option<f64> = None;
 
     let mut gradients: Vec<f64> = Vec::new();
-    let mut last_nstep: Option<i64> = None;
-    let mut pending_block: Option<PendingGradientBlock> = None;
+    let mut sample_steps: Vec<usize> = Vec::new();
+    let mut summary_state: Option<DvdlSummaryState> = None;
     let mut line = Vec::new();
 
     loop {
@@ -115,22 +113,34 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
         }
         let line = trim_line_end_bytes(&line);
 
-        let starts_nstep = is_nstep_line(line);
-        let terminates_nstep = is_nstep_block_terminator_bytes(line);
-
-        if let Some(block) = pending_block.as_mut() {
-            let line = parse_line_bytes(line)?;
-            block.capture_line(line)?;
-            if terminates_nstep {
-                let block = pending_block.take().expect("pending block exists");
-                handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
+        if let Some(state) = summary_state.as_mut() {
+            if is_dvdl_summary_end(line) {
+                break;
             }
+            if line.is_empty() {
+                continue;
+            }
+            if let Some(step) = state.next_retained_step() {
+                let value = parse_dvdl_summary_value(parse_line_bytes(line)?)?;
+                gradients.push(value);
+                sample_steps.push(step);
+            }
+            continue;
+        }
+
+        if is_dvdl_summary_start(line) {
+            let line = parse_line_bytes(line)?;
+            let ntpr = ntpr.ok_or(AmberParseError::MissingField { field: "ntpr" })?;
+            summary_state = Some(DvdlSummaryState::new(
+                parse_dvdl_summary_count(line)?,
+                summary_stride(ntpr),
+            ));
             continue;
         }
 
         let needs_header_parse =
             temp0.is_none() || clambda.is_none() || dt.is_none() || ntpr.is_none() || t0.is_none();
-        if !needs_header_parse && !starts_nstep {
+        if !needs_header_parse {
             continue;
         }
 
@@ -160,20 +170,6 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
                 t0 = Some(value);
             }
         }
-
-        if starts_nstep {
-            let mut block = PendingGradientBlock::default();
-            block.capture_line(line)?;
-            if terminates_nstep {
-                handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
-            } else {
-                pending_block = Some(block);
-            }
-        }
-    }
-
-    if let Some(block) = pending_block {
-        handle_gradient_block(block, &mut last_nstep, &mut gradients)?;
     }
 
     let temp0 = temp0.ok_or(AmberParseError::MissingField { field: "temp0" })?;
@@ -185,7 +181,7 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     }
     let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
     let dt = dt.ok_or(AmberParseError::MissingField { field: "dt" })?;
-    let ntpr = ntpr.ok_or(AmberParseError::MissingField { field: "ntpr" })?;
+    ntpr.ok_or(AmberParseError::MissingField { field: "ntpr" })?;
     let t0 = t0.ok_or(AmberParseError::MissingField { field: "t0" })?;
 
     if gradients.is_empty() {
@@ -197,8 +193,9 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
         *value *= beta;
     }
 
-    let time_ps: Vec<f64> = (0..gradients.len())
-        .map(|idx| t0 + ((idx + 1) as f64) * dt * ntpr)
+    let time_ps: Vec<f64> = sample_steps
+        .iter()
+        .map(|step| t0 + (*step as f64) * dt)
         .collect();
 
     let state = StatePoint::new(vec![clambda], temperature_k)?;
@@ -570,17 +567,72 @@ fn trim_ascii_start_bytes(line: &[u8]) -> &[u8] {
     &line[start..]
 }
 
-fn is_nstep_line(line: &[u8]) -> bool {
-    trim_ascii_start_bytes(line).starts_with(b"NSTEP")
-}
-
-fn is_nstep_block_terminator_bytes(line: &[u8]) -> bool {
-    trim_ascii_start_bytes(line).starts_with(b"---")
-}
-
 fn line_contains_begin_time(line: &[u8]) -> bool {
     line.windows(b"begin time".len())
         .any(|window| window == b"begin time")
+}
+
+fn is_dvdl_summary_start(line: &[u8]) -> bool {
+    trim_ascii_start_bytes(line).starts_with(b"Summary of dvdl values over")
+}
+
+fn is_dvdl_summary_end(line: &[u8]) -> bool {
+    trim_ascii_start_bytes(line).starts_with(b"End of dvdl summary")
+}
+
+fn parse_dvdl_summary_count(line: &str) -> Result<usize> {
+    line.split_whitespace()
+        .find_map(|token| token.parse::<usize>().ok())
+        .ok_or(AmberParseError::InvalidField {
+            field: "dvdl_summary_steps",
+            value: line.to_string(),
+        })
+}
+
+fn parse_dvdl_summary_value(line: &str) -> Result<f64> {
+    let value = line.trim();
+    value
+        .parse::<f64>()
+        .map_err(|_| AmberParseError::InvalidField {
+            field: "DV/DL",
+            value: value.to_string(),
+        })
+}
+
+fn summary_stride(ntpr: f64) -> usize {
+    ntpr.round().max(1.0) as usize
+}
+
+#[derive(Debug, Clone, Copy)]
+enum DvdlSummaryMode {
+    Dense { stride: usize },
+    Compact { stride: usize },
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DvdlSummaryState {
+    mode: DvdlSummaryMode,
+    index: usize,
+}
+
+impl DvdlSummaryState {
+    fn new(total_steps: usize, stride: usize) -> Self {
+        let mode = if total_steps > stride {
+            DvdlSummaryMode::Dense { stride }
+        } else {
+            DvdlSummaryMode::Compact { stride }
+        };
+        Self { mode, index: 0 }
+    }
+
+    fn next_retained_step(&mut self) -> Option<usize> {
+        let retained = match self.mode {
+            DvdlSummaryMode::Dense { stride } => (self.index % stride == 0).then_some(self.index),
+            DvdlSummaryMode::Compact { stride } => Some((self.index + 1) * stride),
+        };
+        self.index += 1;
+        retained
+    }
 }
 
 fn parse_mbar_lambda_line(line: &str, mbar_lambdas: &mut Vec<f64>) -> Result<()> {
@@ -702,45 +754,6 @@ fn finalize_mbar_block(
 
     time_ps.push(t0 + ((sample_idx + 1) as f64) * dt * bar_intervall);
     data.extend(reduced_row.iter().copied());
-    Ok(())
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-struct PendingGradientBlock {
-    nstep: Option<i64>,
-    dvdl: Option<f64>,
-}
-
-impl PendingGradientBlock {
-    fn capture_line(&mut self, line: &str) -> Result<()> {
-        if self.nstep.is_none() {
-            self.nstep = capture_field(line, "NSTEP")?.map(|value| value as i64);
-        }
-        if self.dvdl.is_none() {
-            self.dvdl = capture_field(line, "DV/DL")?;
-        }
-        Ok(())
-    }
-}
-
-fn handle_gradient_block(
-    block: PendingGradientBlock,
-    last_nstep: &mut Option<i64>,
-    gradients: &mut Vec<f64>,
-) -> Result<()> {
-    let nstep = block
-        .nstep
-        .ok_or(AmberParseError::MissingGradientField { field: "NSTEP" })?;
-    if let Some(prev) = last_nstep {
-        if *prev == nstep {
-            return Ok(());
-        }
-    }
-    let dvdl = block
-        .dvdl
-        .ok_or(AmberParseError::MissingGradientField { field: "DV/DL" })?;
-    gradients.push(dvdl);
-    *last_nstep = Some(nstep);
     Ok(())
 }
 

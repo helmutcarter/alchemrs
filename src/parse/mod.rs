@@ -110,10 +110,10 @@ Free energy options:
    3.  ATOMIC
  begin time coords = 0.0
    4.  RESULTS
- NSTEP =       10  TIME(PS) =       0.02  DV/DL =     1.0000
- ---
- NSTEP =       20  TIME(PS) =       0.04  DV/DL =     2.0000
- ---
+Summary of dvdl values over  2 steps:
+    1.0000
+    2.0000
+End of dvdl summary
    5.  TIMINGS
 "#;
         let mut file = tempfile::NamedTempFile::new().unwrap();
@@ -127,7 +127,7 @@ Free energy options:
     }
 
     #[test]
-    fn parse_multiline_amber_dhdl_block() {
+    fn parse_dense_amber_dhdl_summary() {
         let content = r#"
    2.  CONTROL  DATA  FOR  THE  RUN
 Nature and format of output:
@@ -141,21 +141,38 @@ Free energy options:
    3.  ATOMIC
  begin time coords = 0.0
    4.  RESULTS
- NSTEP =       10  TIME(PS) =       0.02
- DV/DL =     1.0000
- ---
- NSTEP =       20  TIME(PS) =       0.04
- DV/DL =     2.0000
- ---
+Summary of dvdl values over  21 steps:
+    0.0000
+    1.0000
+    2.0000
+    3.0000
+    4.0000
+    5.0000
+    6.0000
+    7.0000
+    8.0000
+    9.0000
+    10.0000
+    11.0000
+    12.0000
+    13.0000
+    14.0000
+    15.0000
+    16.0000
+    17.0000
+    18.0000
+    19.0000
+    20.0000
+End of dvdl summary
    5.  TIMINGS
 "#;
         let mut file = tempfile::NamedTempFile::new().unwrap();
         file.write_all(content.as_bytes()).unwrap();
         let series = extract_dhdl(file.path(), 300.0).unwrap();
         let beta = 1.0 / (0.00198720425864083 * 300.0);
-        let expected = vec![1.0 * beta, 2.0 * beta];
+        let expected = vec![0.0 * beta, 10.0 * beta, 20.0 * beta];
         assert_eq!(series.values(), expected.as_slice());
-        assert_eq!(series.time_ps(), &[0.02, 0.04]);
+        assert_eq!(series.time_ps(), &[0.0, 0.02, 0.04]);
         assert_eq!(series.state().lambdas(), &[0.5]);
     }
 
