@@ -131,6 +131,9 @@ pub enum Command {
         /// Subsample stride for equilibration detection
         #[arg(long, default_value_t = 1)]
         nskip: usize,
+        /// For AMBER TI inputs, retain every `input-stride`th value from the final DV/DL summary block; defaults to `ntpr`
+        #[arg(long = "input-stride")]
+        input_stride: Option<usize>,
         /// Accepted only to provide a clearer error; TI uses dH/dlambda, not u_nk
         #[arg(long = "u-nk-observable", value_enum, hide = true)]
         u_nk_observable: Option<UNkObservable>,
@@ -557,6 +560,15 @@ mod tests {
         match cli.command {
             Command::Mbar { fast_mbar, .. } => assert!(fast_mbar),
             _ => panic!("expected mbar command"),
+        }
+    }
+
+    #[test]
+    fn ti_command_accepts_input_stride_flag() {
+        let cli = Cli::parse_from(["alchemrs", "ti", "--input-stride", "1", "window.out"]);
+        match cli.command {
+            Command::Ti { input_stride, .. } => assert_eq!(input_stride, Some(1)),
+            _ => panic!("expected ti command"),
         }
     }
 

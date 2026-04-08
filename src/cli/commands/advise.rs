@@ -3297,6 +3297,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: Some(UNkObservable::De),
+                input_stride: None,
             },
             &AdviseRunOptions {
                 output_units: OutputUnits::KT,
@@ -3343,6 +3344,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: Some(UNkObservable::De),
+                input_stride: None,
             },
             &AdviseRunOptions {
                 output_units: OutputUnits::KT,
@@ -3401,6 +3403,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: Some(UNkObservable::De),
+                input_stride: None,
             },
             &AdviseRunOptions {
                 output_units: OutputUnits::KT,
@@ -3442,6 +3445,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: Some(UNkObservable::De),
+                input_stride: None,
             },
             &AdviseRunOptions {
                 output_units: OutputUnits::KT,
@@ -3490,6 +3494,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: None,
+                input_stride: None,
             },
             &AdviseRunOptions {
                 output_units: OutputUnits::KT,
@@ -3565,6 +3570,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: None,
+                input_stride: None,
             },
             &AdviseRunOptions {
                 output_units: OutputUnits::KT,

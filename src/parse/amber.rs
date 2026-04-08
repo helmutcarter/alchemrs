@@ -12,6 +12,11 @@ const K_B_KCAL_PER_MOL_K: f64 = 0.00198720425864083;
 
 pub type Result<T> = std::result::Result<T, AmberParseError>;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AmberDhdlOptions {
+    pub input_stride: Option<usize>,
+}
+
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum AmberParseError {
     #[error("failed to {operation} AMBER output: {message}")]
@@ -83,6 +88,14 @@ impl From<CoreError> for AmberParseError {
 }
 
 pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSeries> {
+    extract_dhdl_with_options(path, temperature_k, AmberDhdlOptions::default())
+}
+
+pub fn extract_dhdl_with_options(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+    options: AmberDhdlOptions,
+) -> Result<DhdlSeries> {
     let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
         operation: "open",
         message: err.to_string(),
@@ -134,6 +147,7 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
             summary_state = Some(DvdlSummaryState::new(
                 parse_dvdl_summary_count(line)?,
                 summary_stride(ntpr),
+                options.input_stride,
             ));
             continue;
         }
@@ -616,11 +630,15 @@ struct DvdlSummaryState {
 }
 
 impl DvdlSummaryState {
-    fn new(total_steps: usize, stride: usize) -> Self {
-        let mode = if total_steps > stride {
-            DvdlSummaryMode::Dense { stride }
+    fn new(total_steps: usize, default_stride: usize, input_stride: Option<usize>) -> Self {
+        let mode = if input_stride.is_none() && total_steps <= default_stride {
+            DvdlSummaryMode::Compact {
+                stride: default_stride,
+            }
         } else {
-            DvdlSummaryMode::Compact { stride }
+            DvdlSummaryMode::Dense {
+                stride: input_stride.unwrap_or(default_stride),
+            }
         };
         Self { mode, index: 0 }
     }

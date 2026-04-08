@@ -1,12 +1,15 @@
 use std::path::{Path, PathBuf};
 
+use alchemrs::parse::amber::{
+    extract_dhdl_with_options as extract_amber_dhdl_with_options, AmberDhdlOptions,
+};
 use alchemrs::parse::gromacs::{extract_dhdl as extract_gromacs_dhdl, GromacsParseError};
 use alchemrs::parse::infer_temperature;
 use alchemrs::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
-    extract_dhdl, extract_u_nk, extract_u_nk_with_potential, CoreError, DecorrelationOptions,
-    DhdlSeries, UNkMatrix, UNkSeriesMethod,
+    extract_u_nk, extract_u_nk_with_potential, CoreError, DecorrelationOptions, DhdlSeries,
+    UNkMatrix, UNkSeriesMethod,
 };
 use thiserror::Error;
 
@@ -41,6 +44,7 @@ pub struct AnalysisInputOptions {
     pub conservative: bool,
     pub nskip: usize,
     pub u_nk_observable: Option<UNkObservable>,
+    pub input_stride: Option<usize>,
 }
 
 pub fn resolve_input_temperature(
@@ -141,7 +145,11 @@ fn map_cli_u_nk_error(error: CoreError) -> CliInputError {
     }
 }
 
-fn extract_cli_dhdl(path: &Path, temperature: f64) -> Result<DhdlSeries, CliInputError> {
+fn extract_cli_dhdl(
+    path: &Path,
+    temperature: f64,
+    input_stride: Option<usize>,
+) -> Result<DhdlSeries, CliInputError> {
     let is_xvg = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -156,7 +164,8 @@ fn extract_cli_dhdl(path: &Path, temperature: f64) -> Result<DhdlSeries, CliInpu
         });
     }
 
-    extract_dhdl(path, temperature).map_err(CliInputError::from)
+    extract_amber_dhdl_with_options(path, temperature, AmberDhdlOptions { input_stride })
+        .map_err(|error| CliInputError::Core(error.into()))
 }
 
 pub fn load_windows(
@@ -260,7 +269,7 @@ pub fn load_dhdl_series(
     let mut samples_after_burnin = 0;
     let mut samples_kept = 0;
     for path in inputs {
-        let mut dhdl = extract_cli_dhdl(&path, options.temperature)?;
+        let mut dhdl = extract_cli_dhdl(&path, options.temperature, options.input_stride)?;
         samples_in += dhdl.values().len();
         dhdl = trim_dhdl(dhdl, options.remove_burnin)?;
         if options.auto_equilibrate {
@@ -362,6 +371,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: Some(UNkObservable::All),
+                input_stride: None,
             },
         )
         .expect("expected multidimensional CLI u_nk load to succeed");
@@ -400,6 +410,7 @@ mod tests {
                 conservative: true,
                 nskip: 1,
                 u_nk_observable: None,
+                input_stride: None,
             },
         ) {
             Ok(_) => panic!("expected multidimensional CLI dH/dlambda load to fail"),
@@ -423,6 +434,7 @@ mod tests {
             conservative: true,
             nskip: 7,
             u_nk_observable: Some(UNkObservable::De),
+            input_stride: None,
         }
         .decorrelation_options();
 
@@ -443,6 +455,7 @@ mod tests {
             conservative: true,
             nskip: 7,
             u_nk_observable: Some(UNkObservable::De),
+            input_stride: None,
         }
         .equilibration_options();
 

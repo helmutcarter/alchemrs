@@ -90,9 +90,9 @@ fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
 
 #[cfg(test)]
 mod tests {
-    use super::amber::extract_dhdl;
     use super::amber::extract_u_nk;
     use super::amber::extract_u_nk_with_potential;
+    use super::amber::{extract_dhdl, extract_dhdl_with_options, AmberDhdlOptions};
     use std::io::Write;
 
     #[test]
@@ -173,6 +173,64 @@ End of dvdl summary
         let expected = vec![0.0 * beta, 10.0 * beta, 20.0 * beta];
         assert_eq!(series.values(), expected.as_slice());
         assert_eq!(series.time_ps(), &[0.0, 0.02, 0.04]);
+        assert_eq!(series.state().lambdas(), &[0.5]);
+    }
+
+    #[test]
+    fn parse_dense_amber_dhdl_summary_in_full_mode() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Nature and format of output:
+ ntpr =       10
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.5000
+   3.  ATOMIC
+ begin time coords = 0.0
+   4.  RESULTS
+Summary of dvdl values over  21 steps:
+    0.0000
+    1.0000
+    2.0000
+    3.0000
+    4.0000
+    5.0000
+    6.0000
+    7.0000
+    8.0000
+    9.0000
+    10.0000
+    11.0000
+    12.0000
+    13.0000
+    14.0000
+    15.0000
+    16.0000
+    17.0000
+    18.0000
+    19.0000
+    20.0000
+End of dvdl summary
+   5.  TIMINGS
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let series = extract_dhdl_with_options(
+            file.path(),
+            300.0,
+            AmberDhdlOptions {
+                input_stride: Some(1),
+            },
+        )
+        .unwrap();
+        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        let expected: Vec<f64> = (0..=20).map(|value| value as f64 * beta).collect();
+        let expected_time: Vec<f64> = (0..=20).map(|idx| idx as f64 * 0.002).collect();
+        assert_eq!(series.values(), expected.as_slice());
+        assert_eq!(series.time_ps(), expected_time.as_slice());
         assert_eq!(series.state().lambdas(), &[0.5]);
     }
 

@@ -43,6 +43,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     conservative,
                     nskip,
                     u_nk_observable: Some(u_nk_observable),
+                    input_stride: None,
                 },
                 advise::AdviseRunOptions {
                     output_units,
@@ -72,6 +73,7 @@ pub fn run(command: Command) -> CliResult<()> {
             fast,
             conservative,
             nskip,
+            input_stride,
             u_nk_observable,
         } => {
             let temperature = resolve_input_temperature(&inputs, temperature)?;
@@ -92,6 +94,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     conservative,
                     nskip,
                     u_nk_observable: None,
+                    input_stride,
                 },
                 method,
                 output_units,
@@ -129,6 +132,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     conservative,
                     nskip,
                     u_nk_observable: Some(u_nk_observable),
+                    input_stride: None,
                 },
                 bar::BarRunOptions {
                     method,
@@ -169,6 +173,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     conservative,
                     nskip,
                     u_nk_observable: Some(u_nk_observable),
+                    input_stride: None,
                 },
                 exp::ExpRunOptions {
                     no_uncertainty,
@@ -209,6 +214,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     conservative,
                     nskip,
                     u_nk_observable: Some(u_nk_observable),
+                    input_stride: None,
                 },
                 exp::ExpRunOptions {
                     no_uncertainty,
@@ -252,6 +258,7 @@ pub fn run(command: Command) -> CliResult<()> {
                     conservative,
                     nskip,
                     u_nk_observable: Some(u_nk_observable),
+                    input_stride: None,
                 },
                 mbar::MbarRunOptions {
                     max_iterations,
