@@ -6,7 +6,7 @@
 //!
 //! - AMBER and GROMACS parsers for `dH/dlambda` and `u_nk` data
 //! - preprocessing utilities for burn-in removal, equilibration detection, and decorrelation
-//! - estimators including TI, BAR, MBAR, IEXP, and DEXP
+//! - estimators including TI, BAR, MBAR, IEXP, DEXP, and NES
 //! - overlap diagnostics built on top of MBAR weights
 //! - optional SVG plotting helpers behind the `plotting` feature
 //!
@@ -56,15 +56,17 @@ pub use analysis::{
     TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };
 pub use data::{
-    DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, UNkMatrix,
+    DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, SwitchingTrajectory,
+    UNkMatrix,
 };
 pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{
     IexpEstimator, IexpFit, IexpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
+    NesEstimator, NesFit, NesOptions,
 };
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
-pub use parse::{extract_dhdl, extract_u_nk, extract_u_nk_with_potential};
+pub use parse::{extract_dhdl, extract_nes_trajectory, extract_u_nk, extract_u_nk_with_potential};
 #[cfg(feature = "plotting")]
 pub use plot::{
     render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,

@@ -1,4 +1,4 @@
-use crate::data::{DhdlSeries, UNkMatrix};
+use crate::data::{DhdlSeries, SwitchingTrajectory, UNkMatrix};
 use crate::error::{CoreError, Result as CoreResult};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -49,6 +49,20 @@ pub fn extract_u_nk_with_potential(
     }
 }
 
+pub fn extract_nes_trajectory(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> CoreResult<SwitchingTrajectory> {
+    match detect_format(path.as_ref())? {
+        ParseFormat::Amber => {
+            amber::extract_nes_trajectory(path, temperature_k).map_err(Into::into)
+        }
+        ParseFormat::Gromacs => Err(CoreError::Unsupported(
+            "NES trajectory parsing is currently only supported for AMBER outputs".to_string(),
+        )),
+    }
+}
+
 fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
     let file = File::open(path).map_err(|err| {
         CoreError::Parse(format!("failed to open input for format detection: {err}"))
@@ -90,6 +104,7 @@ fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
 
 #[cfg(test)]
 mod tests {
+    use super::amber::extract_nes_trajectory;
     use super::amber::extract_u_nk;
     use super::amber::extract_u_nk_with_potential;
     use super::amber::{extract_dhdl, extract_dhdl_with_options, AmberDhdlOptions};
@@ -268,6 +283,36 @@ Energy at 0.1000 =     -8.0
         assert_eq!(u_nk.n_states(), 2);
         assert_eq!(u_nk.n_samples(), 2);
         assert_eq!(u_nk.data().len(), 4);
+    }
+
+    #[test]
+    fn parse_simple_amber_nes_trajectory() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.5000
+ dynlmb = 0.2000
+ ntave = 10
+   4.  RESULTS
+Summary of dvdl values over  4 steps:
+    1.0000
+    2.0000
+    3.0000
+    4.0000
+End of dvdl summary
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let trajectory = extract_nes_trajectory(file.path(), 300.0).unwrap();
+        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        let expected_work = (1.0 + 2.0 + 3.0 + 4.0) * (0.2 / 10.0) * beta;
+        assert!((trajectory.reduced_work() - expected_work).abs() < 1e-12);
+        assert_eq!(trajectory.initial_state().lambdas(), &[0.5]);
+        assert_eq!(trajectory.final_state().lambdas(), &[0.58]);
     }
 
     #[test]

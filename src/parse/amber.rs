@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
+use crate::data::{DhdlSeries, StatePoint, SwitchingTrajectory, UNkMatrix};
 use crate::error::CoreError;
 use thiserror::Error;
 
@@ -41,6 +41,8 @@ pub enum AmberParseError {
     MissingPotentialField { field: &'static str },
     #[error("no DV/DL gradients found in AMBER output")]
     NoGradients,
+    #[error("no DV/DL summary block found in AMBER output")]
+    NoDvdlSummary,
     #[error("no EPtot values found in AMBER output")]
     NoPotentialSamples,
     #[error("no MBAR lambda values found in AMBER output")]
@@ -224,6 +226,121 @@ pub fn extract_dhdl_with_options(
 
 pub fn extract_temperature(path: impl AsRef<Path>) -> Result<f64> {
     read_temperature(path.as_ref())
+}
+
+pub fn extract_nes_trajectory(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> Result<SwitchingTrajectory> {
+    let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
+        operation: "open",
+        message: err.to_string(),
+    })?;
+    let mut reader = BufReader::new(file);
+
+    let mut temp0: Option<f64> = None;
+    let mut clambda: Option<f64> = None;
+    let mut dynlmb: Option<f64> = None;
+    let mut ntave: Option<f64> = None;
+    let mut summary_expected_steps: Option<usize> = None;
+    let mut summary_steps = 0usize;
+    let mut summary_dvdl_sum = 0.0f64;
+    let mut in_summary = false;
+    let mut line = Vec::new();
+
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_until(b'\n', &mut line)
+            .map_err(|err| AmberParseError::Io {
+                operation: "read",
+                message: err.to_string(),
+            })?;
+        if bytes == 0 {
+            break;
+        }
+        let line = trim_line_end_bytes(&line);
+
+        if in_summary {
+            if is_dvdl_summary_end(line) {
+                break;
+            }
+            if line.is_empty() {
+                continue;
+            }
+            summary_dvdl_sum += parse_dvdl_summary_value_bytes(line)?;
+            summary_steps += 1;
+            continue;
+        }
+
+        if is_dvdl_summary_start(line) {
+            summary_expected_steps = Some(parse_dvdl_summary_count_bytes(line)?);
+            in_summary = true;
+            continue;
+        }
+
+        if temp0.is_some() && clambda.is_some() && dynlmb.is_some() && ntave.is_some() {
+            continue;
+        }
+
+        let line = parse_line_bytes(line)?;
+        if temp0.is_none() {
+            if let Some(value) = capture_field(line, "temp0")? {
+                temp0 = Some(value);
+            }
+        }
+        if clambda.is_none() {
+            if let Some(value) = capture_field(line, "clambda")? {
+                clambda = Some(value);
+            }
+        }
+        if dynlmb.is_none() {
+            if let Some(value) = capture_field(line, "dynlmb")? {
+                dynlmb = Some(value);
+            }
+        }
+        if ntave.is_none() {
+            if let Some(value) = capture_field(line, "ntave")? {
+                ntave = Some(value);
+            }
+        }
+    }
+
+    let temp0 = temp0.ok_or(AmberParseError::MissingField { field: "temp0" })?;
+    if (temperature_k - temp0).abs() > 1e-2 {
+        return Err(AmberParseError::TemperatureMismatch {
+            file_temperature_k: temp0,
+            input_temperature_k: temperature_k,
+        });
+    }
+    let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
+    let dynlmb = dynlmb.ok_or(AmberParseError::MissingField { field: "dynlmb" })?;
+    let ntave = ntave.ok_or(AmberParseError::MissingField { field: "ntave" })?;
+    if summary_expected_steps.is_none() {
+        return Err(AmberParseError::NoDvdlSummary);
+    }
+    if summary_steps == 0 {
+        return Err(AmberParseError::NoGradients);
+    }
+    if summary_expected_steps != Some(summary_steps) {
+        return Err(AmberParseError::InvalidParsedData {
+            message: format!(
+                "DV/DL summary count mismatch: expected {} values but found {}",
+                summary_expected_steps.expect("checked above"),
+                summary_steps
+            ),
+        });
+    }
+
+    let step_lambda = dynlmb / ntave;
+    let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+    let reduced_work = summary_dvdl_sum * step_lambda * beta;
+    let initial_state = StatePoint::new(vec![clambda], temperature_k)?;
+    let final_state = StatePoint::new(
+        vec![clambda + step_lambda * summary_steps as f64],
+        temperature_k,
+    )?;
+    SwitchingTrajectory::new(initial_state, final_state, reduced_work).map_err(Into::into)
 }
 
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {

@@ -195,6 +195,32 @@ pub enum Command {
         #[arg(long = "u-nk-observable", value_enum, default_value_t = UNkObservable::De)]
         u_nk_observable: UNkObservable,
     },
+    Nes {
+        /// AMBER nonequilibrium switching output files (for example `fwd.out` or `rev.out`)
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
+        /// Number of bootstrap replicates for uncertainty estimation; `0` uses analytic uncertainty
+        #[arg(long = "n-bootstrap", default_value_t = 0)]
+        n_bootstrap: usize,
+        /// Bootstrap random seed
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        /// Disable uncertainty estimation
+        #[arg(long)]
+        no_uncertainty: bool,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
+        /// Write output to a file instead of stdout
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     Iexp {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
@@ -582,6 +608,28 @@ mod tests {
         assert!(matches!(cli.command, Command::Ti { .. }));
     }
 
+    #[test]
+    fn nes_command_accepts_bootstrap_options() {
+        let cli = Cli::parse_from([
+            "alchemrs",
+            "nes",
+            "--n-bootstrap",
+            "250",
+            "--seed",
+            "17",
+            "traj.out",
+        ]);
+        match cli.command {
+            Command::Nes {
+                n_bootstrap, seed, ..
+            } => {
+                assert_eq!(n_bootstrap, 250);
+                assert_eq!(seed, 17);
+            }
+            _ => panic!("expected nes command"),
+        }
+    }
+
     fn command_conservative(command: Command) -> bool {
         match command {
             Command::AdviseSchedule { conservative, .. }
@@ -590,6 +638,7 @@ mod tests {
             | Command::Iexp { conservative, .. }
             | Command::Dexp { conservative, .. }
             | Command::Mbar { conservative, .. } => conservative,
+            Command::Nes { .. } => true,
         }
     }
 }

@@ -47,6 +47,45 @@ impl DhdlSeries {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct SwitchingTrajectory {
+    initial_state: StatePoint,
+    final_state: StatePoint,
+    reduced_work: f64,
+}
+
+impl SwitchingTrajectory {
+    pub fn new(
+        initial_state: StatePoint,
+        final_state: StatePoint,
+        reduced_work: f64,
+    ) -> Result<Self> {
+        ensure_finite("reduced_work", &[reduced_work])?;
+        if initial_state.temperature_k() != final_state.temperature_k() {
+            return Err(CoreError::InvalidState(
+                "switching trajectory states must have the same temperature".to_string(),
+            ));
+        }
+        Ok(Self {
+            initial_state,
+            final_state,
+            reduced_work,
+        })
+    }
+
+    pub fn initial_state(&self) -> &StatePoint {
+        &self.initial_state
+    }
+
+    pub fn final_state(&self) -> &StatePoint {
+        &self.final_state
+    }
+
+    pub fn reduced_work(&self) -> f64 {
+        self.reduced_work
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct UNkMatrix {
     n_samples: usize,
     n_states: usize,

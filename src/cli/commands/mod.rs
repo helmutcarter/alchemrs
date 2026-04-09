@@ -2,6 +2,7 @@ mod advise;
 mod bar;
 mod exp;
 mod mbar;
+mod nes;
 mod ti;
 
 use crate::cli::input::{resolve_input_temperature, AnalysisInputOptions};
@@ -182,6 +183,30 @@ pub fn run(command: Command) -> CliResult<()> {
                     output_path: output,
                     overlap_summary,
                     parallel,
+                },
+            )
+        }
+        Command::Nes {
+            inputs,
+            temperature,
+            n_bootstrap,
+            seed,
+            no_uncertainty,
+            output_units,
+            output_format,
+            output,
+        } => {
+            let temperature = resolve_input_temperature(&inputs, temperature)?;
+            nes::run(
+                inputs,
+                temperature,
+                nes::NesRunOptions {
+                    n_bootstrap,
+                    seed,
+                    no_uncertainty,
+                    output_units,
+                    output_format,
+                    output_path: output,
                 },
             )
         }

@@ -2,22 +2,25 @@ mod bar;
 mod common;
 mod exp;
 mod mbar;
+mod nes;
 mod ti;
 
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
+pub use nes::{NesEstimator, NesFit, NesOptions};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
 #[cfg(test)]
 mod tests {
-    use crate::data::{DhdlSeries, StatePoint, UNkMatrix};
+    use crate::data::{DhdlSeries, StatePoint, SwitchingTrajectory, UNkMatrix};
     use crate::error::CoreError;
 
     use super::bar::{bar_estimate, BarEstimator, BarMethod, BarOptions};
     use super::common::work_values;
     use super::exp::{IexpEstimator, IexpOptions};
     use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
+    use super::nes::{analytic_uncertainty, jarzynski_delta_f, NesEstimator, NesOptions};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
@@ -158,6 +161,16 @@ mod tests {
         .unwrap();
 
         vec![w0, w1, w2]
+    }
+
+    fn make_switching_trajectories() -> Vec<SwitchingTrajectory> {
+        let from = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let to = StatePoint::new(vec![1.0], 300.0).unwrap();
+        vec![
+            SwitchingTrajectory::new(from.clone(), to.clone(), 0.0).unwrap(),
+            SwitchingTrajectory::new(from.clone(), to.clone(), 1.0).unwrap(),
+            SwitchingTrajectory::new(from, to, 2.0).unwrap(),
+        ]
     }
 
     fn assert_vec_eq_with_nan(left: Option<&[f64]>, right: Option<&[f64]>) {
@@ -994,5 +1007,34 @@ mod tests {
             .estimate(&windows)
             .unwrap();
         assert!(result.values().iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn nes_matches_jarzynski_average() {
+        let trajectories = make_switching_trajectories();
+        let expected = jarzynski_delta_f(&[0.0, 1.0, 2.0]).unwrap();
+        let result = NesEstimator::default().estimate(&trajectories).unwrap();
+        assert!((result.delta_f() - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nes_default_uncertainty_matches_analytic_delta_method() {
+        let trajectories = make_switching_trajectories();
+        let expected = analytic_uncertainty(&[0.0, 1.0, 2.0]).unwrap();
+        let result = NesEstimator::default().estimate(&trajectories).unwrap();
+        assert!((result.uncertainty().expect("uncertainty") - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nes_bootstrap_is_deterministic_for_fixed_seed() {
+        let trajectories = make_switching_trajectories();
+        let estimator = NesEstimator::new(NesOptions {
+            n_bootstrap: 32,
+            seed: 17,
+        });
+        let left = estimator.estimate(&trajectories).unwrap();
+        let right = estimator.estimate(&trajectories).unwrap();
+        assert_eq!(left.uncertainty(), right.uncertainty());
+        assert!(left.uncertainty().expect("uncertainty") >= 0.0);
     }
 }

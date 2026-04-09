@@ -21,6 +21,7 @@ clap = { version = "4.5", features = ["derive"] }
 csv = "1"
 nalgebra = "0.33"
 plotters = { version = "0.3.7", optional = true }
+rand = { version = "0.8", features = ["small_rng"] }
 rayon = "1.10"
 regex = "1"
 rustfft = "6"
