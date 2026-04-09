@@ -3,6 +3,8 @@ use crate::error::{CoreError, Result};
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::borrow::Cow;
 
+type SeriesCowPair<'a> = (Cow<'a, [f64]>, Cow<'a, [f64]>);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UNkSeriesMethod {
     All,
@@ -169,7 +171,7 @@ fn prepare_series_view<'a>(
     values: &'a [f64],
     drop_duplicates: bool,
     sort: bool,
-) -> Result<(Cow<'a, [f64]>, Cow<'a, [f64]>)> {
+) -> Result<SeriesCowPair<'a>> {
     if time.len() != values.len() {
         return Err(CoreError::InvalidShape {
             expected: time.len(),
@@ -299,7 +301,7 @@ fn apply_time_slice_view<'a>(
     time: &'a [f64],
     values: &'a [f64],
     options: &DecorrelationOptions,
-) -> Result<(Cow<'a, [f64]>, Cow<'a, [f64]>)> {
+) -> Result<SeriesCowPair<'a>> {
     if options.lower.is_none() && options.upper.is_none() && options.step.is_none() {
         if time.is_empty() {
             return Err(CoreError::InvalidShape {

@@ -4,19 +4,10 @@ use rand::{Rng, SeedableRng};
 use crate::data::{FreeEnergyEstimate, SwitchingTrajectory};
 use crate::error::{CoreError, Result};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct NesOptions {
     pub n_bootstrap: usize,
     pub seed: u64,
-}
-
-impl Default for NesOptions {
-    fn default() -> Self {
-        Self {
-            n_bootstrap: 0,
-            seed: 0,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default)]
