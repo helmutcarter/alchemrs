@@ -32,6 +32,8 @@ It includes:
 - `ti_method_reason` when TI method auto-selection was used
 - overlap summary when requested
 
+For `nes`, the scalar result still follows the same shape, but `windows`, `samples_in`, and `samples_kept` all count switching trajectories rather than equilibrium windows or samples.
+
 ## JSON output
 
 JSON output is suitable for shell pipelines and downstream tooling.

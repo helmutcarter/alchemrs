@@ -87,12 +87,10 @@ Behavior:
 - `result()` materializes the full pairwise `DeltaFMatrix`
 - preserves `lambda_labels()` from the input windows when available
 
-Important limitation:
+Uncertainty behavior:
 
-- uncertainty is only computed for adjacent windows
-- non-adjacent uncertainties are reported as `NaN`
-
-This matches the current CLI documentation and the reference-comparison tests in the repository.
+- adjacent BAR uncertainties come directly from the BAR estimator
+- cumulative non-adjacent uncertainties are propagated in quadrature from adjacent edges
 
 ## MBAR
 
@@ -144,7 +142,7 @@ Input:
 
 Behavior:
 
-- computes exponential averaging from each sampled-state window to all evaluated states
+- computes pairwise adjacent exponential averaging along the lambda schedule
 - `fit(...)` returns `IexpFit`
 - `result()` materializes the full pairwise `DeltaFMatrix`
 - `result_with_uncertainty()` includes uncertainty estimates
@@ -156,6 +154,36 @@ CLI direction conventions:
 - `dexp` reports the reverse direction
 
 `DEXP` is not a separate estimator type in the library; it is a CLI convention over the same estimator results.
+
+## NES
+
+Types:
+
+- `NesEstimator`
+- `NesFit`
+- `NesOptions`
+
+Input:
+
+- slice of `SwitchingTrajectory`
+
+Behavior:
+
+- expects all trajectories to share the same initial and final states
+- applies the Jarzynski equality to the reduced switching work values
+- `fit(...)` returns `NesFit`
+- `result()` materializes a scalar `FreeEnergyEstimate`
+
+Uncertainty behavior:
+
+- analytic uncertainty is the default and is computed from the trajectory-level Jarzynski weights `exp(-W)`
+- setting `NesOptions { n_bootstrap: N, .. }` with `N > 0` switches to bootstrap uncertainty across trajectories
+
+Parsing / workflow expectations:
+
+- the intended CLI input is one AMBER nonequilibrium switching trajectory per file
+- each trajectory contributes one reduced work value
+- when present, the retained `lambda_path` and `dvdl_path` support NES advisor diagnostics, but the estimator itself only needs the reduced work
 
 ## Parallel execution
 

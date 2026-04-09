@@ -12,9 +12,10 @@ Use the library when the CLI is not enough:
 
 ```rust
 use alchemrs::{
-    DecorrelationOptions, MbarEstimator, MbarOptions, TiEstimator, TiOptions,
+    DecorrelationOptions, MbarEstimator, MbarOptions, NesEstimator, NesOptions, TiEstimator,
+    TiOptions,
     decorrelate_dhdl, decorrelate_u_nk_with_observable, extract_dhdl,
-    extract_u_nk_with_potential, mbar_convergence,
+    extract_nes_trajectory, extract_u_nk_with_potential, mbar_convergence, nes_convergence,
 };
 ```
 
@@ -88,7 +89,7 @@ if let Some(labels) = windows[0].lambda_labels() {
 ```
 
 The same `analysis` module also provides plot-ready convergence series for TI, BAR, MBAR, IEXP,
-and DEXP:
+DEXP, and NES:
 
 ```rust
 let points = mbar_convergence(windows, Some(MbarOptions::default()))?;
@@ -100,6 +101,25 @@ for point in points {
         point.from_state().lambdas(),
         point.to_state().lambdas()
     );
+}
+```
+
+## NES example
+
+```rust
+use alchemrs::{extract_nes_trajectory, NesEstimator, NesOptions};
+
+fn run_nes(paths: &[String], temperature_k: f64) -> Result<(), Box<dyn std::error::Error>> {
+    let mut trajectories = Vec::new();
+    for path in paths {
+        trajectories.push(extract_nes_trajectory(path, temperature_k)?);
+    }
+
+    let estimator = NesEstimator::new(NesOptions::default());
+    let result = estimator.estimate(&trajectories)?;
+    println!("NES dG = {:.6}", result.delta_f());
+    println!("NES sigma = {:?}", result.uncertainty());
+    Ok(())
 }
 ```
 

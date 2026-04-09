@@ -173,6 +173,8 @@ TI uses `dH/dlambda` as the scalar series.
 
 `BAR`, `MBAR`, `EXP`, and `DEXP` use the observable chosen by `--u-nk-observable <de|all|epot>`.
 
+`NES` does not expose CLI preprocessing flags because each input file is treated as one complete switching trajectory rather than a windowed equilibrium timeseries.
+
 Multidimensional GROMACS states can be parsed into `u_nk` and passed through the CLI estimators.
 
 The remaining restriction is observable choice:

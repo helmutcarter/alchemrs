@@ -2,11 +2,12 @@
 
 The parser implementation supports AMBER outputs in `alchemrs::parse::amber` and GROMACS `dhdl.xvg` outputs in `alchemrs::parse::gromacs`.
 
-The top-level parser entry points `alchemrs::extract_dhdl`, `alchemrs::extract_u_nk`, and `alchemrs::extract_u_nk_with_potential` auto-detect between those supported formats.
+The top-level parser entry points `alchemrs::extract_dhdl`, `alchemrs::extract_nes_trajectory`, `alchemrs::extract_u_nk`, and `alchemrs::extract_u_nk_with_potential` auto-detect between the supported formats where appropriate.
 
 ## Available entry points
 
 - `extract_dhdl(path, temperature_k)`
+- `extract_nes_trajectory(path, temperature_k)`
 - `extract_u_nk(path, temperature_k)`
 - `extract_u_nk_with_potential(path, temperature_k)`
 
@@ -18,7 +19,8 @@ Returned value:
 
 AMBER parser behavior:
 
-- extracts `temp0`, `clambda`, `dt`, `ntpr`, the `begin time` coordinate, and `DV/DL` values from `NSTEP` blocks
+- extracts `temp0`, `clambda`, `dt`, `ntpr`, the `begin time` coordinate, and `DV/DL` values from the final `Summary of dvdl values over ... steps:` block
+- reconstructs the sampled `dH/dλ` series on the saved-output stride rather than keeping every dense summary value
 - converts gradients to reduced units by multiplying by `beta = 1 / (k_B T)`
 
 GROMACS parser behavior:
@@ -32,6 +34,27 @@ Common failure modes:
 
 - missing temperature or lambda metadata
 - missing `dH/dlambda` samples
+- temperature mismatch between the file and the requested temperature
+
+## `extract_nes_trajectory`
+
+Returned value:
+
+- `SwitchingTrajectory`
+
+AMBER parser behavior:
+
+- extracts `temp0`, `clambda`, `dynlmb`, and `ntave`
+- parses the final `Summary of dvdl values over ... steps:` block
+- converts each `dV/dλ` sample to reduced units
+- reconstructs the lambda path using `Δλ = dynlmb / ntave`
+- integrates the reduced work as the discrete sum over the switching path
+- stores the full lambda-resolved profile in the returned `SwitchingTrajectory`
+
+Common failure modes:
+
+- missing switching metadata such as `dynlmb` or `ntave`
+- missing or truncated `DV/DL` summary blocks
 - temperature mismatch between the file and the requested temperature
 
 ## `extract_u_nk`
@@ -86,4 +109,10 @@ This is deliberate: parser output is temperature-dependent because reduced energ
 
 ## Current scope
 
-The public parser surface in this repository supports AMBER outputs and GROMACS `dhdl.xvg` outputs. The architecture still leaves room for additional engines later.
+The public parser surface in this repository supports:
+
+- AMBER equilibrium `.out` files for `dH/dλ` and `u_nk`
+- AMBER nonequilibrium switching `.out` files for NES trajectories
+- GROMACS `dhdl.xvg` files for `dH/dλ` and `u_nk`
+
+The architecture still leaves room for additional engines later.

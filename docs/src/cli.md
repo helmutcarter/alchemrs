@@ -8,6 +8,7 @@ Top-level commands:
 - `ti`
 - `bar`
 - `mbar`
+- `nes`
 - `iexp`
 - `dexp`
 
@@ -20,10 +21,13 @@ cargo build --release
 ## Top-Level Usage
 
 ```text
-alchemrs <COMMAND>
+alchemrs [--threads <N>] <COMMAND>
 ```
 
 Top-level options:
+
+- `--threads <THREADS>`
+  - Number of worker threads to use for internal Rayon-backed parallelism.
 
 - `-h`, `--help`
   - Print top-level help.
@@ -32,7 +36,7 @@ Top-level options:
 
 Most commands follow the same overall workflow:
 
-1. load one simulation output per lambda window
+1. load one simulation output per lambda window, or one AMBER nonequilibrium switching trajectory per file for `nes`
 2. infer temperature from input files unless `--temperature` is provided
 3. optionally trim initial samples with `--remove-burnin`
 4. optionally run equilibration detection with `--auto-equilibrate`
@@ -45,7 +49,8 @@ Input files are positional arguments:
 - `INPUTS...`
   - Required for every subcommand.
   - Accepted file types are AMBER `.out` and GROMACS `dhdl.xvg`.
-  - Pass one file per lambda window.
+  - Pass one file per lambda window for TI/BAR/MBAR/FEP.
+  - Pass one file per switching trajectory for `nes`.
 
 ## Shared Option Semantics
 
@@ -59,6 +64,7 @@ These options recur across commands.
   - Apply decorrelation after burn-in removal / equilibration detection.
   - `ti` decorrelates the `dH/dλ` series.
   - `bar`, `mbar`, `iexp`, `dexp`, and `advise-schedule` decorrelate using the selected `u_nk` observable when operating on `u_nk` data.
+  - `nes` does not expose preprocessing flags because each file is already treated as one complete switching trajectory.
 
 - `--remove-burnin <REMOVE_BURNIN>`
   - Skip this many initial samples before any other analysis.
@@ -166,14 +172,15 @@ alchemrs advise-schedule [OPTIONS] <INPUTS>...
 Purpose:
 
 - Run schedule diagnostics instead of computing a final scalar free-energy estimate.
-- Supports both `u_nk`-based schedule analysis and TI-style `dH/dλ` schedule analysis.
+- Supports `u_nk`-based schedule analysis, TI-style `dH/dλ` schedule analysis, and AMBER nonequilibrium switching (NES) trajectory diagnostics.
 - In `u_nk` report mode, includes an MBAR-derived overlap-matrix view inspired by the overlap-matrix diagnostic discussed in Klimovich, Shirts, and Mobley, "Guidelines for the analysis of free energy calculations", J Comput Aided Mol Des 29, 397-411 (2015), doi:10.1007/s10822-015-9840-9.
 
 Arguments:
 
 - `INPUTS...`
   - Required.
-  - Simulation output files, one per lambda window.
+  - Simulation output files, one per lambda window in `u_nk` / TI modes.
+  - One AMBER switching-trajectory output per file in NES mode.
 
 Options:
 
@@ -227,11 +234,12 @@ Options:
   - Default: `de`
 
 - `--input-kind <INPUT_KIND>`
-  - Force the advisor to treat inputs as `u_nk` or `dH/dλ` data.
+  - Force the advisor to treat inputs as `u_nk`, `dH/dλ`, or NES data.
   - Allowed values:
     - `auto`
     - `u-nk`
     - `dhdl`
+    - `nes`
   - Default: `auto`
 
 - `--overlap-min <OVERLAP_MIN>`
@@ -267,6 +275,8 @@ Behavior notes:
 
 - `u_nk` mode reports overlap-driven diagnostics and window insertion / sampling suggestions.
 - `dhdl` mode reports TI spacing diagnostics such as means, SEMs, block CV, split-half drift, slope, curvature, trapezoid contributions, and interval uncertainty.
+- `nes` mode reports cumulative Jarzynski convergence, relative uncertainty, recent midpoint-to-final drift, an ensemble-mean `dV/dλ(λ)` switching profile, and ranked high-curvature lambda regions.
+- `nes` mode rejects `--decorrelate`, `--auto-equilibrate`, and nonzero `--remove-burnin` because each input file is already one full switching trajectory.
 - When `--report` is provided, the command writes a standalone HTML report in addition to normal structured output.
 
 Examples:
@@ -291,6 +301,16 @@ cargo run --release -- advise-schedule \
   --report ti-schedule-report.html \
   --output-format json \
   path/to/*/prod.out
+```
+
+NES switching-trajectory advisor mode:
+
+```bash
+cargo run --release -- advise-schedule \
+  --temperature 300 \
+  --input-kind nes \
+  --report nes-report.html \
+  path/to/run_*/fwd.out
 ```
 
 ## `ti`
@@ -589,6 +609,77 @@ cargo run --release -- mbar \
   --u-nk-observable epot \
   --output-format json \
   path/to/*/prod.out
+```
+
+## `nes`
+
+Usage:
+
+```text
+alchemrs nes [OPTIONS] <INPUTS>...
+```
+
+Purpose:
+
+- Compute a Jarzynski nonequilibrium switching estimate from AMBER `fwd.out` / `rev.out` trajectories.
+
+Arguments:
+
+- `INPUTS...`
+  - Required.
+  - AMBER nonequilibrium switching output files, one per switching trajectory.
+
+Options:
+
+- `--temperature <TEMPERATURE>`
+  - Temperature in kelvin.
+  - Inferred from inputs when omitted.
+
+- `--n-bootstrap <N_BOOTSTRAP>`
+  - Number of bootstrap replicates for uncertainty estimation.
+  - `0` switches to analytic delta-method uncertainty.
+  - Default: `0`
+
+- `--seed <SEED>`
+  - Bootstrap random seed.
+  - Default: `0`
+
+- `--no-uncertainty`
+  - Disable uncertainty estimation entirely.
+
+- `--output-units <OUTPUT_UNITS>`
+  - Output units.
+  - Allowed values:
+    - `kt`
+    - `kcal`
+    - `kj`
+  - Default: `kt`
+
+- `--output-format <OUTPUT_FORMAT>`
+  - Output format.
+  - Allowed values:
+    - `text`
+    - `json`
+    - `csv`
+  - Default: `text`
+
+- `--output <OUTPUT>`
+  - Write output to a file.
+
+Behavior notes:
+
+- `nes` parses the final `Summary of dvdl values over ... steps:` block in each AMBER file.
+- Each file contributes one reduced work value to the estimator.
+- The default uncertainty is analytic and is computed across trajectory-level Jarzynski weights.
+- `--n-bootstrap > 0` switches uncertainty estimation to bootstrap resampling over trajectories.
+
+Example:
+
+```bash
+cargo run --release -- nes \
+  --temperature 300 \
+  --output-format json \
+  path/to/run_*/fwd.out
 ```
 
 ## FEP

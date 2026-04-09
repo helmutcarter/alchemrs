@@ -6,8 +6,9 @@ The project is organized as one package containing a library crate and a single 
 
 - parsing supported AMBER and GROMACS outputs into typed Rust data structures
 - preprocessing time series by trimming and decorrelation
-- estimating free energies with TI, BAR, MBAR, IEXP, and DEXP
+- estimating free energies with TI, BAR, MBAR, IEXP, DEXP, and NES
 - computing overlap diagnostics
+- computing schedule advice for `u_nk`, TI, and NES workflows
 - exposing the workflow through a CLI and a clean top-level Rust API
 
 The intended user journey is:
@@ -18,7 +19,7 @@ The intended user journey is:
 
 At the moment, the practical workflow is:
 
-1. Parse supported engine outputs into `DhdlSeries` or `UNkMatrix`.
+1. Parse supported engine outputs into `DhdlSeries`, `UNkMatrix`, or `SwitchingTrajectory`.
 2. Trim and decorrelate those data if needed.
 3. Apply an estimator.
 4. Inspect uncertainties and overlap diagnostics.

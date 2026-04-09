@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP estimators, and computing diagnostics such as overlap analysis and schedule advice. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
+`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP/NES estimators, and computing diagnostics such as overlap analysis and schedule advice. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
 
 Native SVG plotting is available as an optional `plotting` feature.
 
@@ -14,6 +14,7 @@ Commands:
 - `ti`
 - `bar`
 - `mbar`
+- `nes`
 - `iexp`
 - `dexp`
 
@@ -43,6 +44,8 @@ cargo build --release
 
 ### Common flags
 
+- `--threads <N>`: set the Rayon worker-thread count for internal parallelism.
+
 - `--remove-burnin <N>`: skip the first `N` samples in each window before analysis.
 - `--auto-equilibrate`: use `pymbar`-style equilibration detection as described [here](https://pubs.acs.org/doi/10.1021/acs.jctc.5b00784).
 - `--decorrelate`: subsample to reduce correlation before estimating.
@@ -57,7 +60,7 @@ cargo build --release
 
 ### Schedule advisor
 
-The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics.
+The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics. For AMBER nonequilibrium switching workflows, pass `--input-kind nes` to get a Jarzynski convergence report, plus lambda-resolved `dV/dλ` profile and curvature diagnostics from the switching trajectories.
 
 ```bash
 alchemrs advise-schedule \
@@ -138,7 +141,7 @@ For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `Delta
 
 ### Advisor details
 
-The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics.
+The CLI also includes a lambda-schedule advisor. For `u_nk` workflows it analyzes adjacent edges and reports whether the current schedule looks healthy, should be monitored, needs more sampling, or likely needs an inserted window. For TI workflows, pass `--input-kind dhdl` to switch the same command over to `dH/dlambda`-based spacing diagnostics. For AMBER nonequilibrium switching trajectories, pass `--input-kind nes`.
 
 ```bash
 alchemrs advise-schedule \
@@ -152,7 +155,7 @@ alchemrs advise-schedule \
 Useful advisor-specific flags:
 
 - `--estimator <mbar|bar>`
-- `--input-kind <auto|u-nk|dhdl>`
+- `--input-kind <auto|u-nk|dhdl|nes>`
 - `--overlap-min <VALUE>`
 - `--block-cv-min <VALUE>`
 - `--n-blocks <N>`
@@ -171,6 +174,13 @@ alchemrs advise-schedule \
 ```
 
 The JSON output includes `sample_counts`, `provenance`, and `suggestions`, plus either `edges` for `u_nk` mode or `windows` and `intervals` for TI mode. `u_nk` edge diagnostics include neighbor-relative metrics, dominant changing components, and a priority score. TI interval diagnostics include `mean_dhdl`, `slope`, `curvature`, `interval_uncertainty`, and block-stability summaries. When `--report` is provided, the CLI also writes a standalone HTML report; the `u_nk` report includes the full SVG lambda-axis and multidimensional component breakdown, while the TI report also includes an integration-method shape gallery showing the applicable TI interpolants on the current lambda grid.
+
+In NES mode, the structured output includes `convergence`, `profile`, `curvature`, `high_curvature_regions`, `relative_uncertainty`, `recent_change`, and the final `suggestion`. The HTML report adds:
+
+- a free energy vs. number of switches scatterplot
+- a TI-style mean `dV/dλ` profile along the switching path
+- a TI-style curvature-magnitude plot over lambda
+- a ranked list of high-curvature lambda regions
 
 CSV output is useful for quick ingestion into spreadsheets or tabular tools:
 
@@ -217,7 +227,7 @@ alchemrs bar \
   /path/to/*/prod.out
 ```
 
-Note: BAR uncertainties are only computed for adjacent windows; non-adjacent state pairs (for example, `0->1`) are reported as `NaN`, matching `alchemlyb`.
+BAR now reports adjacent-edge uncertainties directly and propagates cumulative endpoint uncertainty from those adjacent contributions.
 
 ### MBAR
 
@@ -238,6 +248,16 @@ alchemrs dexp \
 ```
 
 IEXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
+
+### NES
+
+```bash
+alchemrs nes \
+  --temperature 300 \
+  /path/to/run_*/fwd.out
+```
+
+`nes` parses AMBER nonequilibrium switching outputs such as `fwd.out` and `rev.out`, integrates the switching work from the final `Summary of dvdl values ...` block, and applies the Jarzynski equality. Analytic uncertainty is used by default; pass `--n-bootstrap <N>` to request bootstrap uncertainty instead, or `--no-uncertainty` to suppress it.
 
 ## Documentation
 

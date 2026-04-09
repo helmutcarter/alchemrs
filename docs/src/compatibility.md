@@ -14,7 +14,7 @@ Important matches include:
 - `u_nk` `DE` decorrelation semantics
 - `pymbar`-style statistical inefficiency estimation
 - `pymbar`-style automated equilibration detection
-- BAR reporting `NaN` uncertainties for non-adjacent pairs
+- AMBER NES Jarzynski estimates and preprocessing semantics validated against external reference scripts
 
 Important intentional difference:
 
@@ -22,7 +22,7 @@ Important intentional difference:
 
 ## Current parser scope
 
-The implemented parser surface supports AMBER outputs and GROMACS `dhdl.xvg` outputs.
+The implemented parser surface supports AMBER outputs, including AMBER nonequilibrium switching outputs for NES, and GROMACS `dhdl.xvg` outputs.
 
 AMBER still has the broader and more battle-tested workflow coverage, but the documented and tested parsing workflow now includes both engines. Multidimensional GROMACS schedules are supported for `u_nk`-based analysis; multidimensional TI is still unsupported.
 
@@ -31,6 +31,8 @@ AMBER still has the broader and more battle-tested workflow coverage, but the do
 The data-model types can store more general state metadata, and `UNkMatrix`-based estimators now support multidimensional lambda states when windows share a consistent evaluated-state grid.
 
 The remaining one-dimensional restriction is TI: `DhdlSeries` is still scalar, so multidimensional `dH/dlambda` workflows are not yet supported.
+
+NES trajectories are also currently one-dimensional in the advisor path because the retained `lambda_path` / `dvdl_path` diagnostics assume one switching coordinate.
 
 ## Non-finite `u_nk`
 

@@ -41,6 +41,26 @@ Validation rules:
 
 This is the primary input type for TI.
 
+## `SwitchingTrajectory`
+
+`SwitchingTrajectory` represents one nonequilibrium switching trajectory.
+
+It stores:
+
+- the initial `StatePoint`
+- the final `StatePoint`
+- one reduced work value for the full trajectory
+- an optional `lambda_path`
+- an optional `dvdl_path` in reduced units
+
+Validation rules:
+
+- the initial and final states must share the same temperature
+- `lambda_path.len() == dvdl_path.len()`
+- all stored values must be finite
+
+This is the primary input type for NES. The reduced work is sufficient for the Jarzynski estimator itself, while `lambda_path` and `dvdl_path` support the NES advisor's profile and curvature diagnostics.
+
 ## `UNkMatrix`
 
 `UNkMatrix` stores reduced energies evaluated across states.
