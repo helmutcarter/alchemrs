@@ -2458,7 +2458,9 @@ fn nes_profile_diagnostics(
     }
 
     let mut profile = Vec::with_capacity(len);
-    let rms_available = trajectories.iter().all(|trajectory| trajectory.rms_dvdl_path().len() == len);
+    let rms_available = trajectories
+        .iter()
+        .all(|trajectory| trajectory.rms_dvdl_path().len() == len);
     for idx in 0..len {
         let lambda = reference.lambda_path()[idx];
         let values = trajectories

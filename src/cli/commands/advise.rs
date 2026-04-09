@@ -2535,12 +2535,9 @@ fn render_nes_profile_rms_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
         .profile()
         .iter()
         .filter_map(|point| {
-            point.mean_rms_dvdl().map(|value| {
-                (
-                    point.lambda(),
-                    convert_value(value, units, temperature),
-                )
-            })
+            point
+                .mean_rms_dvdl()
+                .map(|value| (point.lambda(), convert_value(value, units, temperature)))
         })
         .collect::<Vec<_>>();
     if points.is_empty() {

@@ -419,6 +419,9 @@ pub fn extract_nes_trajectory(
         lambda_path = summary_lambda_path;
         dvdl_path = summary_dvdl_path;
     }
+    if !rms_dvdl_path.is_empty() && rms_dvdl_path.len() != lambda_path.len() {
+        rms_dvdl_path.clear();
+    }
     SwitchingTrajectory::new_with_profile_and_rms(
         initial_state,
         final_state,
