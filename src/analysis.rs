@@ -47,6 +47,8 @@ pub enum NesSuggestionKind {
 pub struct NesProfilePoint {
     lambda: f64,
     mean_dvdl: f64,
+    stddev_dvdl: f64,
+    mean_rms_dvdl: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -924,6 +926,14 @@ impl NesProfilePoint {
 
     pub fn mean_dvdl(&self) -> f64 {
         self.mean_dvdl
+    }
+
+    pub fn stddev_dvdl(&self) -> f64 {
+        self.stddev_dvdl
+    }
+
+    pub fn mean_rms_dvdl(&self) -> Option<f64> {
+        self.mean_rms_dvdl
     }
 }
 
@@ -2448,14 +2458,43 @@ fn nes_profile_diagnostics(
     }
 
     let mut profile = Vec::with_capacity(len);
+    let rms_available = trajectories.iter().all(|trajectory| trajectory.rms_dvdl_path().len() == len);
     for idx in 0..len {
         let lambda = reference.lambda_path()[idx];
-        let mean_dvdl = trajectories
+        let values = trajectories
             .iter()
             .map(|trajectory| trajectory.dvdl_path()[idx])
-            .sum::<f64>()
-            / trajectories.len() as f64;
-        profile.push(NesProfilePoint { lambda, mean_dvdl });
+            .collect::<Vec<_>>();
+        let mean_dvdl = values.iter().sum::<f64>() / values.len() as f64;
+        let stddev_dvdl = if values.len() > 1 {
+            let ssq = values
+                .iter()
+                .map(|value| {
+                    let delta = *value - mean_dvdl;
+                    delta * delta
+                })
+                .sum::<f64>();
+            (ssq / (values.len() as f64 - 1.0)).sqrt()
+        } else {
+            0.0
+        };
+        let mean_rms_dvdl = if rms_available {
+            Some(
+                trajectories
+                    .iter()
+                    .map(|trajectory| trajectory.rms_dvdl_path()[idx])
+                    .sum::<f64>()
+                    / trajectories.len() as f64,
+            )
+        } else {
+            None
+        };
+        profile.push(NesProfilePoint {
+            lambda,
+            mean_dvdl,
+            stddev_dvdl,
+            mean_rms_dvdl,
+        });
     }
 
     let mut curvature = Vec::with_capacity(len.saturating_sub(2));

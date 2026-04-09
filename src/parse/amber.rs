@@ -245,8 +245,15 @@ pub fn extract_nes_trajectory(
     let mut summary_expected_steps: Option<usize> = None;
     let mut summary_steps = 0usize;
     let mut summary_dvdl_sum = 0.0f64;
-    let mut lambda_path = Vec::new();
-    let mut dvdl_path = Vec::new();
+    let mut lambda_path: Vec<f64> = Vec::new();
+    let mut dvdl_path: Vec<f64> = Vec::new();
+    let mut rms_dvdl_path: Vec<f64> = Vec::new();
+    let mut rms_lambda_path: Vec<f64> = Vec::new();
+    let mut summary_lambda_path: Vec<f64> = Vec::new();
+    let mut summary_dvdl_path: Vec<f64> = Vec::new();
+    let mut current_lambda: Option<f64> = None;
+    let mut in_average_block = false;
+    let mut in_rms_block = false;
     let mut line = Vec::new();
 
     loop {
@@ -261,6 +268,17 @@ pub fn extract_nes_trajectory(
             break;
         }
         let trimmed = trim_line_end_bytes(&line);
+
+        if is_nes_average_header(trimmed) {
+            in_average_block = true;
+            in_rms_block = false;
+            continue;
+        }
+        if is_nes_rms_header(trimmed) {
+            in_average_block = false;
+            in_rms_block = true;
+            continue;
+        }
 
         if is_dvdl_summary_start(trimmed) {
             let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
@@ -290,16 +308,12 @@ pub fn extract_nes_trajectory(
                 }
                 let raw_dvdl = parse_dvdl_summary_value_bytes(summary_line)?;
                 let reduced_dvdl = raw_dvdl * beta;
-                lambda_path.push(clambda + step_lambda * summary_steps as f64);
-                dvdl_path.push(reduced_dvdl);
+                summary_lambda_path.push(clambda + step_lambda * summary_steps as f64);
+                summary_dvdl_path.push(reduced_dvdl);
                 summary_dvdl_sum += reduced_dvdl;
                 summary_steps += 1;
             }
             break;
-        }
-
-        if temp0.is_some() && clambda.is_some() && dynlmb.is_some() && ntave.is_some() {
-            continue;
         }
 
         let parsed = parse_line_bytes(trimmed)?;
@@ -311,6 +325,7 @@ pub fn extract_nes_trajectory(
         if clambda.is_none() {
             if let Some(value) = capture_field(parsed, "clambda")? {
                 clambda = Some(value);
+                current_lambda = Some(value);
             }
         }
         if dynlmb.is_none() {
@@ -321,6 +336,48 @@ pub fn extract_nes_trajectory(
         if ntave.is_none() {
             if let Some(value) = capture_field(parsed, "ntave")? {
                 ntave = Some(value);
+            }
+        }
+        if let Some(value) = capture_dynamic_lambda(parsed)? {
+            current_lambda = Some(value);
+            continue;
+        }
+        if in_average_block {
+            if let Some(raw_dvdl) = capture_field(parsed, "DV/DL")? {
+                let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+                let lambda =
+                    current_lambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
+                let reduced_dvdl = raw_dvdl * beta;
+                let duplicate_previous = lambda_path.last().zip(dvdl_path.last()).is_some_and(
+                    |(last_lambda, last_dvdl)| {
+                        (*last_lambda - lambda).abs() <= 1.0e-12
+                            && (*last_dvdl - reduced_dvdl).abs() <= 1.0e-12
+                    },
+                );
+                if !duplicate_previous {
+                    lambda_path.push(lambda);
+                    dvdl_path.push(reduced_dvdl);
+                }
+                in_average_block = false;
+            }
+        } else if in_rms_block {
+            if let Some(raw_dvdl) = capture_field(parsed, "DV/DL")? {
+                let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+                let lambda =
+                    current_lambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
+                let reduced_rms_dvdl = raw_dvdl * beta;
+                let duplicate_previous = rms_lambda_path
+                    .last()
+                    .zip(rms_dvdl_path.last())
+                    .is_some_and(|(last_lambda, last_rms)| {
+                        (*last_lambda - lambda).abs() <= 1.0e-12
+                            && (*last_rms - reduced_rms_dvdl).abs() <= 1.0e-12
+                    });
+                if !duplicate_previous {
+                    rms_lambda_path.push(lambda);
+                    rms_dvdl_path.push(reduced_rms_dvdl);
+                }
+                in_rms_block = false;
             }
         }
     }
@@ -358,12 +415,17 @@ pub fn extract_nes_trajectory(
         vec![clambda + step_lambda * summary_steps as f64],
         temperature_k,
     )?;
-    SwitchingTrajectory::new_with_profile(
+    if lambda_path.is_empty() {
+        lambda_path = summary_lambda_path;
+        dvdl_path = summary_dvdl_path;
+    }
+    SwitchingTrajectory::new_with_profile_and_rms(
         initial_state,
         final_state,
         reduced_work,
         lambda_path,
         dvdl_path,
+        rms_dvdl_path,
     )
     .map_err(Into::into)
 }
@@ -742,6 +804,14 @@ fn is_dvdl_summary_end(line: &[u8]) -> bool {
     trim_ascii_start_bytes(line).starts_with(b"End of dvdl summary")
 }
 
+fn is_nes_average_header(line: &[u8]) -> bool {
+    trim_ascii_start_bytes(line).starts_with(b"A V E R A G E S")
+}
+
+fn is_nes_rms_header(line: &[u8]) -> bool {
+    trim_ascii_start_bytes(line).starts_with(b"R M S")
+}
+
 fn trim_ascii_bytes(line: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = line.len();
@@ -777,6 +847,16 @@ fn parse_dvdl_summary_count_bytes(line: &[u8]) -> Result<usize> {
         field: "dvdl_summary_steps",
         value: String::from_utf8_lossy(trimmed).into_owned(),
     })
+}
+
+fn capture_dynamic_lambda(line: &str) -> Result<Option<f64>> {
+    if !line.contains("Dynamically changing lambda:") {
+        return Ok(None);
+    }
+    if let Some(value) = capture_field(line, "to")? {
+        return Ok(Some(value));
+    }
+    Ok(None)
 }
 
 fn parse_dvdl_summary_value_bytes(line: &[u8]) -> Result<f64> {

@@ -321,6 +321,50 @@ End of dvdl summary
     }
 
     #[test]
+    fn parse_amber_nes_profile_prefers_block_averages() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.5000
+ dynlmb = 0.0200
+ ntave = 10
+
+Dynamically changing lambda: Increased clambda by       0.0020 to       0.5020
+
+      A V E R A G E S   O V E R      10 S T E P S
+
+ DV/DL  =         7.0000
+
+      R M S  F L U C T U A T I O N S
+
+ DV/DL  =         0.5000
+
+Dynamically changing lambda: Increased clambda by       0.0020 to       0.5040
+
+      A V E R A G E S   O V E R      10 S T E P S
+
+ DV/DL  =         9.0000
+
+Summary of dvdl values over  4 steps:
+    1.0000
+    2.0000
+    3.0000
+    4.0000
+End of dvdl summary
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let trajectory = extract_nes_trajectory(file.path(), 300.0).unwrap();
+        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        assert_eq!(trajectory.lambda_path(), &[0.502, 0.504]);
+        assert_eq!(trajectory.dvdl_path(), &[7.0 * beta, 9.0 * beta]);
+        let expected_work = (1.0 + 2.0 + 3.0 + 4.0) * (0.02 / 10.0) * beta;
+        assert!((trajectory.reduced_work() - expected_work).abs() < 1e-12);
+    }
+
+    #[test]
     fn parse_amber_u_nk_retains_positive_infinity_samples() {
         let content = r#"
    2.  CONTROL  DATA  FOR  THE  RUN

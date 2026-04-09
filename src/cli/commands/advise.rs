@@ -371,6 +371,8 @@ fn render_nes_json(
             json!({
                 "lambda": point.lambda(),
                 "mean_dvdl": convert_value(point.mean_dvdl(), run_options.output_units, estimate.from_state().temperature_k()),
+                "stddev_dvdl": convert_value(point.stddev_dvdl(), run_options.output_units, estimate.from_state().temperature_k()),
+                "mean_rms_dvdl": point.mean_rms_dvdl().map(|value| convert_value(value, run_options.output_units, estimate.from_state().temperature_k())),
             })
         }).collect::<Vec<_>>(),
         "curvature": advice.curvature().iter().map(|point| {
@@ -1340,7 +1342,7 @@ fn render_nes_html_report(
 :root{--bg:#f7f4ec;--panel:#fffdf8;--ink:#1d1b19;--muted:#6a655e;--line:#d7cfc0;--good:#2f7d4a;--warn:#b9832f;--bad:#b5483d;--accent:#1f5e5b;}\
 *{box-sizing:border-box}body{margin:0;font-family:Georgia,\"Times New Roman\",serif;background:radial-gradient(circle at top,#fffaf0,var(--bg));color:var(--ink)}\
 .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
-h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}.plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}\
+h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}.plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.nes-plot-grid{grid-template-columns:minmax(0,1fr)}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}\
 .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}.kv > div{padding-top:10px;border-top:1px solid var(--line)}\
 .pill{display:inline-block;padding:4px 10px;border-radius:999px;font:600 12px/1.2 ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;background:#efe7d6;color:var(--ink)}.pill.healthy{background:rgba(47,125,74,.12);color:var(--good)}.pill.add_sampling{background:rgba(181,72,61,.12);color:var(--bad)}.footer{margin-top:28px;color:var(--muted);font-size:13px}.mono{font:500 13px/1.45 ui-monospace,Consolas,monospace}\
 </style></head><body><div class=\"wrap\">",
@@ -1439,16 +1441,28 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         escape_html(nes_suggestion_name(advice.suggestion()))
     ));
     html.push_str("</div></section>");
-    html.push_str("<section class=\"section\"><h2>Plots</h2><div class=\"grid plot-grid\">");
+    html.push_str(
+        "<section class=\"section\"><h2>Plots</h2><div class=\"grid plot-grid nes-plot-grid\">",
+    );
     html.push_str(&plot_card_html(
         "Free Energy vs Number of Switches",
         "Cumulative Jarzynski estimate using the first N switching trajectories in input order.",
         &render_nes_convergence_plot_svg(advice, run_options.output_units),
     ));
     html.push_str(&plot_card_html(
-        "Mean dV/dλ Along Switching Path",
-        "Ensemble-mean nonequilibrium switching profile across lambda. Peaks and sharp bends identify regions where work accumulation changes rapidly.",
+        "Mean dH/dλ",
+        "Window means after preprocessing. Use this to spot steep regions and sign changes.",
         &render_nes_profile_plot_svg(advice, run_options.output_units),
+    ));
+    html.push_str(&plot_card_html(
+        "Uncertainty in dH/dλ Along Lambda",
+        "Sample standard deviation of dH/dλ across switching trajectories at each lambda value.",
+        &render_nes_profile_uncertainty_plot_svg(advice, run_options.output_units),
+    ));
+    html.push_str(&plot_card_html(
+        "Mean Within-Run RMS in dH/dλ Along Lambda",
+        "Average RMS fluctuation of dH/dλ within each switching trajectory at each lambda value, taken from the AMBER RMS fluctuation blocks.",
+        &render_nes_profile_rms_plot_svg(advice, run_options.output_units),
     ));
     html.push_str(&plot_card_html(
         "Curvature Magnitude Along Lambda",
@@ -1487,7 +1501,7 @@ fn render_ti_html_report(
 .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
 h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}\
 .plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}\
-.ti-series-plot{display:block;width:100%;height:auto}.axis{stroke:#a79d8e;stroke-width:1}.grid-line{stroke:#e8e1d3;stroke-width:1}.zero-line{stroke:#c9b8a8;stroke-width:1;stroke-dasharray:4 4}.series-fill{stroke:none}.series-fill.positive{fill:rgba(181,72,61,.18)}.series-fill.negative{fill:rgba(47,125,74,.18)}.series-line{fill:none;stroke:var(--accent);stroke-width:2.5}.series-line.curvature{stroke:#b5483d}.series-line.uncertainty{stroke:#b9832f}.series-line.method-trapezoidal{stroke:#1f5e5b}.series-line.method-simpson{stroke:#b5483d}.series-line.method-cubic-spline{stroke:#b9832f}.series-line.method-pchip{stroke:#2f7d4a}.series-line.method-akima{stroke:#6b7280}.series-point{fill:var(--accent);stroke:#fffaf0;stroke-width:1.5}.series-point.curvature{fill:#b5483d}.series-point.uncertainty{fill:#b9832f}.axis-label{fill:var(--muted);font:600 11px/1.2 ui-monospace,Consolas,monospace}.tick-label{fill:var(--muted);font:500 10px/1.2 ui-monospace,Consolas,monospace}\
+.ti-series-plot{display:block;width:100%;height:auto}.axis{stroke:#a79d8e;stroke-width:1}.grid-line{stroke:#e8e1d3;stroke-width:1}.zero-line{stroke:#c9b8a8;stroke-width:1;stroke-dasharray:4 4}.series-fill{stroke:none}.series-fill.positive{fill:rgba(181,72,61,.18)}.series-fill.negative{fill:rgba(47,125,74,.18)}.series-line{fill:none;stroke:var(--accent);stroke-width:2.5}.series-line.nes-profile{stroke-opacity:.18}.series-line.curvature{stroke:#b5483d}.series-line.uncertainty{stroke:#b9832f}.series-line.method-trapezoidal{stroke:#1f5e5b}.series-line.method-simpson{stroke:#b5483d}.series-line.method-cubic-spline{stroke:#b9832f}.series-line.method-pchip{stroke:#2f7d4a}.series-line.method-akima{stroke:#6b7280}.series-point{fill:var(--accent);stroke:#fffaf0;stroke-width:1.5}.series-point.curvature{fill:#b5483d}.series-point.uncertainty{fill:#b9832f}.axis-label{fill:var(--muted);font:600 11px/1.2 ui-monospace,Consolas,monospace}.tick-label{fill:var(--muted);font:500 10px/1.2 ui-monospace,Consolas,monospace}\
 .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}.legend-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#fffaf0;color:var(--ink);font:500 12px/1.35 ui-monospace,Consolas,monospace}.legend-swatch{width:14px;height:3px;border-radius:999px;background:var(--accent);display:inline-block}.legend-swatch.method-trapezoidal{background:#1f5e5b}.legend-swatch.method-simpson{background:#b5483d}.legend-swatch.method-cubic-spline{background:#b9832f}.legend-swatch.method-pchip{background:#2f7d4a}.legend-swatch.method-akima{background:#6b7280}\
 .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.keep-case{text-transform:none}\
 .value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}.stack{display:grid;gap:14px}\
@@ -2295,12 +2309,12 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
             .to_string();
     }
 
-    let width = 520.0;
-    let height = 240.0;
-    let left = 72.0;
-    let right = 18.0;
-    let top = 16.0;
-    let bottom = 40.0;
+    let width = 860.0;
+    let height = 360.0;
+    let left = 86.0;
+    let right = 24.0;
+    let top = 18.0;
+    let bottom = 48.0;
     let plot_width = width - left - right;
     let plot_height = height - top - bottom;
 
@@ -2343,9 +2357,9 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
     for count in tick_counts {
         let x = map_x(count);
         svg.push_str(&format!(
-            "<line class=\"grid-line\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
-            top + plot_height
-        ));
+        "<line class=\"grid-line\" stroke-opacity=\"0.35\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
+        top + plot_height
+    ));
         svg.push_str(&format!(
             "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{count}</text>",
             top + plot_height + 18.0
@@ -2355,7 +2369,7 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
     for y_value in axis_tick_values(y_min, y_max, false) {
         let y = map_y(y_value);
         svg.push_str(&format!(
-            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            "<line class=\"grid-line\" stroke-opacity=\"0.35\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
             left + plot_width
         ));
         svg.push_str(&format!(
@@ -2367,13 +2381,13 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
     }
 
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
         top + plot_height,
         left + plot_width,
         top + plot_height
     ));
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
         top + plot_height
     ));
     svg.push_str(&format!(
@@ -2382,7 +2396,7 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
         height - 8.0
     ));
     svg.push_str(&format!(
-        "<text class=\"axis-label\" x=\"18\" y=\"{:.2}\" transform=\"rotate(-90 18 {:.2})\" text-anchor=\"middle\">{}</text>",
+        "<text class=\"axis-label\" x=\"22\" y=\"{:.2}\" transform=\"rotate(-90 22 {:.2})\" text-anchor=\"middle\">{}</text>",
         top + plot_height * 0.5,
         top + plot_height * 0.5,
         escape_html(&format!("ΔF ({})", format_units(units)))
@@ -2419,12 +2433,11 @@ fn render_nes_profile_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String
         })
         .collect::<Vec<_>>();
     let line_points = downsample_plot_points(&points, 400);
-    let marker_points = downsample_plot_points(&points, 32);
     render_ti_zero_shaded_series_plot_svg(
         &line_points,
-        &marker_points,
+        &[],
         "λ",
-        &format!("mean dV/dλ ({})", format_units(units)),
+        &format!("mean dH/dλ ({})", format_units(units)),
         "series-line",
         "series-point",
         true,
@@ -2451,16 +2464,106 @@ fn render_nes_curvature_plot_svg(advice: &NesAdvice, units: OutputUnits) -> Stri
         })
         .collect::<Vec<_>>();
     let line_points = downsample_plot_points(&points, 400);
-    let marker_points = downsample_plot_points(&points, 32);
-    render_ti_series_plot_svg(
+    render_ti_series_plot_svg_with_size(
         &line_points,
-        &marker_points,
+        &[],
         "λ",
         &format!("|curvature| ({})", format_units(units)),
         false,
         "series-line curvature",
         "series-point curvature",
         true,
+        860.0,
+        360.0,
+        86.0,
+        24.0,
+        18.0,
+        48.0,
+        22.0,
+    )
+}
+
+fn render_nes_profile_uncertainty_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
+    let Some(temperature) = advice
+        .convergence()
+        .first()
+        .map(|point| point.from_state().temperature_k())
+    else {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES uncertainty.</div>"
+            .to_string();
+    };
+    let points = advice
+        .profile()
+        .iter()
+        .map(|point| {
+            (
+                point.lambda(),
+                convert_value(point.stddev_dvdl(), units, temperature),
+            )
+        })
+        .collect::<Vec<_>>();
+    let line_points = downsample_plot_points(&points, 400);
+    render_ti_series_plot_svg_with_size(
+        &line_points,
+        &[],
+        "λ",
+        &format!("σ[dH/dλ] ({})", format_units(units)),
+        false,
+        "series-line uncertainty",
+        "series-point uncertainty",
+        true,
+        860.0,
+        360.0,
+        86.0,
+        24.0,
+        18.0,
+        48.0,
+        22.0,
+    )
+}
+
+fn render_nes_profile_rms_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
+    let Some(temperature) = advice
+        .convergence()
+        .first()
+        .map(|point| point.from_state().temperature_k())
+    else {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES within-run RMS.</div>"
+            .to_string();
+    };
+    let points = advice
+        .profile()
+        .iter()
+        .filter_map(|point| {
+            point.mean_rms_dvdl().map(|value| {
+                (
+                    point.lambda(),
+                    convert_value(value, units, temperature),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if points.is_empty() {
+        return "<div class=\"plot-empty\">No RMS fluctuation data were available in the NES inputs.</div>"
+            .to_string();
+    }
+    let line_points = downsample_plot_points(&points, 400);
+    render_ti_series_plot_svg_with_size(
+        &line_points,
+        &[],
+        "λ",
+        &format!("mean RMS[dH/dλ] ({})", format_units(units)),
+        false,
+        "series-line uncertainty",
+        "series-point uncertainty",
+        true,
+        860.0,
+        360.0,
+        86.0,
+        24.0,
+        18.0,
+        48.0,
+        22.0,
     )
 }
 
@@ -2803,6 +2906,46 @@ fn render_ti_series_plot_svg(
     point_class: &str,
     draw_line: bool,
 ) -> String {
+    render_ti_series_plot_svg_with_size(
+        line_points,
+        marker_points,
+        x_label,
+        y_label,
+        include_zero,
+        line_class,
+        point_class,
+        draw_line,
+        520.0,
+        240.0,
+        58.0,
+        18.0,
+        16.0,
+        40.0,
+        16.0,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The TI plot renderer is easier to read with explicit call-site arguments"
+)]
+fn render_ti_series_plot_svg_with_size(
+    line_points: &[(f64, f64)],
+    marker_points: &[(f64, f64)],
+    x_label: &str,
+    y_label: &str,
+    include_zero: bool,
+    line_class: &str,
+    point_class: &str,
+    draw_line: bool,
+    width: f64,
+    height: f64,
+    left: f64,
+    right: f64,
+    top: f64,
+    bottom: f64,
+    y_label_x: f64,
+) -> String {
     if (line_points.is_empty() && marker_points.is_empty()) || (draw_line && line_points.len() < 2)
     {
         return "<div class=\"plot-empty\">Not enough points to render plot.</div>".to_string();
@@ -2814,12 +2957,6 @@ fn render_ti_series_plot_svg(
         marker_points
     };
 
-    let width = 520.0;
-    let height = 240.0;
-    let left = 58.0;
-    let right = 18.0;
-    let top = 16.0;
-    let bottom = 40.0;
     let plot_width = width - left - right;
     let plot_height = height - top - bottom;
 
@@ -2856,6 +2993,9 @@ fn render_ti_series_plot_svg(
         let pad = (y_max - y_min) * 0.12;
         y_min -= pad;
         y_max += pad;
+    }
+    if !include_zero && bounds_points.iter().all(|(_, y)| *y >= 0.0) {
+        y_min = y_min.max(0.0);
     }
 
     let map_x = |x: f64| left + (x - x_min) / (x_max - x_min) * plot_width;
@@ -2919,13 +3059,13 @@ fn render_ti_series_plot_svg(
     }
 
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
         top + plot_height,
         left + plot_width,
         top + plot_height
     ));
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
         top + plot_height
     ));
     svg.push_str(&format!(
@@ -2935,15 +3075,17 @@ fn render_ti_series_plot_svg(
         escape_html(x_label)
     ));
     svg.push_str(&format!(
-        "<text class=\"axis-label\" x=\"16\" y=\"{:.2}\" transform=\"rotate(-90 16 {:.2})\" text-anchor=\"middle\">{}</text>",
+        "<text class=\"axis-label\" x=\"{y_label_x:.0}\" y=\"{:.2}\" transform=\"rotate(-90 {y_label_x:.0} {:.2})\" text-anchor=\"middle\">{}</text>",
         top + plot_height * 0.5,
         top + plot_height * 0.5,
         escape_html(y_label)
     ));
     if let Some(polyline) = polyline.as_ref() {
         svg.push_str(&format!(
-            "<polyline class=\"{}\" points=\"{}\" />",
-            line_class, polyline
+            "<polyline class=\"{}\" {} points=\"{}\" />",
+            line_class,
+            polyline_presentational_attrs(line_class),
+            polyline
         ));
     }
     for (x, y) in marker_points {
@@ -2958,6 +3100,26 @@ fn render_ti_series_plot_svg(
     svg
 }
 
+fn polyline_presentational_attrs(line_class: &str) -> &'static str {
+    if line_class.contains("curvature") {
+        "fill=\"none\" stroke=\"#b5483d\" stroke-width=\"2.5\""
+    } else if line_class.contains("uncertainty") {
+        "fill=\"none\" stroke=\"#b9832f\" stroke-width=\"2.5\""
+    } else if line_class.contains("method-trapezoidal") {
+        "fill=\"none\" stroke=\"#1f5e5b\" stroke-width=\"2.5\""
+    } else if line_class.contains("method-simpson") {
+        "fill=\"none\" stroke=\"#b5483d\" stroke-width=\"2.5\""
+    } else if line_class.contains("method-cubic-spline") {
+        "fill=\"none\" stroke=\"#b9832f\" stroke-width=\"2.5\""
+    } else if line_class.contains("method-pchip") {
+        "fill=\"none\" stroke=\"#2f7d4a\" stroke-width=\"2.5\""
+    } else if line_class.contains("method-akima") {
+        "fill=\"none\" stroke=\"#6b7280\" stroke-width=\"2.5\""
+    } else {
+        "fill=\"none\" stroke=\"#1f5e5b\" stroke-width=\"2.5\""
+    }
+}
+
 fn render_ti_zero_shaded_series_plot_svg(
     line_points: &[(f64, f64)],
     marker_points: &[(f64, f64)],
@@ -2966,6 +3128,44 @@ fn render_ti_zero_shaded_series_plot_svg(
     line_class: &str,
     point_class: &str,
     draw_line: bool,
+) -> String {
+    render_ti_zero_shaded_series_plot_svg_with_size(
+        line_points,
+        marker_points,
+        x_label,
+        y_label,
+        line_class,
+        point_class,
+        draw_line,
+        520.0,
+        240.0,
+        58.0,
+        18.0,
+        16.0,
+        40.0,
+        16.0,
+    )
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The TI plot renderer is easier to read with explicit call-site arguments"
+)]
+fn render_ti_zero_shaded_series_plot_svg_with_size(
+    line_points: &[(f64, f64)],
+    marker_points: &[(f64, f64)],
+    x_label: &str,
+    y_label: &str,
+    line_class: &str,
+    point_class: &str,
+    draw_line: bool,
+    width: f64,
+    height: f64,
+    left: f64,
+    right: f64,
+    top: f64,
+    bottom: f64,
+    y_label_x: f64,
 ) -> String {
     if (line_points.is_empty() && marker_points.is_empty()) || (draw_line && line_points.len() < 2)
     {
@@ -2978,12 +3178,6 @@ fn render_ti_zero_shaded_series_plot_svg(
         marker_points
     };
 
-    let width = 520.0;
-    let height = 240.0;
-    let left = 58.0;
-    let right = 18.0;
-    let top = 16.0;
-    let bottom = 40.0;
     let plot_width = width - left - right;
     let plot_height = height - top - bottom;
 
@@ -3075,7 +3269,7 @@ fn render_ti_zero_shaded_series_plot_svg(
 
     for polygon in zero_area_polygons(line_points, true) {
         svg.push_str(&format!(
-            "<polygon class=\"series-fill positive\" points=\"{}\" />",
+            "<polygon class=\"series-fill positive\" fill=\"rgba(181,72,61,.18)\" stroke=\"none\" points=\"{}\" />",
             polygon
                 .iter()
                 .map(|(x, y)| format!("{:.2},{:.2}", map_x(*x), map_y(*y)))
@@ -3085,7 +3279,7 @@ fn render_ti_zero_shaded_series_plot_svg(
     }
     for polygon in zero_area_polygons(line_points, false) {
         svg.push_str(&format!(
-            "<polygon class=\"series-fill negative\" points=\"{}\" />",
+            "<polygon class=\"series-fill negative\" fill=\"rgba(47,125,74,.18)\" stroke=\"none\" points=\"{}\" />",
             polygon
                 .iter()
                 .map(|(x, y)| format!("{:.2},{:.2}", map_x(*x), map_y(*y)))
@@ -3095,17 +3289,17 @@ fn render_ti_zero_shaded_series_plot_svg(
     }
 
     svg.push_str(&format!(
-        "<line class=\"zero-line\" x1=\"{left:.2}\" y1=\"{zero_y:.2}\" x2=\"{:.2}\" y2=\"{zero_y:.2}\" />",
+        "<line class=\"zero-line\" stroke=\"#c9b8a8\" stroke-width=\"1\" stroke-dasharray=\"4 4\" x1=\"{left:.2}\" y1=\"{zero_y:.2}\" x2=\"{:.2}\" y2=\"{zero_y:.2}\" />",
         left + plot_width
     ));
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
         top + plot_height,
         left + plot_width,
         top + plot_height
     ));
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
         top + plot_height
     ));
     svg.push_str(&format!(
@@ -3115,15 +3309,17 @@ fn render_ti_zero_shaded_series_plot_svg(
         escape_html(x_label)
     ));
     svg.push_str(&format!(
-        "<text class=\"axis-label\" x=\"16\" y=\"{:.2}\" transform=\"rotate(-90 16 {:.2})\" text-anchor=\"middle\">{}</text>",
+        "<text class=\"axis-label\" x=\"{y_label_x:.0}\" y=\"{:.2}\" transform=\"rotate(-90 {y_label_x:.0} {:.2})\" text-anchor=\"middle\">{}</text>",
         top + plot_height * 0.5,
         top + plot_height * 0.5,
         escape_html(y_label)
     ));
     if let Some(polyline) = polyline.as_ref() {
         svg.push_str(&format!(
-            "<polyline class=\"{}\" points=\"{}\" />",
-            line_class, polyline
+            "<polyline class=\"{}\" {} points=\"{}\" />",
+            line_class,
+            polyline_presentational_attrs(line_class),
+            polyline
         ));
     }
     for (x, y) in marker_points {
@@ -3306,13 +3502,13 @@ fn render_ti_multi_series_plot_svg(
     }
 
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
         top + plot_height,
         left + plot_width,
         top + plot_height
     ));
     svg.push_str(&format!(
-        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
         top + plot_height
     ));
     svg.push_str(&format!(
@@ -3917,12 +4113,20 @@ mod tests {
                     2.2 + idx as f64 * 0.001,
                     1.1 + idx as f64 * 0.001,
                 ];
-                SwitchingTrajectory::new_with_profile(
+                let rms_dvdl_path = vec![
+                    0.4 + idx as f64 * 0.0001,
+                    0.5 + idx as f64 * 0.0001,
+                    0.8 + idx as f64 * 0.0001,
+                    0.55 + idx as f64 * 0.0001,
+                    0.42 + idx as f64 * 0.0001,
+                ];
+                SwitchingTrajectory::new_with_profile_and_rms(
                     from.clone(),
                     to.clone(),
                     reduced_work,
                     lambda_path,
                     dvdl_path,
+                    rms_dvdl_path,
                 )
                 .unwrap()
             })
@@ -4277,6 +4481,8 @@ mod tests {
         assert_eq!(payload["advisor_mode"], "nes");
         assert_eq!(payload["provenance"]["windows"], 24);
         assert_eq!(payload["convergence"].as_array().unwrap().len(), 24);
+        assert!(payload["profile"][0]["stddev_dvdl"].is_number());
+        assert!(payload["profile"][0]["mean_rms_dvdl"].is_number());
         assert!(!payload["high_curvature_regions"]
             .as_array()
             .unwrap()
@@ -4342,7 +4548,9 @@ mod tests {
 
         assert!(output.contains("NES Report"));
         assert!(output.contains("Free Energy vs Number of Switches"));
-        assert!(output.contains("Mean dV/dλ Along Switching Path"));
+        assert!(output.contains("Mean dH/dλ"));
+        assert!(output.contains("Uncertainty in dH/dλ Along Lambda"));
+        assert!(output.contains("Mean Within-Run RMS in dH/dλ Along Lambda"));
         assert!(output.contains("Curvature Magnitude Along Lambda"));
         assert!(output.contains("High-Curvature Regions"));
         assert!(output.contains("advisor mode"));

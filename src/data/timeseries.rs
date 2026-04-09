@@ -53,6 +53,7 @@ pub struct SwitchingTrajectory {
     reduced_work: f64,
     lambda_path: Vec<f64>,
     dvdl_path: Vec<f64>,
+    rms_dvdl_path: Vec<f64>,
 }
 
 impl SwitchingTrajectory {
@@ -77,6 +78,24 @@ impl SwitchingTrajectory {
         lambda_path: Vec<f64>,
         dvdl_path: Vec<f64>,
     ) -> Result<Self> {
+        Self::new_with_profile_and_rms(
+            initial_state,
+            final_state,
+            reduced_work,
+            lambda_path,
+            dvdl_path,
+            Vec::new(),
+        )
+    }
+
+    pub fn new_with_profile_and_rms(
+        initial_state: StatePoint,
+        final_state: StatePoint,
+        reduced_work: f64,
+        lambda_path: Vec<f64>,
+        dvdl_path: Vec<f64>,
+        rms_dvdl_path: Vec<f64>,
+    ) -> Result<Self> {
         ensure_finite("reduced_work", &[reduced_work])?;
         if initial_state.temperature_k() != final_state.temperature_k() {
             return Err(CoreError::InvalidState(
@@ -91,12 +110,20 @@ impl SwitchingTrajectory {
         }
         ensure_finite("lambda_path", &lambda_path)?;
         ensure_finite("dvdl_path", &dvdl_path)?;
+        if !rms_dvdl_path.is_empty() && rms_dvdl_path.len() != lambda_path.len() {
+            return Err(CoreError::InvalidShape {
+                expected: lambda_path.len(),
+                found: rms_dvdl_path.len(),
+            });
+        }
+        ensure_finite("rms_dvdl_path", &rms_dvdl_path)?;
         Ok(Self {
             initial_state,
             final_state,
             reduced_work,
             lambda_path,
             dvdl_path,
+            rms_dvdl_path,
         })
     }
 
@@ -118,6 +145,10 @@ impl SwitchingTrajectory {
 
     pub fn dvdl_path(&self) -> &[f64] {
         &self.dvdl_path
+    }
+
+    pub fn rms_dvdl_path(&self) -> &[f64] {
+        &self.rms_dvdl_path
     }
 }
 
