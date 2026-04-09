@@ -5,15 +5,17 @@ use std::path::PathBuf;
 
 use alchemrs::estimators::sample_ti_curve;
 use alchemrs::{
-    advise_lambda_schedule, advise_ti_schedule, overlap_matrix, AdvisorEstimator, EdgeSeverity,
-    IntegrationMethod, MbarOptions, OverlapMatrix, ScheduleAdvice, ScheduleAdvisorOptions,
-    SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiScheduleAdvice,
-    TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
+    advise_lambda_schedule, advise_nes, advise_ti_schedule, overlap_matrix, AdvisorEstimator,
+    EdgeSeverity, IntegrationMethod, MbarOptions, NesAdvice, NesSuggestionKind, OverlapMatrix,
+    ScheduleAdvice, ScheduleAdvisorOptions, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic,
+    TiScheduleAdvice, TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind,
+    TiWindowDiagnostic,
 };
 use serde_json::{json, Map, Value};
 
 use crate::cli::input::{
-    load_dhdl_series, load_windows, AnalysisInputOptions, AnalysisSampleCounts,
+    load_dhdl_series, load_nes_trajectories, load_windows, AnalysisInputOptions,
+    AnalysisSampleCounts,
 };
 use crate::cli::output::{convert_value, format_units};
 use crate::cli::{AdviseInputKind, AdvisorEstimatorArg, OutputFormat, OutputUnits};
@@ -41,6 +43,9 @@ enum AdviceKind {
     },
     Ti {
         advice: TiScheduleAdvice,
+    },
+    Nes {
+        advice: NesAdvice,
     },
 }
 
@@ -92,6 +97,20 @@ pub fn run(
                 }),
             )?;
             (loaded.sample_counts, AdviceKind::Ti { advice })
+        }
+        AdviseInputKind::Nes => {
+            if input_options.decorrelate
+                || input_options.auto_equilibrate
+                || input_options.remove_burnin != 0
+            {
+                return Err(
+                    "NES advisor does not support burn-in trimming, auto-equilibration, or decorrelation because each input is already a complete switching trajectory"
+                        .into(),
+                );
+            }
+            let loaded = load_nes_trajectories(inputs, input_options.temperature)?;
+            let advice = advise_nes(&loaded.trajectories, None)?;
+            (loaded.sample_counts, AdviceKind::Nes { advice })
         }
         AdviseInputKind::Auto => {
             let loaded = load_windows(inputs, input_options)?;
@@ -174,6 +193,9 @@ fn render_schedule_advice(
         AdviceKind::Ti { advice } => {
             render_ti_advice(advice, sample_counts, input_options, run_options)
         }
+        AdviceKind::Nes { advice } => {
+            render_nes_advice(advice, sample_counts, input_options, run_options)
+        }
     }
 }
 
@@ -200,6 +222,9 @@ fn render_schedule_html_report(
         ),
         AdviceKind::Ti { advice } => {
             render_ti_html_report(advice, sample_counts, input_options, run_options)
+        }
+        AdviceKind::Nes { advice } => {
+            render_nes_html_report(advice, sample_counts, input_options, run_options)
         }
     }
 }
@@ -246,6 +271,226 @@ fn render_ti_advice(
         OutputFormat::Json => render_ti_json(advice, sample_counts, input_options, run_options),
         OutputFormat::Csv => render_ti_csv(advice, input_options, run_options),
     }
+}
+
+fn render_nes_advice(
+    advice: &NesAdvice,
+    sample_counts: AnalysisSampleCounts,
+    _input_options: &AnalysisInputOptions,
+    run_options: &AdviseRunOptions,
+) -> Result<String, String> {
+    match run_options.output_format {
+        OutputFormat::Text => Ok(render_nes_text(advice, sample_counts, run_options)),
+        OutputFormat::Json => render_nes_json(advice, sample_counts, run_options),
+        OutputFormat::Csv => render_nes_csv(advice, sample_counts, run_options),
+    }
+}
+
+fn render_nes_text(
+    advice: &NesAdvice,
+    sample_counts: AnalysisSampleCounts,
+    run_options: &AdviseRunOptions,
+) -> String {
+    let estimate = advice.final_estimate();
+    let units = format_units(run_options.output_units);
+    let delta = convert_value(
+        estimate.delta_f(),
+        run_options.output_units,
+        estimate.from_state().temperature_k(),
+    );
+    let sigma = estimate.uncertainty().map(|value| {
+        convert_value(
+            value,
+            run_options.output_units,
+            estimate.from_state().temperature_k(),
+        )
+    });
+    let recent_change = advice.recent_change().map(|value| {
+        convert_value(
+            value,
+            run_options.output_units,
+            estimate.from_state().temperature_k(),
+        )
+    });
+    let relative_uncertainty = advice.relative_uncertainty();
+    let hotspots = if advice.hotspots().is_empty() {
+        "n/a".to_string()
+    } else {
+        advice
+            .hotspots()
+            .iter()
+            .map(|point| {
+                format!(
+                    "lambda={} curvature={}",
+                    format_report_number(point.lambda()),
+                    format_report_number(point.curvature())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    format!(
+        "advisor_mode: nes\nunits: {units}\ntrajectories: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\ndelta_f: {delta}\nuncertainty: {}\nfrom_lambda: {}\nto_lambda: {}\nrelative_uncertainty: {}\nrecent_change: {}\nhigh_curvature_regions: {}\nsuggestion: {}\n",
+        sample_counts.windows,
+        sample_counts.samples_in,
+        sample_counts.samples_after_burnin,
+        sample_counts.samples_kept,
+        sigma
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "none".to_string()),
+        format_report_state(estimate.from_state().lambdas()),
+        format_report_state(estimate.to_state().lambdas()),
+        relative_uncertainty
+            .map(format_report_number)
+            .unwrap_or_else(|| "n/a".to_string()),
+        recent_change
+            .map(format_report_number)
+            .unwrap_or_else(|| "n/a".to_string()),
+        hotspots,
+        nes_suggestion_name(advice.suggestion()),
+    )
+}
+
+fn render_nes_json(
+    advice: &NesAdvice,
+    sample_counts: AnalysisSampleCounts,
+    run_options: &AdviseRunOptions,
+) -> Result<String, String> {
+    let estimate = advice.final_estimate();
+    let payload = json!({
+        "advisor_mode": "nes",
+        "delta_f": convert_value(estimate.delta_f(), run_options.output_units, estimate.from_state().temperature_k()),
+        "uncertainty": estimate.uncertainty().map(|value| convert_value(value, run_options.output_units, estimate.from_state().temperature_k())),
+        "from_lambda": estimate.from_state().lambdas(),
+        "to_lambda": estimate.to_state().lambdas(),
+        "units": format_units(run_options.output_units),
+        "suggestion": nes_suggestion_name(advice.suggestion()),
+        "relative_uncertainty": advice.relative_uncertainty(),
+        "recent_change": advice.recent_change().map(|value| convert_value(value, run_options.output_units, estimate.from_state().temperature_k())),
+        "profile": advice.profile().iter().map(|point| {
+            json!({
+                "lambda": point.lambda(),
+                "mean_dvdl": convert_value(point.mean_dvdl(), run_options.output_units, estimate.from_state().temperature_k()),
+            })
+        }).collect::<Vec<_>>(),
+        "curvature": advice.curvature().iter().map(|point| {
+            json!({
+                "lambda": point.lambda(),
+                "curvature": convert_value(point.curvature(), run_options.output_units, estimate.from_state().temperature_k()),
+            })
+        }).collect::<Vec<_>>(),
+        "high_curvature_regions": advice.hotspots().iter().map(|point| {
+            json!({
+                "lambda": point.lambda(),
+                "curvature": convert_value(point.curvature(), run_options.output_units, estimate.from_state().temperature_k()),
+            })
+        }).collect::<Vec<_>>(),
+        "convergence": advice.convergence().iter().map(|point| {
+            json!({
+                "n_switches": point.n_windows(),
+                "delta_f": convert_value(point.delta_f(), run_options.output_units, estimate.from_state().temperature_k()),
+                "uncertainty": point.uncertainty().map(|value| convert_value(value, run_options.output_units, estimate.from_state().temperature_k())),
+            })
+        }).collect::<Vec<_>>(),
+        "provenance": {
+            "windows": sample_counts.windows,
+            "samples_in": sample_counts.samples_in,
+            "samples_after_burnin": sample_counts.samples_after_burnin,
+            "samples_kept": sample_counts.samples_kept,
+            "advisor_estimator": "nes",
+        }
+    });
+    let mut output = serde_json::to_string(&payload).map_err(|err| err.to_string())?;
+    output.push('\n');
+    Ok(output)
+}
+
+fn render_nes_csv(
+    advice: &NesAdvice,
+    sample_counts: AnalysisSampleCounts,
+    run_options: &AdviseRunOptions,
+) -> Result<String, String> {
+    let estimate = advice.final_estimate();
+    let mut writer = csv::WriterBuilder::new()
+        .has_headers(true)
+        .from_writer(Vec::new());
+    writer
+        .write_record([
+            "advisor_mode",
+            "delta_f",
+            "uncertainty",
+            "from_lambda",
+            "to_lambda",
+            "units",
+            "trajectories",
+            "relative_uncertainty",
+            "recent_change",
+            "top_curvature_lambda",
+            "top_curvature",
+            "suggestion",
+        ])
+        .map_err(|err| err.to_string())?;
+    writer
+        .write_record([
+            "nes".to_string(),
+            convert_value(
+                estimate.delta_f(),
+                run_options.output_units,
+                estimate.from_state().temperature_k(),
+            )
+            .to_string(),
+            estimate
+                .uncertainty()
+                .map(|value| {
+                    convert_value(
+                        value,
+                        run_options.output_units,
+                        estimate.from_state().temperature_k(),
+                    )
+                    .to_string()
+                })
+                .unwrap_or_default(),
+            format_state_csv(estimate.from_state().lambdas()),
+            format_state_csv(estimate.to_state().lambdas()),
+            format_units(run_options.output_units).to_string(),
+            sample_counts.windows.to_string(),
+            advice
+                .relative_uncertainty()
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            advice
+                .recent_change()
+                .map(|value| {
+                    convert_value(
+                        value,
+                        run_options.output_units,
+                        estimate.from_state().temperature_k(),
+                    )
+                    .to_string()
+                })
+                .unwrap_or_default(),
+            advice
+                .hotspots()
+                .first()
+                .map(|point| point.lambda().to_string())
+                .unwrap_or_default(),
+            advice
+                .hotspots()
+                .first()
+                .map(|point| {
+                    convert_value(
+                        point.curvature(),
+                        run_options.output_units,
+                        estimate.from_state().temperature_k(),
+                    )
+                    .to_string()
+                })
+                .unwrap_or_default(),
+            nes_suggestion_name(advice.suggestion()).to_string(),
+        ])
+        .map_err(|err| err.to_string())?;
+    let bytes = writer.into_inner().map_err(|err| err.to_string())?;
+    String::from_utf8(bytes).map_err(|err| err.to_string())
 }
 
 fn render_ti_text(
@@ -1073,6 +1318,148 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     Ok(html)
 }
 
+fn render_nes_html_report(
+    advice: &NesAdvice,
+    sample_counts: AnalysisSampleCounts,
+    _input_options: &AnalysisInputOptions,
+    run_options: &AdviseRunOptions,
+) -> Result<String, String> {
+    let estimate = advice.final_estimate();
+    let temperature = estimate.from_state().temperature_k();
+    let delta = convert_value(estimate.delta_f(), run_options.output_units, temperature);
+    let sigma = estimate
+        .uncertainty()
+        .map(|value| convert_value(value, run_options.output_units, temperature));
+    let recent_change = advice
+        .recent_change()
+        .map(|value| convert_value(value, run_options.output_units, temperature));
+
+    let mut html = String::from(
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
+<title>alchemrs NES advisor report</title><style>\
+:root{--bg:#f7f4ec;--panel:#fffdf8;--ink:#1d1b19;--muted:#6a655e;--line:#d7cfc0;--good:#2f7d4a;--warn:#b9832f;--bad:#b5483d;--accent:#1f5e5b;}\
+*{box-sizing:border-box}body{margin:0;font-family:Georgia,\"Times New Roman\",serif;background:radial-gradient(circle at top,#fffaf0,var(--bg));color:var(--ink)}\
+.wrap{max-width:1180px;margin:0 auto;padding:32px 20px 56px}.hero{display:grid;gap:14px;margin-bottom:24px}.eyebrow{font:600 12px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
+h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted);font-size:16px;line-height:1.5}.grid{display:grid;gap:16px}.summary{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));margin-bottom:20px}.plot-grid{grid-template-columns:repeat(auto-fit,minmax(360px,1fr));align-items:start}.plot-stack{display:grid;gap:12px}.plot-title{margin:0;font-size:18px}.plot-sub{margin:0;color:var(--muted);font-size:13px;line-height:1.45}.plot-frame{border:1px solid var(--line);border-radius:14px;background:#fcfaf4;padding:10px}.plot-empty{display:grid;place-items:center;min-height:220px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}\
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px 18px;box-shadow:0 10px 30px rgba(35,27,10,.06)}.label{font:600 11px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}.value{margin-top:8px;font-size:28px;line-height:1.1}.sub{margin-top:6px;color:var(--muted);font-size:13px;line-height:1.4}.section{margin-top:28px}.section h2{margin:0 0 12px;font-size:22px}.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}.kv > div{padding-top:10px;border-top:1px solid var(--line)}\
+.pill{display:inline-block;padding:4px 10px;border-radius:999px;font:600 12px/1.2 ui-monospace,Consolas,monospace;text-transform:uppercase;letter-spacing:.06em;background:#efe7d6;color:var(--ink)}.pill.healthy{background:rgba(47,125,74,.12);color:var(--good)}.pill.add_sampling{background:rgba(181,72,61,.12);color:var(--bad)}.footer{margin-top:28px;color:var(--muted);font-size:13px}.mono{font:500 13px/1.45 ui-monospace,Consolas,monospace}\
+</style></head><body><div class=\"wrap\">",
+    );
+    html.push_str(
+        "<header class=\"hero\"><div class=\"eyebrow\">alchemrs schedule advisor</div><h1>NES Report</h1><div class=\"lede\">Trajectory-count diagnostics for Jarzynski nonequilibrium switching analyses, including cumulative free-energy convergence versus number of switches.</div></header>",
+    );
+    html.push_str("<section class=\"grid summary\">");
+    html.push_str(&summary_card(
+        "Trajectories",
+        &sample_counts.windows.to_string(),
+        "switching trajectories analyzed",
+    ));
+    html.push_str(&summary_card(
+        "Delta F",
+        &format_report_number(delta),
+        format_units(run_options.output_units),
+    ));
+    html.push_str(&summary_card(
+        "Uncertainty",
+        &sigma
+            .map(format_report_number)
+            .unwrap_or_else(|| "none".to_string()),
+        format_units(run_options.output_units),
+    ));
+    html.push_str(&summary_card(
+        "Suggestion",
+        nes_suggestion_name(advice.suggestion()),
+        "advisor recommendation",
+    ));
+    html.push_str("</section>");
+    html.push_str(
+        "<section class=\"section\"><div class=\"card\"><h2>Configuration</h2><div class=\"kv\">",
+    );
+    html.push_str(&kv_html("advisor mode", "nes"));
+    html.push_str(&kv_html(
+        "output units",
+        format_units(run_options.output_units),
+    ));
+    html.push_str(&kv_html(
+        "from lambda",
+        &format_report_state(estimate.from_state().lambdas()),
+    ));
+    html.push_str(&kv_html(
+        "to lambda",
+        &format_report_state(estimate.to_state().lambdas()),
+    ));
+    html.push_str(&kv_html(
+        "relative uncertainty",
+        &advice
+            .relative_uncertainty()
+            .map(format_report_number)
+            .unwrap_or_else(|| "n/a".to_string()),
+    ));
+    html.push_str(&kv_html(
+        "recent change",
+        &recent_change
+            .map(format_report_number)
+            .unwrap_or_else(|| "n/a".to_string()),
+    ));
+    html.push_str("</div></div></section>");
+    html.push_str("<section class=\"section\"><div class=\"card\"><h2>High-Curvature Regions</h2>");
+    if advice.hotspots().is_empty() {
+        html.push_str(
+            "<div class=\"sub\">No lambda-resolved NES switching profile was available for curvature analysis.</div>",
+        );
+    } else {
+        html.push_str(
+            "<div class=\"sub\">Largest finite-difference curvature magnitudes in the ensemble-mean switching profile. These indicate lambda regions where the nonequilibrium dV/dλ path bends most sharply.</div><div class=\"kv\">",
+        );
+        for (index, point) in advice.hotspots().iter().enumerate() {
+            html.push_str(&kv_html(
+                &format!("region {}", index + 1),
+                &format!(
+                    "λ={} |curvature|={}",
+                    format_report_number(point.lambda()),
+                    format_report_number(convert_value(
+                        point.curvature(),
+                        run_options.output_units,
+                        temperature,
+                    ))
+                ),
+            ));
+        }
+        html.push_str("</div>");
+    }
+    html.push_str("</div></section>");
+    html.push_str("<section class=\"section\"><div class=\"card\"><h2>Recommendation</h2>");
+    html.push_str(&format!(
+        "<div class=\"sub\">Current recommendation: <span class=\"pill {}\">{}</span></div>",
+        if matches!(advice.suggestion(), NesSuggestionKind::NoChange) {
+            "healthy"
+        } else {
+            "add_sampling"
+        },
+        escape_html(nes_suggestion_name(advice.suggestion()))
+    ));
+    html.push_str("</div></section>");
+    html.push_str("<section class=\"section\"><h2>Plots</h2><div class=\"grid plot-grid\">");
+    html.push_str(&plot_card_html(
+        "Free Energy vs Number of Switches",
+        "Cumulative Jarzynski estimate using the first N switching trajectories in input order.",
+        &render_nes_convergence_plot_svg(advice, run_options.output_units),
+    ));
+    html.push_str(&plot_card_html(
+        "Mean dV/dλ Along Switching Path",
+        "Ensemble-mean nonequilibrium switching profile across lambda. Peaks and sharp bends identify regions where work accumulation changes rapidly.",
+        &render_nes_profile_plot_svg(advice, run_options.output_units),
+    ));
+    html.push_str(&plot_card_html(
+        "Curvature Magnitude Along Lambda",
+        "Finite-difference estimate of |d²/dλ² ⟨dV/dλ⟩| from the ensemble-mean switching profile.",
+        &render_nes_curvature_plot_svg(advice, run_options.output_units),
+    ));
+    html.push_str("</div></section>");
+    html.push_str("<div class=\"footer\">Report generated by <span class=\"mono\">alchemrs advise-schedule --input-kind nes</span>. Use the JSON output for exact machine-readable values.</div></div></body></html>");
+    Ok(html)
+}
+
 fn render_ti_html_report(
     advice: &TiScheduleAdvice,
     sample_counts: AnalysisSampleCounts,
@@ -1881,6 +2268,235 @@ fn render_ti_interval_uncertainty_plot_svg(advice: &TiScheduleAdvice) -> String 
         "series-point uncertainty",
         true,
     )
+}
+
+fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
+    let Some(temperature) = advice
+        .convergence()
+        .first()
+        .map(|point| point.from_state().temperature_k())
+    else {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES convergence.</div>"
+            .to_string();
+    };
+
+    let points = advice
+        .convergence()
+        .iter()
+        .map(|point| {
+            (
+                point.n_windows(),
+                convert_value(point.delta_f(), units, temperature),
+            )
+        })
+        .collect::<Vec<_>>();
+    if points.is_empty() {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES convergence.</div>"
+            .to_string();
+    }
+
+    let width = 520.0;
+    let height = 240.0;
+    let left = 72.0;
+    let right = 18.0;
+    let top = 16.0;
+    let bottom = 40.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+
+    let x_min = 1usize;
+    let mut x_max = points.last().map(|(count, _)| *count).unwrap_or(1);
+    if x_max <= x_min {
+        x_max = x_min + 1;
+    }
+
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for (_, value) in &points {
+        y_min = y_min.min(*value);
+        y_max = y_max.max(*value);
+    }
+    if (y_max - y_min).abs() <= 1.0e-12 {
+        let pad = y_max.abs().max(1.0) * 0.25;
+        y_min -= pad;
+        y_max += pad;
+    } else {
+        let pad = (y_max - y_min) * 0.12;
+        y_min -= pad;
+        y_max += pad;
+    }
+
+    let map_x = |count: usize| {
+        left + (count.saturating_sub(x_min)) as f64 / (x_max.saturating_sub(x_min)) as f64
+            * plot_width
+    };
+    let map_y = |y: f64| top + (1.0 - (y - y_min) / (y_max - y_min)) * plot_height;
+
+    let tick_counts = nes_tick_counts(x_max);
+    let mut svg = format!(
+        "<svg class=\"ti-series-plot\" viewBox=\"0 0 {:.0} {:.0}\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"{} versus number of switches\">",
+        width,
+        height,
+        escape_html(&format!("ΔF ({})", format_units(units)))
+    );
+
+    for count in tick_counts {
+        let x = map_x(count);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
+            top + plot_height
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{count}</text>",
+            top + plot_height + 18.0
+        ));
+    }
+
+    for y_value in axis_tick_values(y_min, y_max, false) {
+        let y = map_y(y_value);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            left + plot_width
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\">{}</text>",
+            left - 8.0,
+            y + 3.0,
+            format_plot_number(y_value)
+        ));
+    }
+
+    svg.push_str(&format!(
+        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        top + plot_height,
+        left + plot_width,
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\">number of switches</text>",
+        left + plot_width * 0.5,
+        height - 8.0
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"18\" y=\"{:.2}\" transform=\"rotate(-90 18 {:.2})\" text-anchor=\"middle\">{}</text>",
+        top + plot_height * 0.5,
+        top + plot_height * 0.5,
+        escape_html(&format!("ΔF ({})", format_units(units)))
+    ));
+
+    for (count, value) in &points {
+        svg.push_str(&format!(
+            "<circle class=\"series-point\" cx=\"{:.2}\" cy=\"{:.2}\" r=\"3.5\" />",
+            map_x(*count),
+            map_y(*value)
+        ));
+    }
+    svg.push_str("</svg>");
+    svg
+}
+
+fn render_nes_profile_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
+    let Some(temperature) = advice
+        .convergence()
+        .first()
+        .map(|point| point.from_state().temperature_k())
+    else {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES profile.</div>"
+            .to_string();
+    };
+    let points = advice
+        .profile()
+        .iter()
+        .map(|point| {
+            (
+                point.lambda(),
+                convert_value(point.mean_dvdl(), units, temperature),
+            )
+        })
+        .collect::<Vec<_>>();
+    let line_points = downsample_plot_points(&points, 400);
+    let marker_points = downsample_plot_points(&points, 32);
+    render_ti_zero_shaded_series_plot_svg(
+        &line_points,
+        &marker_points,
+        "λ",
+        &format!("mean dV/dλ ({})", format_units(units)),
+        "series-line",
+        "series-point",
+        true,
+    )
+}
+
+fn render_nes_curvature_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
+    let Some(temperature) = advice
+        .convergence()
+        .first()
+        .map(|point| point.from_state().temperature_k())
+    else {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES curvature.</div>"
+            .to_string();
+    };
+    let points = advice
+        .curvature()
+        .iter()
+        .map(|point| {
+            (
+                point.lambda(),
+                convert_value(point.curvature(), units, temperature),
+            )
+        })
+        .collect::<Vec<_>>();
+    let line_points = downsample_plot_points(&points, 400);
+    let marker_points = downsample_plot_points(&points, 32);
+    render_ti_series_plot_svg(
+        &line_points,
+        &marker_points,
+        "λ",
+        &format!("|curvature| ({})", format_units(units)),
+        false,
+        "series-line curvature",
+        "series-point curvature",
+        true,
+    )
+}
+
+fn downsample_plot_points(points: &[(f64, f64)], max_points: usize) -> Vec<(f64, f64)> {
+    if points.len() <= max_points || max_points < 2 {
+        return points.to_vec();
+    }
+
+    let last_index = points.len() - 1;
+    (0..max_points)
+        .map(|idx| {
+            let source = idx * last_index / (max_points - 1);
+            points[source]
+        })
+        .collect()
+}
+
+fn nes_tick_counts(max_count: usize) -> Vec<usize> {
+    if max_count <= 5 {
+        return (1..=max_count).collect();
+    }
+
+    let anchors = [
+        1usize,
+        max_count.div_ceil(4),
+        max_count.div_ceil(2),
+        (3 * max_count).div_ceil(4),
+        max_count,
+    ];
+    let mut ticks = Vec::new();
+    for value in anchors {
+        if ticks.last().copied() != Some(value) {
+            ticks.push(value);
+        }
+    }
+    ticks
 }
 
 fn render_ti_method_plot_cards_html(advice: &TiScheduleAdvice) -> String {
@@ -2788,6 +3404,7 @@ fn advise_input_kind_name(kind: AdviseInputKind) -> &'static str {
         AdviseInputKind::Auto => "auto",
         AdviseInputKind::UNk => "u_nk",
         AdviseInputKind::Dhdl => "dhdl",
+        AdviseInputKind::Nes => "nes",
     }
 }
 
@@ -2831,6 +3448,13 @@ fn ti_suggestion_name(kind: TiSuggestionKind) -> &'static str {
         TiSuggestionKind::ExtendSampling => "extend_sampling",
         TiSuggestionKind::InsertWindow => "insert_window",
         TiSuggestionKind::InsertWindowAndExtendSampling => "insert_window_and_extend_sampling",
+    }
+}
+
+fn nes_suggestion_name(kind: NesSuggestionKind) -> &'static str {
+    match kind {
+        NesSuggestionKind::NoChange => "no_change",
+        NesSuggestionKind::ExtendSampling => "extend_sampling",
     }
 }
 
@@ -3064,15 +3688,16 @@ fn severity_class_from_suggestion(kind: SuggestionKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use alchemrs::{
-        advise_lambda_schedule, advise_ti_schedule, extract_u_nk, AdvisorEstimator, DhdlSeries,
-        EdgeSeverity, ScheduleAdvisorOptions, StatePoint, TiScheduleAdvisorOptions, UNkMatrix,
+        advise_lambda_schedule, advise_nes, advise_ti_schedule, extract_u_nk, AdvisorEstimator,
+        DhdlSeries, EdgeSeverity, NesAdvisorOptions, ScheduleAdvisorOptions, StatePoint,
+        SwitchingTrajectory, TiScheduleAdvisorOptions, UNkMatrix,
     };
     use serde_json::Value;
 
     use super::{
-        axis_tick_values, render_advice, render_html_report, render_ti_html_report,
-        render_ti_method_plot_cards_html, report_severity_name, zero_area_polygons,
-        AdviseRunOptions,
+        axis_tick_values, render_advice, render_html_report, render_nes_html_report,
+        render_ti_html_report, render_ti_method_plot_cards_html, report_severity_name,
+        zero_area_polygons, AdviseRunOptions,
     };
     use crate::cli::input::{AnalysisInputOptions, AnalysisSampleCounts};
     use crate::cli::{
@@ -3273,6 +3898,41 @@ mod tests {
                 slope_z_min: 10.0,
                 interval_uncertainty_z_min: 10.0,
                 suggest_midpoints: true,
+            }),
+        )
+        .unwrap()
+    }
+
+    fn sample_nes_advice() -> alchemrs::NesAdvice {
+        let from = StatePoint::new(vec![0.005], 300.0).unwrap();
+        let to = StatePoint::new(vec![0.995], 300.0).unwrap();
+        let trajectories = (0..24)
+            .map(|idx| {
+                let reduced_work = 3.0 + (idx % 4) as f64 * 0.05;
+                let lambda_path = vec![0.005, 0.25, 0.5, 0.75, 0.995];
+                let dvdl_path = vec![
+                    1.0 + idx as f64 * 0.001,
+                    2.0 + idx as f64 * 0.001,
+                    4.0 + idx as f64 * 0.001,
+                    2.2 + idx as f64 * 0.001,
+                    1.1 + idx as f64 * 0.001,
+                ];
+                SwitchingTrajectory::new_with_profile(
+                    from.clone(),
+                    to.clone(),
+                    reduced_work,
+                    lambda_path,
+                    dvdl_path,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        advise_nes(
+            &trajectories,
+            Some(NesAdvisorOptions {
+                minimum_trajectories: 8,
+                relative_uncertainty_max: 0.3,
+                recent_change_sigma_max: 3.0,
             }),
         )
         .unwrap()
@@ -3549,6 +4209,146 @@ mod tests {
         assert!(!output.contains(
             "proposed <span class=\"keep-case\">λ</span></div><div class=\"mono\">n/a</div>"
         ));
+    }
+
+    #[test]
+    fn renders_nes_advice_in_all_formats() {
+        let advice = sample_nes_advice();
+        let sample_counts = AnalysisSampleCounts {
+            windows: advice.convergence().len(),
+            samples_in: advice.convergence().len(),
+            samples_after_burnin: advice.convergence().len(),
+            samples_kept: advice.convergence().len(),
+        };
+        let input_options = AnalysisInputOptions {
+            temperature: 300.0,
+            decorrelate: false,
+            remove_burnin: 0,
+            auto_equilibrate: false,
+            fast: false,
+            conservative: true,
+            nskip: 1,
+            u_nk_observable: None,
+            input_stride: None,
+        };
+
+        let text = super::render_nes_advice(
+            &advice,
+            sample_counts,
+            &input_options,
+            &AdviseRunOptions {
+                output_units: OutputUnits::KT,
+                estimator: AdvisorEstimatorArg::Mbar,
+                input_kind: AdviseInputKind::Nes,
+                overlap_min: 0.03,
+                block_cv_min: 0.15,
+                n_blocks: 4,
+                suggest_midpoints: true,
+                output_format: OutputFormat::Text,
+                output_path: None,
+                report_path: None,
+            },
+        )
+        .unwrap();
+        assert!(text.contains("advisor_mode: nes"));
+        assert!(text.contains("trajectories: 24"));
+        assert!(text.contains("high_curvature_regions:"));
+        assert!(text.contains("suggestion:"));
+
+        let json = super::render_nes_advice(
+            &advice,
+            sample_counts,
+            &input_options,
+            &AdviseRunOptions {
+                output_units: OutputUnits::KT,
+                estimator: AdvisorEstimatorArg::Mbar,
+                input_kind: AdviseInputKind::Nes,
+                overlap_min: 0.03,
+                block_cv_min: 0.15,
+                n_blocks: 4,
+                suggest_midpoints: true,
+                output_format: OutputFormat::Json,
+                output_path: None,
+                report_path: None,
+            },
+        )
+        .unwrap();
+        let payload: Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(payload["advisor_mode"], "nes");
+        assert_eq!(payload["provenance"]["windows"], 24);
+        assert_eq!(payload["convergence"].as_array().unwrap().len(), 24);
+        assert!(!payload["high_curvature_regions"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+
+        let csv = super::render_nes_advice(
+            &advice,
+            sample_counts,
+            &input_options,
+            &AdviseRunOptions {
+                output_units: OutputUnits::KT,
+                estimator: AdvisorEstimatorArg::Mbar,
+                input_kind: AdviseInputKind::Nes,
+                overlap_min: 0.03,
+                block_cv_min: 0.15,
+                n_blocks: 4,
+                suggest_midpoints: true,
+                output_format: OutputFormat::Csv,
+                output_path: None,
+                report_path: None,
+            },
+        )
+        .unwrap();
+        assert!(csv.contains("advisor_mode,delta_f,uncertainty"));
+        assert!(csv.contains("nes,"));
+    }
+
+    #[test]
+    fn renders_nes_report_with_convergence_plot() {
+        let output = render_nes_html_report(
+            &sample_nes_advice(),
+            AnalysisSampleCounts {
+                windows: 24,
+                samples_in: 24,
+                samples_after_burnin: 24,
+                samples_kept: 24,
+            },
+            &AnalysisInputOptions {
+                temperature: 300.0,
+                decorrelate: false,
+                remove_burnin: 0,
+                auto_equilibrate: false,
+                fast: false,
+                conservative: true,
+                nskip: 1,
+                u_nk_observable: None,
+                input_stride: None,
+            },
+            &AdviseRunOptions {
+                output_units: OutputUnits::KT,
+                estimator: AdvisorEstimatorArg::Mbar,
+                input_kind: AdviseInputKind::Nes,
+                overlap_min: 0.03,
+                block_cv_min: 0.15,
+                n_blocks: 4,
+                suggest_midpoints: true,
+                output_format: OutputFormat::Json,
+                output_path: None,
+                report_path: None,
+            },
+        )
+        .unwrap();
+
+        assert!(output.contains("NES Report"));
+        assert!(output.contains("Free Energy vs Number of Switches"));
+        assert!(output.contains("Mean dV/dλ Along Switching Path"));
+        assert!(output.contains("Curvature Magnitude Along Lambda"));
+        assert!(output.contains("High-Curvature Regions"));
+        assert!(output.contains("advisor mode"));
+        assert!(output.contains("Current recommendation"));
+        assert!(output.contains("<svg"));
+        assert!(output.contains("number of switches"));
     }
 
     #[test]

@@ -1,11 +1,11 @@
 use crate::data::{
     find_state_index_exact, state_points_match_exact, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate,
-    OverlapMatrix, StatePoint, UNkMatrix,
+    OverlapMatrix, StatePoint, SwitchingTrajectory, UNkMatrix,
 };
 use crate::error::{CoreError, Result};
 use crate::estimators::{
     BarEstimator, BarOptions, IexpEstimator, IexpOptions, IntegrationMethod, MbarEstimator,
-    MbarOptions, TiEstimator, TiOptions,
+    MbarOptions, NesEstimator, NesOptions, TiEstimator, TiOptions,
 };
 use nalgebra::{DMatrix, Schur};
 use std::cmp::Ordering;
@@ -35,6 +35,53 @@ pub struct BlockEstimate {
 pub enum AdvisorEstimator {
     Mbar,
     Bar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NesSuggestionKind {
+    NoChange,
+    ExtendSampling,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NesProfilePoint {
+    lambda: f64,
+    mean_dvdl: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NesCurvaturePoint {
+    lambda: f64,
+    curvature: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NesAdvisorOptions {
+    pub minimum_trajectories: usize,
+    pub relative_uncertainty_max: f64,
+    pub recent_change_sigma_max: f64,
+}
+
+impl Default for NesAdvisorOptions {
+    fn default() -> Self {
+        Self {
+            minimum_trajectories: 20,
+            relative_uncertainty_max: 0.25,
+            recent_change_sigma_max: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NesAdvice {
+    convergence: Vec<ConvergencePoint>,
+    final_estimate: FreeEnergyEstimate,
+    profile: Vec<NesProfilePoint>,
+    curvature: Vec<NesCurvaturePoint>,
+    hotspots: Vec<NesCurvaturePoint>,
+    recent_change: Option<f64>,
+    relative_uncertainty: Option<f64>,
+    suggestion: NesSuggestionKind,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -836,6 +883,60 @@ impl ConvergencePoint {
     }
 }
 
+impl NesAdvice {
+    pub fn convergence(&self) -> &[ConvergencePoint] {
+        &self.convergence
+    }
+
+    pub fn final_estimate(&self) -> &FreeEnergyEstimate {
+        &self.final_estimate
+    }
+
+    pub fn profile(&self) -> &[NesProfilePoint] {
+        &self.profile
+    }
+
+    pub fn curvature(&self) -> &[NesCurvaturePoint] {
+        &self.curvature
+    }
+
+    pub fn hotspots(&self) -> &[NesCurvaturePoint] {
+        &self.hotspots
+    }
+
+    pub fn recent_change(&self) -> Option<f64> {
+        self.recent_change
+    }
+
+    pub fn relative_uncertainty(&self) -> Option<f64> {
+        self.relative_uncertainty
+    }
+
+    pub fn suggestion(&self) -> NesSuggestionKind {
+        self.suggestion
+    }
+}
+
+impl NesProfilePoint {
+    pub fn lambda(&self) -> f64 {
+        self.lambda
+    }
+
+    pub fn mean_dvdl(&self) -> f64 {
+        self.mean_dvdl
+    }
+}
+
+impl NesCurvaturePoint {
+    pub fn lambda(&self) -> f64 {
+        self.lambda
+    }
+
+    pub fn curvature(&self) -> f64 {
+        self.curvature
+    }
+}
+
 pub fn overlap_matrix(
     windows: &[UNkMatrix],
     options: Option<MbarOptions>,
@@ -999,6 +1100,80 @@ pub fn dexp_convergence(
         true,
         2,
     )
+}
+
+pub fn nes_convergence(
+    trajectories: &[SwitchingTrajectory],
+    options: Option<NesOptions>,
+) -> Result<Vec<ConvergencePoint>> {
+    if trajectories.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let estimator = NesEstimator::new(options.unwrap_or_default());
+    let mut points = Vec::with_capacity(trajectories.len());
+    for count in 1..=trajectories.len() {
+        let result = estimator.estimate(&trajectories[..count])?;
+        points.push(convergence_point_from_scalar(count, &result)?);
+    }
+    Ok(points)
+}
+
+pub fn advise_nes(
+    trajectories: &[SwitchingTrajectory],
+    options: Option<NesAdvisorOptions>,
+) -> Result<NesAdvice> {
+    if trajectories.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let options = validate_nes_advisor_options(options.unwrap_or_default())?;
+    let convergence = nes_convergence(trajectories, Some(NesOptions::default()))?;
+    let final_estimate = NesEstimator::default().estimate(trajectories)?;
+    let (profile, curvature, hotspots) = nes_profile_diagnostics(trajectories)?;
+    let final_delta = final_estimate.delta_f();
+    let final_sigma = final_estimate.uncertainty();
+    let relative_uncertainty = final_sigma.and_then(|sigma| {
+        let denom = final_delta.abs();
+        (denom > 0.0).then_some(sigma / denom)
+    });
+    let recent_change = if convergence.len() >= 2 {
+        let anchor_idx = (convergence.len() / 2).max(1) - 1;
+        Some((final_delta - convergence[anchor_idx].delta_f()).abs())
+    } else {
+        None
+    };
+    let extend_for_count = trajectories.len() < options.minimum_trajectories;
+    let extend_for_uncertainty =
+        relative_uncertainty.is_some_and(|value| value > options.relative_uncertainty_max);
+    let extend_for_recent_change = match (recent_change, final_sigma) {
+        (Some(change), Some(sigma)) if sigma > 0.0 => {
+            change > options.recent_change_sigma_max * sigma
+        }
+        _ => false,
+    };
+    let suggestion = if extend_for_count || extend_for_uncertainty || extend_for_recent_change {
+        NesSuggestionKind::ExtendSampling
+    } else {
+        NesSuggestionKind::NoChange
+    };
+
+    Ok(NesAdvice {
+        convergence,
+        final_estimate,
+        profile,
+        curvature,
+        hotspots,
+        recent_change,
+        relative_uncertainty,
+        suggestion,
+    })
 }
 
 pub fn advise_lambda_schedule(
@@ -2208,6 +2383,134 @@ fn validate_schedule_advisor_options(
     Ok(options)
 }
 
+fn validate_nes_advisor_options(options: NesAdvisorOptions) -> Result<NesAdvisorOptions> {
+    if options.minimum_trajectories == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    if !options.relative_uncertainty_max.is_finite() || options.relative_uncertainty_max < 0.0 {
+        return Err(CoreError::InvalidState(
+            "NES advisor relative_uncertainty_max must be finite and non-negative".to_string(),
+        ));
+    }
+    if !options.recent_change_sigma_max.is_finite() || options.recent_change_sigma_max < 0.0 {
+        return Err(CoreError::InvalidState(
+            "NES advisor recent_change_sigma_max must be finite and non-negative".to_string(),
+        ));
+    }
+    Ok(options)
+}
+
+fn nes_profile_diagnostics(
+    trajectories: &[SwitchingTrajectory],
+) -> Result<(
+    Vec<NesProfilePoint>,
+    Vec<NesCurvaturePoint>,
+    Vec<NesCurvaturePoint>,
+)> {
+    if trajectories.is_empty() {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    }
+
+    let Some(reference) = trajectories
+        .iter()
+        .find(|trajectory| !trajectory.lambda_path().is_empty())
+    else {
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
+    };
+
+    let len = reference.lambda_path().len();
+    if len != reference.dvdl_path().len() {
+        return Err(CoreError::InvalidShape {
+            expected: reference.lambda_path().len(),
+            found: reference.dvdl_path().len(),
+        });
+    }
+    for trajectory in trajectories {
+        if trajectory.lambda_path().len() != len || trajectory.dvdl_path().len() != len {
+            return Err(CoreError::InvalidState(
+                "NES advisor requires trajectories to share a common lambda-resolved dV/dlambda path length".to_string(),
+            ));
+        }
+        for (expected, observed) in reference
+            .lambda_path()
+            .iter()
+            .zip(trajectory.lambda_path().iter())
+        {
+            if (expected - observed).abs() > 1.0e-8 {
+                return Err(CoreError::InvalidState(
+                    "NES advisor requires trajectories to share a common lambda path".to_string(),
+                ));
+            }
+        }
+    }
+
+    let mut profile = Vec::with_capacity(len);
+    for idx in 0..len {
+        let lambda = reference.lambda_path()[idx];
+        let mean_dvdl = trajectories
+            .iter()
+            .map(|trajectory| trajectory.dvdl_path()[idx])
+            .sum::<f64>()
+            / trajectories.len() as f64;
+        profile.push(NesProfilePoint { lambda, mean_dvdl });
+    }
+
+    let mut curvature = Vec::with_capacity(len.saturating_sub(2));
+    for window in profile.windows(3) {
+        let left = &window[0];
+        let center = &window[1];
+        let right = &window[2];
+        let dx_left = center.lambda - left.lambda;
+        let dx_right = right.lambda - center.lambda;
+        let dx_total = right.lambda - left.lambda;
+        if dx_left.abs() <= 1.0e-12 || dx_right.abs() <= 1.0e-12 || dx_total.abs() <= 1.0e-12 {
+            continue;
+        }
+        let slope_left = (center.mean_dvdl - left.mean_dvdl) / dx_left;
+        let slope_right = (right.mean_dvdl - center.mean_dvdl) / dx_right;
+        let curvature_value = (2.0 * (slope_right - slope_left) / dx_total).abs();
+        curvature.push(NesCurvaturePoint {
+            lambda: center.lambda,
+            curvature: curvature_value,
+        });
+    }
+
+    let mut ranked = curvature.clone();
+    ranked.sort_by(|left, right| {
+        right
+            .curvature
+            .partial_cmp(&left.curvature)
+            .unwrap_or(Ordering::Equal)
+    });
+    let lambda_span = profile
+        .last()
+        .zip(profile.first())
+        .map(|(last, first)| (last.lambda - first.lambda).abs())
+        .unwrap_or(0.0);
+    let typical_step = if profile.len() >= 2 {
+        (profile[1].lambda - profile[0].lambda).abs()
+    } else {
+        0.0
+    };
+    let min_spacing = (lambda_span * 0.02).max(typical_step * 10.0);
+    let mut hotspots = Vec::new();
+    for point in ranked {
+        if hotspots.iter().all(|selected: &NesCurvaturePoint| {
+            (selected.lambda - point.lambda).abs() >= min_spacing
+        }) {
+            hotspots.push(point);
+            if hotspots.len() == 5 {
+                break;
+            }
+        }
+    }
+
+    Ok((profile, curvature, hotspots))
+}
+
 fn validate_ti_schedule_advisor_options(
     options: TiScheduleAdvisorOptions,
 ) -> Result<TiScheduleAdvisorOptions> {
@@ -3032,12 +3335,12 @@ fn block_estimate_from_matrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        advise_lambda_schedule, advise_ti_schedule, bar_pair_overlap, fit_pair, overlap_matrix,
-        recommend_ti_method, schedule_suggestion, select_windows_for_states,
-        AdjacentEdgeDiagnostic, AdvisorEstimator, EdgeSeverity, ProposalStrategy,
-        ScheduleAdvisorOptions, TiEdgeSeverity, TiScheduleAdvisorOptions,
+        advise_lambda_schedule, advise_nes, advise_ti_schedule, bar_pair_overlap, fit_pair,
+        overlap_matrix, recommend_ti_method, schedule_suggestion, select_windows_for_states,
+        AdjacentEdgeDiagnostic, AdvisorEstimator, EdgeSeverity, NesAdvisorOptions,
+        ProposalStrategy, ScheduleAdvisorOptions, TiEdgeSeverity, TiScheduleAdvisorOptions,
     };
-    use crate::data::{StatePoint, UNkMatrix};
+    use crate::data::{StatePoint, SwitchingTrajectory, UNkMatrix};
     use crate::{DhdlSeries, IntegrationMethod, MbarOptions};
 
     fn build_window(
@@ -3237,6 +3540,50 @@ mod tests {
             .edges()
             .iter()
             .all(|edge| edge.severity() == EdgeSeverity::Healthy));
+    }
+
+    #[test]
+    fn advise_nes_reports_curvature_hotspots() {
+        let from = StatePoint::new(vec![0.005], 300.0).unwrap();
+        let to = StatePoint::new(vec![0.995], 300.0).unwrap();
+        let trajectories = (0..8)
+            .map(|idx| {
+                let lambda_path = vec![0.005, 0.25, 0.5, 0.75, 0.995];
+                let dvdl_path = vec![
+                    1.0 + idx as f64 * 0.001,
+                    1.5 + idx as f64 * 0.001,
+                    4.5 + idx as f64 * 0.001,
+                    1.6 + idx as f64 * 0.001,
+                    1.1 + idx as f64 * 0.001,
+                ];
+                SwitchingTrajectory::new_with_profile(
+                    from.clone(),
+                    to.clone(),
+                    3.0 + idx as f64 * 0.01,
+                    lambda_path,
+                    dvdl_path,
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let advice = advise_nes(
+            &trajectories,
+            Some(NesAdvisorOptions {
+                minimum_trajectories: 4,
+                relative_uncertainty_max: 1.0,
+                recent_change_sigma_max: 10.0,
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(advice.profile().len(), 5);
+        assert_eq!(advice.curvature().len(), 3);
+        assert!(!advice.hotspots().is_empty());
+        assert!(advice
+            .hotspots()
+            .iter()
+            .any(|point| (point.lambda() - 0.5).abs() < 1.0e-12));
     }
 
     #[test]

@@ -8,8 +8,8 @@ use alchemrs::parse::infer_temperature;
 use alchemrs::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,
     detect_equilibration_dhdl, detect_equilibration_observable, detect_equilibration_u_nk,
-    extract_u_nk, extract_u_nk_with_potential, CoreError, DecorrelationOptions, DhdlSeries,
-    UNkMatrix, UNkSeriesMethod,
+    extract_nes_trajectory, extract_u_nk, extract_u_nk_with_potential, CoreError,
+    DecorrelationOptions, DhdlSeries, SwitchingTrajectory, UNkMatrix, UNkSeriesMethod,
 };
 use rayon::prelude::*;
 use thiserror::Error;
@@ -32,6 +32,11 @@ pub struct LoadedWindows {
 
 pub struct LoadedDhdlSeries {
     pub series: Vec<DhdlSeries>,
+    pub sample_counts: AnalysisSampleCounts,
+}
+
+pub struct LoadedNesTrajectories {
+    pub trajectories: Vec<SwitchingTrajectory>,
     pub sample_counts: AnalysisSampleCounts,
 }
 
@@ -258,6 +263,26 @@ pub fn load_windows(
             samples_kept,
         },
         windows,
+    })
+}
+
+pub fn load_nes_trajectories(
+    inputs: Vec<PathBuf>,
+    temperature: f64,
+) -> CliResult<LoadedNesTrajectories> {
+    let mut trajectories = Vec::with_capacity(inputs.len());
+    for path in inputs {
+        trajectories.push(extract_nes_trajectory(path, temperature)?);
+    }
+    let count = trajectories.len();
+    Ok(LoadedNesTrajectories {
+        trajectories,
+        sample_counts: AnalysisSampleCounts {
+            windows: count,
+            samples_in: count,
+            samples_after_burnin: count,
+            samples_kept: count,
+        },
     })
 }
 

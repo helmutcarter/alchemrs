@@ -47,11 +47,12 @@ pub mod plot;
 pub mod prep;
 
 pub use analysis::{
-    advise_lambda_schedule, advise_ti_schedule, bar_convergence, dexp_convergence, exp_convergence,
-    mbar_convergence, overlap_eigenvalues, overlap_matrix, overlap_scalar, recommend_ti_method,
-    ti_convergence, AdjacentEdgeDiagnostic, AdvisorEstimator, BlockEstimate, ConvergencePoint,
-    EdgeSeverity, ProposalStrategy, ScheduleAdvice, ScheduleAdvisorOptions, ScheduleSuggestion,
-    SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiMethodAssessment,
+    advise_lambda_schedule, advise_nes, advise_ti_schedule, bar_convergence, dexp_convergence,
+    exp_convergence, mbar_convergence, nes_convergence, overlap_eigenvalues, overlap_matrix,
+    overlap_scalar, recommend_ti_method, ti_convergence, AdjacentEdgeDiagnostic, AdvisorEstimator,
+    BlockEstimate, ConvergencePoint, EdgeSeverity, NesAdvice, NesAdvisorOptions, NesCurvaturePoint,
+    NesProfilePoint, NesSuggestionKind, ProposalStrategy, ScheduleAdvice, ScheduleAdvisorOptions,
+    ScheduleSuggestion, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiMethodAssessment,
     TiMethodRecommendation, TiMethodRecommendationOptions, TiScheduleAdvice,
     TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };

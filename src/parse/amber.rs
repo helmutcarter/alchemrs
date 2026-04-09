@@ -245,7 +245,8 @@ pub fn extract_nes_trajectory(
     let mut summary_expected_steps: Option<usize> = None;
     let mut summary_steps = 0usize;
     let mut summary_dvdl_sum = 0.0f64;
-    let mut in_summary = false;
+    let mut lambda_path = Vec::new();
+    let mut dvdl_path = Vec::new();
     let mut line = Vec::new();
 
     loop {
@@ -259,48 +260,66 @@ pub fn extract_nes_trajectory(
         if bytes == 0 {
             break;
         }
-        let line = trim_line_end_bytes(&line);
+        let trimmed = trim_line_end_bytes(&line);
 
-        if in_summary {
-            if is_dvdl_summary_end(line) {
-                break;
+        if is_dvdl_summary_start(trimmed) {
+            let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
+            let dynlmb = dynlmb.ok_or(AmberParseError::MissingField { field: "dynlmb" })?;
+            let ntave = ntave.ok_or(AmberParseError::MissingField { field: "ntave" })?;
+            let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+            let step_lambda = dynlmb / ntave;
+            summary_expected_steps = Some(parse_dvdl_summary_count_bytes(trimmed)?);
+            loop {
+                line.clear();
+                let bytes =
+                    reader
+                        .read_until(b'\n', &mut line)
+                        .map_err(|err| AmberParseError::Io {
+                            operation: "read",
+                            message: err.to_string(),
+                        })?;
+                if bytes == 0 {
+                    break;
+                }
+                let summary_line = trim_line_end_bytes(&line);
+                if is_dvdl_summary_end(summary_line) {
+                    break;
+                }
+                if summary_line.is_empty() {
+                    continue;
+                }
+                let raw_dvdl = parse_dvdl_summary_value_bytes(summary_line)?;
+                let reduced_dvdl = raw_dvdl * beta;
+                lambda_path.push(clambda + step_lambda * summary_steps as f64);
+                dvdl_path.push(reduced_dvdl);
+                summary_dvdl_sum += reduced_dvdl;
+                summary_steps += 1;
             }
-            if line.is_empty() {
-                continue;
-            }
-            summary_dvdl_sum += parse_dvdl_summary_value_bytes(line)?;
-            summary_steps += 1;
-            continue;
-        }
-
-        if is_dvdl_summary_start(line) {
-            summary_expected_steps = Some(parse_dvdl_summary_count_bytes(line)?);
-            in_summary = true;
-            continue;
+            break;
         }
 
         if temp0.is_some() && clambda.is_some() && dynlmb.is_some() && ntave.is_some() {
             continue;
         }
 
-        let line = parse_line_bytes(line)?;
+        let parsed = parse_line_bytes(trimmed)?;
         if temp0.is_none() {
-            if let Some(value) = capture_field(line, "temp0")? {
+            if let Some(value) = capture_field(parsed, "temp0")? {
                 temp0 = Some(value);
             }
         }
         if clambda.is_none() {
-            if let Some(value) = capture_field(line, "clambda")? {
+            if let Some(value) = capture_field(parsed, "clambda")? {
                 clambda = Some(value);
             }
         }
         if dynlmb.is_none() {
-            if let Some(value) = capture_field(line, "dynlmb")? {
+            if let Some(value) = capture_field(parsed, "dynlmb")? {
                 dynlmb = Some(value);
             }
         }
         if ntave.is_none() {
-            if let Some(value) = capture_field(line, "ntave")? {
+            if let Some(value) = capture_field(parsed, "ntave")? {
                 ntave = Some(value);
             }
         }
@@ -316,6 +335,7 @@ pub fn extract_nes_trajectory(
     let clambda = clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?;
     let dynlmb = dynlmb.ok_or(AmberParseError::MissingField { field: "dynlmb" })?;
     let ntave = ntave.ok_or(AmberParseError::MissingField { field: "ntave" })?;
+    let step_lambda = dynlmb / ntave;
     if summary_expected_steps.is_none() {
         return Err(AmberParseError::NoDvdlSummary);
     }
@@ -332,15 +352,20 @@ pub fn extract_nes_trajectory(
         });
     }
 
-    let step_lambda = dynlmb / ntave;
-    let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
-    let reduced_work = summary_dvdl_sum * step_lambda * beta;
+    let reduced_work = summary_dvdl_sum * step_lambda;
     let initial_state = StatePoint::new(vec![clambda], temperature_k)?;
     let final_state = StatePoint::new(
         vec![clambda + step_lambda * summary_steps as f64],
         temperature_k,
     )?;
-    SwitchingTrajectory::new(initial_state, final_state, reduced_work).map_err(Into::into)
+    SwitchingTrajectory::new_with_profile(
+        initial_state,
+        final_state,
+        reduced_work,
+        lambda_path,
+        dvdl_path,
+    )
+    .map_err(Into::into)
 }
 
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {

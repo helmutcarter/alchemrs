@@ -313,6 +313,11 @@ End of dvdl summary
         assert!((trajectory.reduced_work() - expected_work).abs() < 1e-12);
         assert_eq!(trajectory.initial_state().lambdas(), &[0.5]);
         assert_eq!(trajectory.final_state().lambdas(), &[0.58]);
+        assert_eq!(trajectory.lambda_path(), &[0.5, 0.52, 0.54, 0.56]);
+        assert_eq!(
+            trajectory.dvdl_path(),
+            &[1.0 * beta, 2.0 * beta, 3.0 * beta, 4.0 * beta]
+        );
     }
 
     #[test]

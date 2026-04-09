@@ -410,6 +410,7 @@ pub enum AdviseInputKind {
     Auto,
     UNk,
     Dhdl,
+    Nes,
 }
 
 impl TiMethod {
