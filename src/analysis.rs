@@ -62,6 +62,7 @@ pub struct NesAdvisorOptions {
     pub minimum_trajectories: usize,
     pub relative_uncertainty_max: f64,
     pub recent_change_sigma_max: f64,
+    pub work_histogram_bins: Option<usize>,
 }
 
 impl Default for NesAdvisorOptions {
@@ -70,6 +71,7 @@ impl Default for NesAdvisorOptions {
             minimum_trajectories: 20,
             relative_uncertainty_max: 0.25,
             recent_change_sigma_max: 1.0,
+            work_histogram_bins: None,
         }
     }
 }
@@ -78,6 +80,14 @@ impl Default for NesAdvisorOptions {
 pub struct NesAdvice {
     convergence: Vec<ConvergencePoint>,
     final_estimate: FreeEnergyEstimate,
+    work_values: Vec<f64>,
+    work_histogram_bins: usize,
+    mean_work: f64,
+    work_stddev: f64,
+    dissipated_work: f64,
+    boltzmann_ess: f64,
+    boltzmann_ess_fraction: f64,
+    max_weight_fraction: f64,
     profile: Vec<NesProfilePoint>,
     curvature: Vec<NesCurvaturePoint>,
     hotspots: Vec<NesCurvaturePoint>,
@@ -894,6 +904,38 @@ impl NesAdvice {
         &self.final_estimate
     }
 
+    pub fn work_values(&self) -> &[f64] {
+        &self.work_values
+    }
+
+    pub fn work_histogram_bins(&self) -> usize {
+        self.work_histogram_bins
+    }
+
+    pub fn mean_work(&self) -> f64 {
+        self.mean_work
+    }
+
+    pub fn work_stddev(&self) -> f64 {
+        self.work_stddev
+    }
+
+    pub fn dissipated_work(&self) -> f64 {
+        self.dissipated_work
+    }
+
+    pub fn boltzmann_ess(&self) -> f64 {
+        self.boltzmann_ess
+    }
+
+    pub fn boltzmann_ess_fraction(&self) -> f64 {
+        self.boltzmann_ess_fraction
+    }
+
+    pub fn max_weight_fraction(&self) -> f64 {
+        self.max_weight_fraction
+    }
+
     pub fn profile(&self) -> &[NesProfilePoint] {
         &self.profile
     }
@@ -1146,8 +1188,17 @@ pub fn advise_nes(
     let options = validate_nes_advisor_options(options.unwrap_or_default())?;
     let convergence = nes_convergence(trajectories, Some(NesOptions::default()))?;
     let final_estimate = NesEstimator::default().estimate(trajectories)?;
-    let (profile, curvature, hotspots) = nes_profile_diagnostics(trajectories)?;
     let final_delta = final_estimate.delta_f();
+    let work_values = trajectories
+        .iter()
+        .map(SwitchingTrajectory::reduced_work)
+        .collect::<Vec<_>>();
+    let (mean_work, work_stddev, dissipated_work, boltzmann_ess, max_weight_fraction) =
+        nes_work_diagnostics(&work_values, final_delta)?;
+    let work_histogram_bins = options
+        .work_histogram_bins
+        .unwrap_or_else(|| trajectories.len().clamp(8, 24));
+    let (profile, curvature, hotspots) = nes_profile_diagnostics(trajectories)?;
     let final_sigma = final_estimate.uncertainty();
     let relative_uncertainty = final_sigma.and_then(|sigma| {
         let denom = final_delta.abs();
@@ -1177,6 +1228,14 @@ pub fn advise_nes(
     Ok(NesAdvice {
         convergence,
         final_estimate,
+        work_values,
+        work_histogram_bins,
+        mean_work,
+        work_stddev,
+        dissipated_work,
+        boltzmann_ess,
+        boltzmann_ess_fraction: boltzmann_ess / trajectories.len() as f64,
+        max_weight_fraction,
         profile,
         curvature,
         hotspots,
@@ -1184,6 +1243,60 @@ pub fn advise_nes(
         relative_uncertainty,
         suggestion,
     })
+}
+
+fn nes_work_diagnostics(work_values: &[f64], delta_f: f64) -> Result<(f64, f64, f64, f64, f64)> {
+    if work_values.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let n = work_values.len() as f64;
+    let mean_work = work_values.iter().sum::<f64>() / n;
+    let work_stddev = if work_values.len() > 1 {
+        let ssq = work_values
+            .iter()
+            .map(|value| {
+                let delta = *value - mean_work;
+                delta * delta
+            })
+            .sum::<f64>();
+        (ssq / (n - 1.0)).sqrt()
+    } else {
+        0.0
+    };
+    let dissipated_work = mean_work - delta_f;
+
+    let max_arg = work_values
+        .iter()
+        .map(|value| -value)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let weights = work_values
+        .iter()
+        .map(|value| (-value - max_arg).exp())
+        .collect::<Vec<_>>();
+    let weight_sum = weights.iter().sum::<f64>();
+    if !weight_sum.is_finite() || weight_sum <= 0.0 {
+        return Err(CoreError::NonFiniteValue(
+            "NES work diagnostics produced non-finite Boltzmann weights".to_string(),
+        ));
+    }
+    let mut sum_p2 = 0.0;
+    let mut max_weight_fraction = 0.0f64;
+    for weight in weights {
+        let p = weight / weight_sum;
+        sum_p2 += p * p;
+        max_weight_fraction = max_weight_fraction.max(p);
+    }
+    let boltzmann_ess = 1.0 / sum_p2;
+    Ok((
+        mean_work,
+        work_stddev,
+        dissipated_work,
+        boltzmann_ess,
+        max_weight_fraction,
+    ))
 }
 
 pub fn advise_lambda_schedule(
@@ -3614,6 +3727,7 @@ mod tests {
                 minimum_trajectories: 4,
                 relative_uncertainty_max: 1.0,
                 recent_change_sigma_max: 10.0,
+                work_histogram_bins: None,
             }),
         )
         .unwrap();

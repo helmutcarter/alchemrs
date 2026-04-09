@@ -3,7 +3,9 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use crate::data::{DhdlSeries, StatePoint, SwitchingTrajectory, UNkMatrix};
+use crate::data::{
+    DhdlSeries, NesMbarSample, NesMbarTrajectory, StatePoint, SwitchingTrajectory, UNkMatrix,
+};
 use crate::error::CoreError;
 use thiserror::Error;
 
@@ -433,6 +435,141 @@ pub fn extract_nes_trajectory(
     .map_err(Into::into)
 }
 
+pub fn extract_nes_mbar_trajectory(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> Result<NesMbarTrajectory> {
+    let header = read_nes_mbar_header(path.as_ref())?;
+    if (temperature_k - header.temp0).abs() > 1e-2 {
+        return Err(AmberParseError::TemperatureMismatch {
+            file_temperature_k: header.temp0,
+            input_temperature_k: temperature_k,
+        });
+    }
+
+    let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+    let step_lambda = header.dynlmb / header.ntave;
+    let lambda_index = build_lambda_index(&header.mbar_lambdas);
+
+    let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
+        operation: "open",
+        message: err.to_string(),
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut current_lambda = header.clambda;
+    let mut current_work = 0.0f64;
+    let mut in_mbar_block = false;
+    let mut block_energies = vec![None; header.mbar_lambdas.len()];
+    let mut pending_energies: Option<Vec<f64>> = None;
+    let mut pending_nstep_block: Option<String> = None;
+    let mut last_sample_nstep: Option<i64> = None;
+    let mut samples = Vec::new();
+
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| AmberParseError::Io {
+                operation: "read",
+                message: err.to_string(),
+            })?;
+        if bytes == 0 {
+            break;
+        }
+        let line = line.trim_end_matches(&['\r', '\n'][..]);
+
+        if let Some(mut block) = pending_nstep_block.take() {
+            block.push(' ');
+            block.push_str(line);
+            if line.trim_start().starts_with("---") {
+                if let Some((nstep, time_ps, epot, reduced_dvdl)) =
+                    parse_protocol_sample_block(&block, &mut last_sample_nstep, beta)?
+                {
+                    let Some(reduced_energies_states) = pending_energies.take() else {
+                        continue;
+                    };
+                    current_work += reduced_dvdl * step_lambda;
+                    samples.push(NesMbarSample::new(
+                        nstep as usize,
+                        time_ps,
+                        current_lambda,
+                        current_work,
+                        epot,
+                        reduced_energies_states,
+                    )?);
+                }
+            } else {
+                pending_nstep_block = Some(block);
+            }
+            continue;
+        }
+
+        if line.starts_with(" NSTEP") || line.starts_with("NSTEP") {
+            pending_nstep_block = Some(line.to_string());
+            continue;
+        }
+
+        if let Some(value) = capture_dynamic_lambda(line)? {
+            current_lambda = value;
+            continue;
+        }
+
+        if is_mbar_energy_start(line) {
+            in_mbar_block = true;
+            block_energies.fill(None);
+            continue;
+        }
+        if in_mbar_block {
+            if line.trim_start().starts_with("---") {
+                pending_energies = Some(finalize_nes_mbar_energy_block(
+                    &block_energies,
+                    &header.mbar_lambdas,
+                    beta,
+                    samples.len(),
+                )?);
+                in_mbar_block = false;
+                continue;
+            }
+            parse_mbar_energy_line(line, samples.len(), &lambda_index, &mut block_energies)?;
+        }
+    }
+
+    if in_mbar_block {
+        pending_energies = Some(finalize_nes_mbar_energy_block(
+            &block_energies,
+            &header.mbar_lambdas,
+            beta,
+            samples.len(),
+        )?);
+    }
+
+    if pending_nstep_block.is_some() {
+        return Err(AmberParseError::InvalidParsedData {
+            message: "unterminated NSTEP block in NES MBAR output".to_string(),
+        });
+    }
+    if pending_energies.is_some() {
+        return Err(AmberParseError::InvalidParsedData {
+            message: "final MBAR energy block was not followed by a protocol sample block"
+                .to_string(),
+        });
+    }
+    if samples.is_empty() {
+        return Err(AmberParseError::NoMbarSamples);
+    }
+
+    let initial_state = StatePoint::new(vec![header.clambda], temperature_k)?;
+    let final_state = StatePoint::new(vec![current_lambda], temperature_k)?;
+    let target_states = header
+        .mbar_lambdas
+        .iter()
+        .map(|lambda| StatePoint::new(vec![*lambda], temperature_k))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(AmberParseError::from)?;
+    NesMbarTrajectory::new(initial_state, final_state, target_states, samples).map_err(Into::into)
+}
+
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {
     let (u_nk, _potential) = extract_u_nk_internal(path.as_ref(), temperature_k, false)?;
     Ok(u_nk)
@@ -627,6 +764,14 @@ struct UNkHeader {
     mbar_lambdas: Vec<f64>,
 }
 
+struct NesMbarHeader {
+    temp0: f64,
+    clambda: f64,
+    dynlmb: f64,
+    ntave: f64,
+    mbar_lambdas: Vec<f64>,
+}
+
 fn read_temperature(path: &Path) -> Result<f64> {
     let file = File::open(path).map_err(|err| AmberParseError::Io {
         operation: "open",
@@ -653,6 +798,72 @@ fn read_temperature(path: &Path) -> Result<f64> {
     }
 
     Err(AmberParseError::MissingField { field: "temp0" })
+}
+
+fn read_nes_mbar_header(path: &Path) -> Result<NesMbarHeader> {
+    let file = File::open(path).map_err(|err| AmberParseError::Io {
+        operation: "open",
+        message: err.to_string(),
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut temp0: Option<f64> = None;
+    let mut clambda: Option<f64> = None;
+    let mut dynlmb: Option<f64> = None;
+    let mut ntave: Option<f64> = None;
+    let mut in_mbar = false;
+    let mut mbar_lambdas = Vec::new();
+
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| AmberParseError::Io {
+                operation: "read",
+                message: err.to_string(),
+            })?;
+        if bytes == 0 {
+            break;
+        }
+        let line = line.trim_end_matches(&['\r', '\n'][..]);
+
+        if temp0.is_none() {
+            temp0 = capture_field(line, "temp0")?;
+        }
+        if clambda.is_none() {
+            clambda = capture_field(line, "clambda")?;
+        }
+        if dynlmb.is_none() {
+            dynlmb = capture_field(line, "dynlmb")?;
+        }
+        if ntave.is_none() {
+            ntave = capture_field(line, "ntave")?;
+        }
+
+        if line.starts_with("    MBAR - lambda values considered:") {
+            in_mbar = true;
+            continue;
+        }
+        if in_mbar {
+            if line.starts_with("    Extra") {
+                in_mbar = false;
+                continue;
+            }
+            parse_mbar_lambda_line(line, &mut mbar_lambdas)?;
+        }
+    }
+
+    if mbar_lambdas.is_empty() {
+        return Err(AmberParseError::NoMbarLambdas);
+    }
+
+    Ok(NesMbarHeader {
+        temp0: temp0.ok_or(AmberParseError::MissingField { field: "temp0" })?,
+        clambda: clambda.ok_or(AmberParseError::MissingField { field: "clambda" })?,
+        dynlmb: dynlmb.ok_or(AmberParseError::MissingField { field: "dynlmb" })?,
+        ntave: ntave.ok_or(AmberParseError::MissingField { field: "ntave" })?,
+        mbar_lambdas,
+    })
 }
 
 fn capture_field(line: &str, field: &'static str) -> Result<Option<f64>> {
@@ -1152,4 +1363,54 @@ fn handle_potential_block(
     potential_samples.push(epot);
     *last_nstep = Some(nstep);
     Ok(())
+}
+
+fn parse_protocol_sample_block(
+    block: &str,
+    last_nstep: &mut Option<i64>,
+    beta: f64,
+) -> Result<Option<(i64, f64, f64, f64)>> {
+    let nstep = capture_field(block, "NSTEP")?
+        .map(|value| value as i64)
+        .ok_or(AmberParseError::MissingPotentialField { field: "NSTEP" })?;
+    if last_nstep.is_some_and(|prev| prev == nstep) {
+        return Ok(None);
+    }
+    let time_ps = capture_field(block, "TIME(PS)")?
+        .ok_or(AmberParseError::MissingPotentialField { field: "TIME(PS)" })?;
+    let epot = capture_field(block, "EPtot")?
+        .ok_or(AmberParseError::MissingPotentialField { field: "EPtot" })?;
+    let dvdl = capture_field(block, "DV/DL")?
+        .ok_or(AmberParseError::MissingPotentialField { field: "DV/DL" })?;
+    *last_nstep = Some(nstep);
+    Ok(Some((nstep, time_ps, epot * beta, dvdl * beta)))
+}
+
+fn finalize_nes_mbar_energy_block(
+    energies: &[Option<f64>],
+    lambdas: &[f64],
+    beta: f64,
+    sample_idx: usize,
+) -> Result<Vec<f64>> {
+    if energies.iter().any(|value| value.is_none()) {
+        let missing_lambdas = energies
+            .iter()
+            .zip(lambdas.iter().copied())
+            .filter_map(|(value, lambda)| value.is_none().then_some(lambda))
+            .collect();
+        return Err(AmberParseError::IncompleteMbarBlock {
+            sample_idx,
+            missing_lambdas,
+        });
+    }
+    let mut reduced = Vec::with_capacity(energies.len());
+    for energy in energies.iter().map(|value| value.expect("checked above")) {
+        if energy.is_nan() || energy == f64::NEG_INFINITY {
+            return Err(AmberParseError::InvalidParsedData {
+                message: format!("invalid non-finite MBAR energy in NES MBAR block {sample_idx}"),
+            });
+        }
+        reduced.push(beta * energy);
+    }
+    Ok(reduced)
 }

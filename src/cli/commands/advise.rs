@@ -312,6 +312,21 @@ fn render_nes_text(
             estimate.from_state().temperature_k(),
         )
     });
+    let mean_work = convert_value(
+        advice.mean_work(),
+        run_options.output_units,
+        estimate.from_state().temperature_k(),
+    );
+    let work_stddev = convert_value(
+        advice.work_stddev(),
+        run_options.output_units,
+        estimate.from_state().temperature_k(),
+    );
+    let dissipated_work = convert_value(
+        advice.dissipated_work(),
+        run_options.output_units,
+        estimate.from_state().temperature_k(),
+    );
     let relative_uncertainty = advice.relative_uncertainty();
     let hotspots = if advice.hotspots().is_empty() {
         "n/a".to_string()
@@ -330,7 +345,7 @@ fn render_nes_text(
             .join("; ")
     };
     format!(
-        "advisor_mode: nes\nunits: {units}\ntrajectories: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\ndelta_f: {delta}\nuncertainty: {}\nfrom_lambda: {}\nto_lambda: {}\nrelative_uncertainty: {}\nrecent_change: {}\nhigh_curvature_regions: {}\nsuggestion: {}\n",
+        "advisor_mode: nes\nunits: {units}\ntrajectories: {}\nsamples_in: {}\nsamples_after_burnin: {}\nsamples_kept: {}\ndelta_f: {delta}\nuncertainty: {}\nfrom_lambda: {}\nto_lambda: {}\nmean_work: {}\nwork_stddev: {}\ndissipated_work: {}\nboltzmann_ess: {}\nboltzmann_ess_fraction: {}\nmax_weight_fraction: {}\nrelative_uncertainty: {}\nrecent_change: {}\nhigh_curvature_regions: {}\nsuggestion: {}\n",
         sample_counts.windows,
         sample_counts.samples_in,
         sample_counts.samples_after_burnin,
@@ -340,6 +355,12 @@ fn render_nes_text(
             .unwrap_or_else(|| "none".to_string()),
         format_report_state(estimate.from_state().lambdas()),
         format_report_state(estimate.to_state().lambdas()),
+        format_report_number(mean_work),
+        format_report_number(work_stddev),
+        format_report_number(dissipated_work),
+        format_report_number(advice.boltzmann_ess()),
+        format_report_number(advice.boltzmann_ess_fraction()),
+        format_report_number(advice.max_weight_fraction()),
         relative_uncertainty
             .map(format_report_number)
             .unwrap_or_else(|| "n/a".to_string()),
@@ -365,6 +386,12 @@ fn render_nes_json(
         "to_lambda": estimate.to_state().lambdas(),
         "units": format_units(run_options.output_units),
         "suggestion": nes_suggestion_name(advice.suggestion()),
+        "mean_work": convert_value(advice.mean_work(), run_options.output_units, estimate.from_state().temperature_k()),
+        "work_stddev": convert_value(advice.work_stddev(), run_options.output_units, estimate.from_state().temperature_k()),
+        "dissipated_work": convert_value(advice.dissipated_work(), run_options.output_units, estimate.from_state().temperature_k()),
+        "boltzmann_ess": advice.boltzmann_ess(),
+        "boltzmann_ess_fraction": advice.boltzmann_ess_fraction(),
+        "max_weight_fraction": advice.max_weight_fraction(),
         "relative_uncertainty": advice.relative_uncertainty(),
         "recent_change": advice.recent_change().map(|value| convert_value(value, run_options.output_units, estimate.from_state().temperature_k())),
         "profile": advice.profile().iter().map(|point| {
@@ -1335,6 +1362,14 @@ fn render_nes_html_report(
     let recent_change = advice
         .recent_change()
         .map(|value| convert_value(value, run_options.output_units, temperature));
+    let mean_work = convert_value(advice.mean_work(), run_options.output_units, temperature);
+    let work_stddev = convert_value(advice.work_stddev(), run_options.output_units, temperature);
+    let dissipated_work = convert_value(
+        advice.dissipated_work(),
+        run_options.output_units,
+        temperature,
+    );
+    let sampling_diagnosis = nes_sampling_diagnosis(advice);
 
     let mut html = String::from(
         "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
@@ -1403,6 +1438,42 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             .map(format_report_number)
             .unwrap_or_else(|| "n/a".to_string()),
     ));
+    html.push_str(&kv_html(
+        &format!("mean work ({})", format_units(run_options.output_units)),
+        &format_report_number(mean_work),
+    ));
+    html.push_str(&kv_html(
+        &format!("work stddev ({})", format_units(run_options.output_units)),
+        &format_report_number(work_stddev),
+    ));
+    html.push_str(&kv_html(
+        &format!(
+            "dissipated work ({})",
+            format_units(run_options.output_units)
+        ),
+        &format_report_number(dissipated_work),
+    ));
+    html.push_str(&kv_html(
+        "Boltzmann ESS",
+        &format!(
+            "{} ({})",
+            format_report_number(advice.boltzmann_ess()),
+            format_report_number(advice.boltzmann_ess_fraction())
+        ),
+    ));
+    html.push_str(&kv_html(
+        "largest weight fraction",
+        &format_report_number(advice.max_weight_fraction()),
+    ));
+    html.push_str("</div></div></section>");
+    html.push_str("<section class=\"section\"><div class=\"card\"><h2>Sampling Diagnostics</h2>");
+    html.push_str(&format!(
+        "<div class=\"sub\">{}</div>",
+        escape_html(&sampling_diagnosis.summary)
+    ));
+    html.push_str("<div class=\"kv\">");
+    html.push_str(&kv_html("diagnostic emphasis", sampling_diagnosis.label));
+    html.push_str(&kv_html("why", sampling_diagnosis.reason));
     html.push_str("</div></div></section>");
     html.push_str("<section class=\"section\"><div class=\"card\"><h2>High-Curvature Regions</h2>");
     if advice.hotspots().is_empty() {
@@ -1448,6 +1519,11 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
         "Free Energy vs Number of Switches",
         "Cumulative Jarzynski estimate using the first N switching trajectories in input order.",
         &render_nes_convergence_plot_svg(advice, run_options.output_units),
+    ));
+    html.push_str(&plot_card_html(
+        "Switching Work Distribution",
+        "Histogram of reduced switching work values across all NES trajectories.",
+        &render_nes_work_distribution_plot_svg(advice, run_options.output_units),
     ));
     html.push_str(&plot_card_html(
         "Mean dH/dλ",
@@ -2301,6 +2377,9 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
             (
                 point.n_windows(),
                 convert_value(point.delta_f(), units, temperature),
+                point
+                    .uncertainty()
+                    .map(|value| convert_value(value, units, temperature)),
             )
         })
         .collect::<Vec<_>>();
@@ -2319,16 +2398,18 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
     let plot_height = height - top - bottom;
 
     let x_min = 1usize;
-    let mut x_max = points.last().map(|(count, _)| *count).unwrap_or(1);
+    let mut x_max = points.last().map(|(count, _, _)| *count).unwrap_or(1);
     if x_max <= x_min {
         x_max = x_min + 1;
     }
 
     let mut y_min = f64::INFINITY;
     let mut y_max = f64::NEG_INFINITY;
-    for (_, value) in &points {
-        y_min = y_min.min(*value);
-        y_max = y_max.max(*value);
+    for (_, value, uncertainty) in &points {
+        let lower = uncertainty.map_or(*value, |sigma| *value - sigma);
+        let upper = uncertainty.map_or(*value, |sigma| *value + sigma);
+        y_min = y_min.min(lower);
+        y_max = y_max.max(upper);
     }
     if (y_max - y_min).abs() <= 1.0e-12 {
         let pad = y_max.abs().max(1.0) * 0.25;
@@ -2380,6 +2461,14 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
         ));
     }
 
+    if let Some((_, final_value, _)) = points.last() {
+        let y = map_y(*final_value);
+        svg.push_str(&format!(
+            "<line x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"#8a8a8a\" stroke-width=\"1.5\" stroke-dasharray=\"6 4\" />",
+            left + plot_width
+        ));
+    }
+
     svg.push_str(&format!(
         "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
         top + plot_height,
@@ -2402,7 +2491,26 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
         escape_html(&format!("ΔF ({})", format_units(units)))
     ));
 
-    for (count, value) in &points {
+    for (count, value, uncertainty) in &points {
+        if let Some(sigma) = uncertainty {
+            let x = map_x(*count);
+            let y_low = map_y(*value - sigma);
+            let y_high = map_y(*value + sigma);
+            let cap_half_width = 5.0;
+            svg.push_str(&format!(
+                "<line x1=\"{x:.2}\" y1=\"{y_low:.2}\" x2=\"{x:.2}\" y2=\"{y_high:.2}\" stroke=\"#27403d\" stroke-opacity=\"0.45\" stroke-width=\"1.5\" />"
+            ));
+            svg.push_str(&format!(
+                "<line x1=\"{:.2}\" y1=\"{y_low:.2}\" x2=\"{:.2}\" y2=\"{y_low:.2}\" stroke=\"#27403d\" stroke-opacity=\"0.45\" stroke-width=\"1.5\" />",
+                x - cap_half_width,
+                x + cap_half_width
+            ));
+            svg.push_str(&format!(
+                "<line x1=\"{:.2}\" y1=\"{y_high:.2}\" x2=\"{:.2}\" y2=\"{y_high:.2}\" stroke=\"#27403d\" stroke-opacity=\"0.45\" stroke-width=\"1.5\" />",
+                x - cap_half_width,
+                x + cap_half_width
+            ));
+        }
         svg.push_str(&format!(
             "<circle class=\"series-point\" cx=\"{:.2}\" cy=\"{:.2}\" r=\"3.5\" />",
             map_x(*count),
@@ -2442,6 +2550,172 @@ fn render_nes_profile_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String
         "series-point",
         true,
     )
+}
+
+fn render_nes_work_distribution_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
+    let Some(temperature) = advice
+        .convergence()
+        .first()
+        .map(|point| point.from_state().temperature_k())
+    else {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES work distribution.</div>"
+            .to_string();
+    };
+    let values = advice
+        .work_values()
+        .iter()
+        .map(|value| convert_value(*value, units, temperature))
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return "<div class=\"plot-empty\">Not enough trajectories to render NES work distribution.</div>"
+            .to_string();
+    }
+
+    let width = 860.0;
+    let height = 360.0;
+    let left = 86.0;
+    let right = 24.0;
+    let top = 18.0;
+    let bottom = 48.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+
+    let mut x_min = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let mut x_max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    if (x_max - x_min).abs() <= 1.0e-12 {
+        x_min -= 0.5;
+        x_max += 0.5;
+    }
+
+    let n_bins = advice.work_histogram_bins();
+    let bin_width = (x_max - x_min) / n_bins as f64;
+    let mut counts = vec![0usize; n_bins];
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let stddev = if values.len() > 1 {
+        let ssq = values
+            .iter()
+            .map(|value| {
+                let delta = *value - mean;
+                delta * delta
+            })
+            .sum::<f64>();
+        (ssq / (values.len() as f64 - 1.0)).sqrt()
+    } else {
+        0.0
+    };
+    for value in values {
+        let mut idx = ((value - x_min) / bin_width).floor() as usize;
+        if idx >= n_bins {
+            idx = n_bins - 1;
+        }
+        counts[idx] += 1;
+    }
+    let y_max = counts.iter().copied().max().unwrap_or(0).max(1) as f64;
+
+    let map_x = |x: f64| left + (x - x_min) / (x_max - x_min) * plot_width;
+    let map_y = |y: f64| top + (1.0 - y / y_max) * plot_height;
+
+    let mut svg = format!(
+        "<svg class=\"ti-series-plot\" viewBox=\"0 0 {:.0} {:.0}\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"switching work distribution\">",
+        width, height
+    );
+
+    for tick in 0..=4 {
+        let frac = tick as f64 / 4.0;
+        let x = left + frac * plot_width;
+        let x_value = x_min + frac * (x_max - x_min);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
+            top + plot_height
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{}</text>",
+            top + plot_height + 18.0,
+            format_plot_number(x_value)
+        ));
+    }
+    for tick in 0..=4 {
+        let frac = tick as f64 / 4.0;
+        let y = top + (1.0 - frac) * plot_height;
+        let y_value = frac * y_max;
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            left + plot_width
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\">{}</text>",
+            left - 8.0,
+            y + 3.0,
+            format_plot_number(y_value)
+        ));
+    }
+
+    for (idx, count) in counts.iter().copied().enumerate() {
+        let x0 = x_min + idx as f64 * bin_width;
+        let x1 = x0 + bin_width;
+        let y = map_y(count as f64);
+        svg.push_str(&format!(
+            "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" fill=\"rgba(31,94,91,.28)\" stroke=\"#1f5e5b\" stroke-width=\"1\" />",
+            map_x(x0),
+            y,
+            (map_x(x1) - map_x(x0)).max(1.0),
+            top + plot_height - y
+        ));
+    }
+
+    if stddev > 0.0 && stddev.is_finite() {
+        let ideal_points = (0..200)
+            .map(|idx| {
+                let frac = idx as f64 / 199.0;
+                let x = x_min + frac * (x_max - x_min);
+                let z = (x - mean) / stddev;
+                let density = (-0.5 * z * z).exp() / (stddev * (2.0 * std::f64::consts::PI).sqrt());
+                let expected_count = density * counts.iter().sum::<usize>() as f64 * bin_width;
+                (map_x(x), map_y(expected_count))
+            })
+            .map(|(x, y)| format!("{x:.2},{y:.2}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        svg.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"#8a8a8a\" stroke-width=\"2\" stroke-dasharray=\"6 4\" />",
+            ideal_points
+        ));
+        let legend_y = top + 14.0;
+        let legend_x0 = left + plot_width - 190.0;
+        let legend_x1 = legend_x0 + 28.0;
+        svg.push_str(&format!(
+            "<line x1=\"{legend_x0:.2}\" y1=\"{legend_y:.2}\" x2=\"{legend_x1:.2}\" y2=\"{legend_y:.2}\" stroke=\"#8a8a8a\" stroke-width=\"2\" stroke-dasharray=\"6 4\" />"
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"start\">Simple idealized curve</text>",
+            legend_x1 + 8.0,
+            legend_y + 3.0
+        ));
+    }
+
+    svg.push_str(&format!(
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        top + plot_height,
+        left + plot_width,
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<line class=\"axis\" stroke=\"#a79d8e\" stroke-width=\"1\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\">switching work ({})</text>",
+        left + plot_width * 0.5,
+        height - 8.0,
+        escape_html(format_units(units))
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"22\" y=\"{:.2}\" transform=\"rotate(-90 22 {:.2})\" text-anchor=\"middle\">count</text>",
+        top + plot_height * 0.5,
+        top + plot_height * 0.5,
+    ));
+    svg.push_str("</svg>");
+    svg
 }
 
 fn render_nes_curvature_plot_svg(advice: &NesAdvice, units: OutputUnits) -> String {
@@ -3651,6 +3925,50 @@ fn nes_suggestion_name(kind: NesSuggestionKind) -> &'static str {
     }
 }
 
+struct NesSamplingDiagnosis<'a> {
+    label: &'a str,
+    reason: &'a str,
+    summary: String,
+}
+
+fn nes_sampling_diagnosis(advice: &NesAdvice) -> NesSamplingDiagnosis<'static> {
+    let ess_fraction = advice.boltzmann_ess_fraction();
+    let max_weight_fraction = advice.max_weight_fraction();
+    let dissipated_work = advice.dissipated_work();
+    let relative_uncertainty = advice.relative_uncertainty().unwrap_or(0.0);
+
+    let (label, reason) = if ess_fraction < 0.1
+        || max_weight_fraction > 0.2
+        || dissipated_work > 2.0
+    {
+        (
+            "prefer longer switches",
+            "the Jarzynski average is dominated by a small low-work subset, which suggests excess dissipation or an overly abrupt protocol",
+        )
+    } else if relative_uncertainty > 0.1 || ess_fraction < 0.3 {
+        (
+            "prefer more switches",
+            "trajectory-count noise still dominates, but the Boltzmann weights are not yet concentrated into a tiny tail",
+        )
+    } else {
+        (
+            "current protocol looks adequate",
+            "the work distribution and Boltzmann weights do not currently indicate a strong need for either longer switches or many more trajectories",
+        )
+    };
+
+    NesSamplingDiagnosis {
+        label,
+        reason,
+        summary: format!(
+            "Dissipated work = {}, Boltzmann ESS/N = {}, and the largest single Boltzmann weight fraction = {}.",
+            format_report_number(dissipated_work),
+            format_report_number(ess_fraction),
+            format_report_number(max_weight_fraction),
+        ),
+    }
+}
+
 fn proposal_strategy_name(strategy: alchemrs::ProposalStrategy) -> &'static str {
     match strategy {
         alchemrs::ProposalStrategy::Midpoint => "midpoint",
@@ -4134,6 +4452,7 @@ mod tests {
                 minimum_trajectories: 8,
                 relative_uncertainty_max: 0.3,
                 recent_change_sigma_max: 3.0,
+                work_histogram_bins: None,
             }),
         )
         .unwrap()
@@ -4545,6 +4864,7 @@ mod tests {
 
         assert!(output.contains("NES Report"));
         assert!(output.contains("Free Energy vs Number of Switches"));
+        assert!(output.contains("Switching Work Distribution"));
         assert!(output.contains("Mean dH/dλ"));
         assert!(output.contains("Uncertainty in dH/dλ Along Lambda"));
         assert!(output.contains("Mean Within-Run RMS in dH/dλ Along Lambda"));
@@ -4554,6 +4874,7 @@ mod tests {
         assert!(output.contains("Current recommendation"));
         assert!(output.contains("<svg"));
         assert!(output.contains("number of switches"));
+        assert!(output.contains("stroke-opacity=\"0.45\""));
     }
 
     #[test]

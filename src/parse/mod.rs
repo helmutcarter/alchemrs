@@ -1,4 +1,4 @@
-use crate::data::{DhdlSeries, SwitchingTrajectory, UNkMatrix};
+use crate::data::{DhdlSeries, NesMbarTrajectory, SwitchingTrajectory, UNkMatrix};
 use crate::error::{CoreError, Result as CoreResult};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -63,6 +63,20 @@ pub fn extract_nes_trajectory(
     }
 }
 
+pub fn extract_nes_mbar_trajectory(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> CoreResult<NesMbarTrajectory> {
+    match detect_format(path.as_ref())? {
+        ParseFormat::Amber => {
+            amber::extract_nes_mbar_trajectory(path, temperature_k).map_err(Into::into)
+        }
+        ParseFormat::Gromacs => Err(CoreError::Unsupported(
+            "NES MBAR parsing is only implemented for AMBER outputs".to_string(),
+        )),
+    }
+}
+
 fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
     let file = File::open(path).map_err(|err| {
         CoreError::Parse(format!("failed to open input for format detection: {err}"))
@@ -104,10 +118,10 @@ fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
 
 #[cfg(test)]
 mod tests {
-    use super::amber::extract_nes_trajectory;
     use super::amber::extract_u_nk;
     use super::amber::extract_u_nk_with_potential;
     use super::amber::{extract_dhdl, extract_dhdl_with_options, AmberDhdlOptions};
+    use super::amber::{extract_nes_mbar_trajectory, extract_nes_trajectory};
     use std::io::Write;
 
     #[test]
@@ -362,6 +376,68 @@ End of dvdl summary
         assert_eq!(trajectory.dvdl_path(), &[7.0 * beta, 9.0 * beta]);
         let expected_work = (1.0 + 2.0 + 3.0 + 4.0) * (0.02 / 10.0) * beta;
         assert!((trajectory.reduced_work() - expected_work).abs() < 1e-12);
+    }
+
+    #[test]
+    fn parse_simple_amber_nes_mbar_trajectory() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.0050
+ dynlmb = 0.0200
+ ntave = 10
+FEP MBAR options:
+    ifmbar = 1, bar_intervall = 1
+    mbar_states = 2
+    MBAR - lambda values considered:
+      2 total:  0.0000 1.0000
+    Extra energies will be computed 2 times.
+   4.  RESULTS
+MBAR Energy analysis:
+Energy at 0.0000 =    -10.0
+Energy at 1.0000 =     -8.0
+ ------------------------------------------------------------------------------
+| TI region  1
+ NSTEP =        1   TIME(PS) =       0.002  EPtot =   -9.0000  DV/DL =     2.0000
+ ------------------------------------------------------------------------------
+| TI region  2
+ NSTEP =        1   TIME(PS) =       0.002  EPtot =   -9.0000  DV/DL =     2.0000
+ ------------------------------------------------------------------------------
+Dynamically changing lambda: Increased clambda by       0.0200 to       0.0250
+MBAR Energy analysis:
+Energy at 0.0000 =    -11.0
+Energy at 1.0000 =     -7.0
+ ------------------------------------------------------------------------------
+| TI region  1
+ NSTEP =        2   TIME(PS) =       0.004  EPtot =   -8.5000  DV/DL =     4.0000
+ ------------------------------------------------------------------------------
+Summary of dvdl values over  2 steps:
+    2.0000
+    4.0000
+End of dvdl summary
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let trajectory = extract_nes_mbar_trajectory(file.path(), 300.0).unwrap();
+        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        assert_eq!(trajectory.initial_state().lambdas(), &[0.005]);
+        assert_eq!(trajectory.final_state().lambdas(), &[0.025]);
+        assert_eq!(trajectory.target_states().len(), 2);
+        assert_eq!(trajectory.samples().len(), 2);
+        assert_eq!(trajectory.samples()[0].step_index(), 1);
+        assert!((trajectory.samples()[0].lambda_protocol() - 0.005).abs() < 1e-12);
+        assert!((trajectory.samples()[0].reduced_work() - 2.0 * beta * 0.002).abs() < 1e-12);
+        assert_eq!(
+            trajectory.samples()[0].reduced_energies_states(),
+            &[-10.0 * beta, -8.0 * beta]
+        );
+        assert!((trajectory.samples()[0].reduced_energy_protocol() - (-9.0 * beta)).abs() < 1e-12);
+        assert!((trajectory.samples()[1].lambda_protocol() - 0.025).abs() < 1e-12);
+        assert!((trajectory.samples()[1].reduced_work() - 6.0 * beta * 0.002).abs() < 1e-12);
     }
 
     #[test]

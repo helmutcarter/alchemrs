@@ -153,6 +153,158 @@ impl SwitchingTrajectory {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct NesMbarSample {
+    step_index: usize,
+    time_ps: f64,
+    lambda_protocol: f64,
+    reduced_work: f64,
+    reduced_energy_protocol: f64,
+    reduced_energies_states: Vec<f64>,
+}
+
+impl NesMbarSample {
+    pub fn new(
+        step_index: usize,
+        time_ps: f64,
+        lambda_protocol: f64,
+        reduced_work: f64,
+        reduced_energy_protocol: f64,
+        reduced_energies_states: Vec<f64>,
+    ) -> Result<Self> {
+        if step_index == 0 {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        ensure_finite("time", &[time_ps])?;
+        ensure_finite("lambda_protocol", &[lambda_protocol])?;
+        ensure_finite("reduced_work", &[reduced_work])?;
+        ensure_finite("reduced_energy_protocol", &[reduced_energy_protocol])?;
+        ensure_finite_or_positive_infinity("reduced_energies_states", &reduced_energies_states)?;
+        if reduced_energies_states.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        Ok(Self {
+            step_index,
+            time_ps,
+            lambda_protocol,
+            reduced_work,
+            reduced_energy_protocol,
+            reduced_energies_states,
+        })
+    }
+
+    pub fn step_index(&self) -> usize {
+        self.step_index
+    }
+
+    pub fn time_ps(&self) -> f64 {
+        self.time_ps
+    }
+
+    pub fn lambda_protocol(&self) -> f64 {
+        self.lambda_protocol
+    }
+
+    pub fn reduced_work(&self) -> f64 {
+        self.reduced_work
+    }
+
+    pub fn reduced_energy_protocol(&self) -> f64 {
+        self.reduced_energy_protocol
+    }
+
+    pub fn reduced_energies_states(&self) -> &[f64] {
+        &self.reduced_energies_states
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NesMbarTrajectory {
+    initial_state: StatePoint,
+    final_state: StatePoint,
+    target_states: Vec<StatePoint>,
+    samples: Vec<NesMbarSample>,
+}
+
+impl NesMbarTrajectory {
+    pub fn new(
+        initial_state: StatePoint,
+        final_state: StatePoint,
+        target_states: Vec<StatePoint>,
+        samples: Vec<NesMbarSample>,
+    ) -> Result<Self> {
+        if initial_state.temperature_k() != final_state.temperature_k() {
+            return Err(CoreError::InvalidState(
+                "NES MBAR trajectory states must have the same temperature".to_string(),
+            ));
+        }
+        if target_states.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        if samples.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        for state in &target_states {
+            if (state.temperature_k() - initial_state.temperature_k()).abs() > 0.0 {
+                return Err(CoreError::InvalidState(
+                    "NES MBAR target states must have the same temperature".to_string(),
+                ));
+            }
+        }
+        let expected_n_states = target_states.len();
+        let mut previous_time = f64::NEG_INFINITY;
+        for sample in &samples {
+            if sample.reduced_energies_states().len() != expected_n_states {
+                return Err(CoreError::InvalidShape {
+                    expected: expected_n_states,
+                    found: sample.reduced_energies_states().len(),
+                });
+            }
+            if sample.time_ps() < previous_time {
+                return Err(CoreError::InvalidTimeOrder(
+                    "NES MBAR sample times must be nondecreasing".to_string(),
+                ));
+            }
+            previous_time = sample.time_ps();
+        }
+
+        Ok(Self {
+            initial_state,
+            final_state,
+            target_states,
+            samples,
+        })
+    }
+
+    pub fn initial_state(&self) -> &StatePoint {
+        &self.initial_state
+    }
+
+    pub fn final_state(&self) -> &StatePoint {
+        &self.final_state
+    }
+
+    pub fn target_states(&self) -> &[StatePoint] {
+        &self.target_states
+    }
+
+    pub fn samples(&self) -> &[NesMbarSample] {
+        &self.samples
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct UNkMatrix {
     n_samples: usize,
     n_states: usize,

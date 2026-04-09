@@ -221,6 +221,32 @@ pub enum Command {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    NesMbar {
+        /// AMBER nonequilibrium switching output files with `ifmbar=1`
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Temperature in K; inferred from the input files when omitted
+        #[arg(long)]
+        temperature: Option<f64>,
+        /// Number of bootstrap replicates for uncertainty estimation; `0` disables uncertainty
+        #[arg(long = "n-bootstrap", default_value_t = 0)]
+        n_bootstrap: usize,
+        /// Bootstrap random seed
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        /// Retain every `sample-stride`th saved nonequilibrium MBAR sample from each trajectory
+        #[arg(long = "sample-stride", default_value_t = 1)]
+        sample_stride: usize,
+        /// Output units
+        #[arg(long, value_enum, default_value_t = OutputUnits::KT)]
+        output_units: OutputUnits,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        output_format: OutputFormat,
+        /// Write output to a file instead of stdout
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     Iexp {
         /// Simulation output files (AMBER `.out` or GROMACS `dhdl.xvg`)
         #[arg(required = true)]
@@ -631,6 +657,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn nes_mbar_command_accepts_sample_stride_flag() {
+        let cli = Cli::parse_from([
+            "alchemrs",
+            "nes-mbar",
+            "--sample-stride",
+            "5",
+            "run_1/fwd.out",
+        ]);
+        match cli.command {
+            Command::NesMbar {
+                sample_stride,
+                inputs,
+                ..
+            } => {
+                assert_eq!(sample_stride, 5);
+                assert_eq!(inputs.len(), 1);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
     fn command_conservative(command: Command) -> bool {
         match command {
             Command::AdviseSchedule { conservative, .. }
@@ -639,7 +687,7 @@ mod tests {
             | Command::Iexp { conservative, .. }
             | Command::Dexp { conservative, .. }
             | Command::Mbar { conservative, .. } => conservative,
-            Command::Nes { .. } => true,
+            Command::Nes { .. } | Command::NesMbar { .. } => true,
         }
     }
 }

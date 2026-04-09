@@ -3,17 +3,21 @@ mod common;
 mod exp;
 mod mbar;
 mod nes;
+mod nes_mbar;
 mod ti;
 
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
 pub use nes::{NesEstimator, NesFit, NesOptions};
+pub use nes_mbar::{NesMbarEstimator, NesMbarFit, NesMbarOptions};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
 #[cfg(test)]
 mod tests {
-    use crate::data::{DhdlSeries, StatePoint, SwitchingTrajectory, UNkMatrix};
+    use crate::data::{
+        DhdlSeries, NesMbarSample, NesMbarTrajectory, StatePoint, SwitchingTrajectory, UNkMatrix,
+    };
     use crate::error::CoreError;
 
     use super::bar::{bar_estimate, BarEstimator, BarMethod, BarOptions};
@@ -21,6 +25,7 @@ mod tests {
     use super::exp::{IexpEstimator, IexpOptions};
     use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
     use super::nes::{analytic_uncertainty, jarzynski_delta_f, NesEstimator, NesOptions};
+    use super::nes_mbar::{NesMbarEstimator, NesMbarOptions};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
@@ -171,6 +176,37 @@ mod tests {
             SwitchingTrajectory::new(from.clone(), to.clone(), 1.0).unwrap(),
             SwitchingTrajectory::new(from, to, 2.0).unwrap(),
         ]
+    }
+
+    fn make_nes_mbar_trajectories() -> Vec<NesMbarTrajectory> {
+        let initial = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let final_state = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let targets = vec![
+            StatePoint::new(vec![0.5], 300.0).unwrap(),
+            StatePoint::new(vec![1.0], 300.0).unwrap(),
+        ];
+        let sample_sets = [
+            vec![
+                NesMbarSample::new(1, 0.001, 0.1, 0.0, 0.0, vec![0.2, 0.4]).unwrap(),
+                NesMbarSample::new(2, 0.002, 0.2, 0.1, 0.1, vec![0.3, 0.5]).unwrap(),
+            ],
+            vec![
+                NesMbarSample::new(1, 0.001, 0.1, 0.2, 0.0, vec![0.1, 0.6]).unwrap(),
+                NesMbarSample::new(2, 0.002, 0.2, 0.3, 0.2, vec![0.2, 0.7]).unwrap(),
+            ],
+        ];
+        sample_sets
+            .into_iter()
+            .map(|samples| {
+                NesMbarTrajectory::new(
+                    initial.clone(),
+                    final_state.clone(),
+                    targets.clone(),
+                    samples,
+                )
+                .unwrap()
+            })
+            .collect()
     }
 
     fn assert_vec_eq_with_nan(left: Option<&[f64]>, right: Option<&[f64]>) {
@@ -1036,5 +1072,37 @@ mod tests {
         let right = estimator.estimate(&trajectories).unwrap();
         assert_eq!(left.uncertainty(), right.uncertainty());
         assert!(left.uncertainty().expect("uncertainty") >= 0.0);
+    }
+
+    #[test]
+    fn nes_mbar_estimate_returns_delta_f_matrix() {
+        let trajectories = make_nes_mbar_trajectories();
+        let result = NesMbarEstimator::default().estimate(&trajectories).unwrap();
+        assert_eq!(result.n_states(), 3);
+        assert_eq!(result.states()[0].lambdas(), &[0.0]);
+        assert_eq!(result.states()[1].lambdas(), &[0.5]);
+        assert_eq!(result.states()[2].lambdas(), &[1.0]);
+        let values = result.values();
+        assert_eq!(values[0], 0.0);
+        assert!((values[1] - 0.2740469825).abs() < 1e-9);
+        assert!((values[2] - 0.6090318692).abs() < 1e-9);
+        assert!((values[5] - 0.3349848867).abs() < 1e-9);
+    }
+
+    #[test]
+    fn nes_mbar_bootstrap_returns_uncertainties() {
+        let trajectories = make_nes_mbar_trajectories();
+        let fit = NesMbarEstimator::new(NesMbarOptions {
+            n_bootstrap: 8,
+            seed: 7,
+            sample_stride: 1,
+        })
+        .fit(&trajectories)
+        .unwrap();
+        let uncertainties = fit.uncertainties().unwrap();
+        assert_eq!(uncertainties.len(), 3);
+        assert_eq!(uncertainties[0], 0.0);
+        assert!(uncertainties[1] > 0.0);
+        assert!(uncertainties[2] > 0.0);
     }
 }
