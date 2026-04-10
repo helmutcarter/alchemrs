@@ -6,17 +6,7 @@ Native SVG plotting is available as an optional `plotting` feature.
 
 ## CLI
 
-The `alchemrs` binary is the primary entry point.
-
-Commands:
-
-- `advise-schedule`
-- `ti`
-- `bar`
-- `mbar`
-- `nes`
-- `iexp`
-- `dexp`
+The `alchemrs` binary is the primary entry point. Top-level commands are `advise-schedule`, `ti`, `bar`, `mbar`, `nes`, `iexp`, and `dexp`. Don't see your favorite estimator here? Submit an issue and I'd be happy to add it!
 
 ### Build
 Pre-built binaries for versioned releases can be found at https://github.com/helmutcarter/alchemrs/releases 
