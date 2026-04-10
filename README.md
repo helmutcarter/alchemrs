@@ -257,7 +257,7 @@ alchemrs nes \
   /path/to/run_*/fwd.out
 ```
 
-`nes` parses AMBER nonequilibrium switching outputs such as `fwd.out` and `rev.out`, integrates the switching work from the final `Summary of dvdl values ...` block, and applies the Jarzynski equality. Analytic uncertainty is used by default; pass `--n-bootstrap <N>` to request bootstrap uncertainty instead, or `--no-uncertainty` to suppress it.
+`nes` parses AMBER nonequilibrium switching outputs, integrates the switching work from the final `Summary of dvdl values ...` block, and applies the Jarzynski equality. Analytic uncertainty is used by default; pass `--n-bootstrap <N>` to request bootstrap uncertainty instead, or `--no-uncertainty` to suppress it.
 
 ## Documentation
 
