@@ -1,0 +1,16 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "alchemrs"
+version = "0.1.0"
+description = "Python bindings for the alchemrs Rust free-energy toolkit"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+
+[tool.maturin]
+python-source = "python"
+module-name = "alchemrs._alchemrs"
+manifest-path = "alchemrs-py/Cargo.toml"

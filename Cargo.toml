@@ -34,3 +34,6 @@ tempfile = "3"
 [[example]]
 name = "generate_doc_plots"
 required-features = ["plotting"]
+
+[workspace]
+members = ["alchemrs-py"]

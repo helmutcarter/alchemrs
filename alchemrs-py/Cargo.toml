@@ -1,0 +1,15 @@
+[package]
+name = "alchemrs-py"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "_alchemrs"
+crate-type = ["cdylib"]
+
+[dependencies]
+alchemrs = { path = ".." }
+numpy = "0.23"
+pyo3 = { version = "0.23", features = ["abi3-py39", "extension-module"] }

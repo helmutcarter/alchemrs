@@ -86,6 +86,15 @@ Use the Rust API when you need embedding, custom orchestration, or tighter contr
 
 - `cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out`
 - `cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out`
+- `cargo run --example openmm_u_kln_mbar`
+
+The OpenMM example shows how to convert a tutorial-style `u_kln[k][l][n]`
+tensor of reduced potentials into `UNkMatrix` windows for direct MBAR analysis.
+
+There are also runnable Python/OpenMM toy-system examples under `python/examples`:
+
+- `python/examples/openmm_u_kln_mbar.py`
+- `python/examples/openmm_nes.py`
 
 Optional plotting helpers can be enabled with:
 

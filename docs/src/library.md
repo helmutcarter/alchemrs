@@ -88,6 +88,21 @@ if let Some(labels) = windows[0].lambda_labels() {
 }
 ```
 
+## OpenMM `u_kln` conversion example
+
+If you already have reduced potentials from an OpenMM workflow as a
+`u_kln[k][l][n]` tensor, you do not need a dedicated parser. Convert each
+sampled-state slice into a `UNkMatrix` window and pass the resulting windows to
+the existing estimators.
+
+The runnable example in `examples/openmm_u_kln_mbar.rs` demonstrates this
+conversion end to end.
+
+If you prefer Python, the repo also includes pure-OpenMM toy-system examples in:
+
+- `python/examples/openmm_u_kln_mbar.py`
+- `python/examples/openmm_nes.py`
+
 The same `analysis` module also provides plot-ready convergence series for TI, BAR, MBAR, IEXP,
 DEXP, and NES:
 

@@ -47,6 +47,16 @@ cargo test
 cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out
 
 cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out
+
+cargo run --example openmm_u_kln_mbar
+```
+
+Pure-OpenMM Python toy-system examples are also available:
+
+```bash
+$env:PYTHONPATH=".\python"
+python .\python\examples\openmm_u_kln_mbar.py
+python .\python\examples\openmm_nes.py
 ```
 
 ## Build this book
