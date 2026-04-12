@@ -28,7 +28,7 @@ def pytest_sessionstart(session) -> None:
 
 def find_built_extension() -> Path | None:
     debug_dir = REPO_ROOT / "target" / "debug"
-    suffixes = tuple(importlib.machinery.EXTENSION_SUFFIXES)
+    suffixes = tuple(set(importlib.machinery.EXTENSION_SUFFIXES) | {".dll"})
     candidates = []
     for pattern in ("_alchemrs*", "lib_alchemrs*"):
         candidates.extend(debug_dir.glob(pattern))

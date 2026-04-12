@@ -7,7 +7,7 @@ mod nes;
 mod ti;
 mod uwham;
 
-pub use atm::{AtmEstimator, AtmFit, AtmOptions};
+pub use atm::{AtmBindingEstimate, AtmEstimator, AtmFit, AtmOptions};
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};

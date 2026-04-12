@@ -20,9 +20,16 @@ from ._alchemrs import (
     UnsupportedInputError,
 )
 from . import openmm
-from ._alchemrs import analysis, estimators, parse, prep
+from ._alchemrs import analysis, atm, estimators, parse, prep
 
 DecorrelationOptions = prep.DecorrelationOptions
+ATM = atm.ATM
+AtmBindingEstimate = atm.AtmBindingEstimate
+AtmLogQMatrix = atm.AtmLogQMatrix
+AtmSample = atm.AtmSample
+AtmSampleSet = atm.AtmSampleSet
+AtmSchedule = atm.AtmSchedule
+AtmState = atm.AtmState
 TI = estimators.TI
 BAR = estimators.BAR
 MBAR = estimators.MBAR
@@ -32,6 +39,14 @@ NES = estimators.NES
 __all__ = [
     "AlchemrsError",
     "analysis",
+    "atm",
+    "ATM",
+    "AtmBindingEstimate",
+    "AtmLogQMatrix",
+    "AtmSample",
+    "AtmSampleSet",
+    "AtmSchedule",
+    "AtmState",
     "BAR",
     "BlockEstimate",
     "ConvergenceError",

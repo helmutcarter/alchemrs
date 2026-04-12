@@ -1,3 +1,4 @@
+mod atm;
 mod analysis;
 mod data;
 mod error;
@@ -11,6 +12,7 @@ use pyo3::prelude::*;
 fn _alchemrs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     error::register(py, module)?;
     data::register(module)?;
+    atm::register(py, module)?;
     analysis::register(py, module)?;
     estimators::register(py, module)?;
     parse::register(py, module)?;

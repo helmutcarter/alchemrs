@@ -99,6 +99,72 @@ def test_openmm_helper_windows_from_u_kln_and_switching_trajectories() -> None:
     assert len(trajectories[0].dvdl_path) == 2
 
 
+def test_atm_module_builds_leg_samples_and_binding_estimate() -> None:
+    schedule = ar.atm.schedule_from_arrays(
+        state_ids=[0, 1],
+        direction="forward",
+        lambda1=[0.0, 1.0],
+        lambda2=[0.0, 1.0],
+        alpha=[0.0, 0.0],
+        u0=[0.0, 0.0],
+        w0=[0.0, 0.0],
+        temperature_k=[300.0, 300.0],
+    )
+    samples = ar.atm.sample_set_from_arrays(
+        schedule,
+        state_ids=[0, 1, 0, 1],
+        potential_energies_kcal_per_mol=[10.0, 12.0, 11.0, 13.0],
+        perturbation_energies_kcal_per_mol=[2.0, 2.0, 2.5, 2.5],
+    )
+    reverse = ar.atm.sample_set_from_arrays(
+        ar.atm.schedule_from_arrays(
+            state_ids=[0, 1],
+            direction="reverse",
+            lambda1=[0.0, 1.0],
+            lambda2=[0.0, 1.0],
+            alpha=[0.0, 0.0],
+            u0=[0.0, 0.0],
+            w0=[0.0, 0.0],
+            temperature_k=[300.0, 300.0],
+        ),
+        state_ids=[0, 1, 0, 1],
+        potential_energies_kcal_per_mol=[10.0, 12.0, 11.0, 13.0],
+        perturbation_energies_kcal_per_mol=[2.0, 2.0, 2.5, 2.5],
+    )
+
+    matrix = samples.to_log_q_matrix()
+    estimator = ar.ATM()
+    fit = estimator.fit_leg(samples)
+    leg = estimator.estimate_leg(samples)
+    binding = estimator.estimate_rbfe(samples, reverse)
+
+    assert schedule.direction == "forward"
+    assert len(schedule.states) == 2
+    assert len(samples.samples) == 4
+    assert matrix.n_observations == 4
+    assert matrix.n_states == 2
+    assert matrix.sampled_counts == [2, 2]
+    assert fit.n_observations == 4
+    assert np.isfinite(leg.delta_f)
+    assert np.isfinite(binding.delta_f)
+
+
+def test_atm_python_example_runs() -> None:
+    module = load_example_module("atm_analysis")
+
+    leg1 = module.leg_samples("forward")
+    leg2 = module.leg_samples("reverse")
+    estimator = ar.ATM()
+
+    leg1_result = estimator.estimate_leg(leg1)
+    leg2_result = estimator.estimate_leg(leg2)
+    binding = estimator.estimate_rbfe(leg1, leg2)
+
+    assert np.isfinite(leg1_result.delta_f)
+    assert np.isfinite(leg2_result.delta_f)
+    assert np.isfinite(binding.delta_f)
+
+
 def test_amber_fixture_python_example_matches_expected_ranges() -> None:
     module = load_example_module("amber_fixture_analysis")
     paths = module.amber_windows()

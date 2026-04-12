@@ -10,6 +10,21 @@ fn two_states() -> Vec<StatePoint> {
     ]
 }
 
+fn make_standard_schedule(direction: AtmDirection) -> AtmSchedule {
+    AtmSchedule::new(vec![
+        AtmState::new(0, direction, 0.0, 0.0, None, 0.0, 0.0, None, 0.0, 300.0).unwrap(),
+        AtmState::new(1, direction, 1.0, 1.0, None, 0.0, 0.0, None, 0.0, 300.0).unwrap(),
+    ])
+    .unwrap()
+}
+
+fn make_standard_samples() -> Vec<AtmSample> {
+    vec![
+        AtmSample::new(0, 10.0, 2.0).unwrap(),
+        AtmSample::new(1, 12.0, 2.0).unwrap(),
+    ]
+}
+
 #[test]
 fn atm_matrix_rejects_zero_observations() {
     let err = AtmLogQMatrix::new(0, 2, Vec::new(), two_states(), vec![0, 0]).unwrap_err();
@@ -106,43 +121,13 @@ fn atm_estimator_parallel_matches_serial() {
 
 #[test]
 fn atm_sample_set_to_log_q_matrix_matches_expected_standard_softplus_limit() {
-    let schedule = AtmSchedule::new(vec![
-        AtmState::new(
-            0,
-            AtmDirection::Forward,
-            0.0,
-            0.0,
-            None,
-            0.0,
-            0.0,
-            None,
-            0.0,
-            300.0,
-        )
-        .unwrap(),
-        AtmState::new(
-            1,
-            AtmDirection::Forward,
-            1.0,
-            1.0,
-            None,
-            0.0,
-            0.0,
-            None,
-            0.0,
-            300.0,
-        )
-        .unwrap(),
-    ])
+    let matrix = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Forward),
+        make_standard_samples(),
+    )
+    .unwrap()
+    .to_log_q_matrix()
     .unwrap();
-    let samples = vec![
-        AtmSample::new(0, 10.0, 2.0).unwrap(),
-        AtmSample::new(1, 12.0, 2.0).unwrap(),
-    ];
-    let matrix = AtmSampleSet::new(schedule, samples)
-        .unwrap()
-        .to_log_q_matrix()
-        .unwrap();
 
     let beta = 1.0 / (0.001_986_209 * 300.0);
     let expected = [-beta * 10.0, -beta * 12.0, -beta * 10.0, -beta * 12.0];
@@ -154,41 +139,9 @@ fn atm_sample_set_to_log_q_matrix_matches_expected_standard_softplus_limit() {
 
 #[test]
 fn atm_sample_set_reverses_state_order_for_reverse_leg() {
-    let schedule = AtmSchedule::new(vec![
-        AtmState::new(
-            0,
-            AtmDirection::Reverse,
-            0.0,
-            0.0,
-            None,
-            0.0,
-            0.0,
-            None,
-            0.0,
-            300.0,
-        )
-        .unwrap(),
-        AtmState::new(
-            1,
-            AtmDirection::Reverse,
-            1.0,
-            1.0,
-            None,
-            0.0,
-            0.0,
-            None,
-            0.0,
-            300.0,
-        )
-        .unwrap(),
-    ])
-    .unwrap();
     let matrix = AtmSampleSet::new(
-        schedule,
-        vec![
-            AtmSample::new(0, 10.0, 2.0).unwrap(),
-            AtmSample::new(1, 12.0, 2.0).unwrap(),
-        ],
+        make_standard_schedule(AtmDirection::Reverse),
+        make_standard_samples(),
     )
     .unwrap()
     .to_log_q_matrix()
@@ -196,4 +149,73 @@ fn atm_sample_set_reverses_state_order_for_reverse_leg() {
 
     assert_eq!(matrix.states()[0].lambdas()[0], 1.0);
     assert_eq!(matrix.states()[1].lambdas()[0], 0.0);
+}
+
+#[test]
+fn atm_estimate_leg_matches_fit_leg_result() {
+    let samples = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Forward),
+        make_standard_samples(),
+    )
+    .unwrap();
+    let estimator = AtmEstimator::default();
+
+    let estimate = estimator.estimate_leg(&samples).unwrap();
+    let fit_result = estimator.fit_leg(&samples).unwrap().leg_result().unwrap();
+
+    assert!((estimate.delta_f() - fit_result.delta_f()).abs() < 1e-12);
+    assert_eq!(estimate.uncertainty(), fit_result.uncertainty());
+    assert_eq!(
+        estimate.from_state().lambdas(),
+        fit_result.from_state().lambdas()
+    );
+    assert_eq!(
+        estimate.to_state().lambdas(),
+        fit_result.to_state().lambdas()
+    );
+}
+
+#[test]
+fn atm_binding_estimate_combines_two_legs() {
+    let leg1 = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Forward),
+        make_standard_samples(),
+    )
+    .unwrap();
+    let leg2 = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Reverse),
+        make_standard_samples(),
+    )
+    .unwrap();
+    let estimator = AtmEstimator::default();
+
+    let binding = estimator.estimate_rbfe(&leg1, &leg2).unwrap();
+    let leg1_estimate = estimator.estimate_leg(&leg1).unwrap();
+    let leg2_estimate = estimator.estimate_leg(&leg2).unwrap();
+
+    assert!(
+        (binding.delta_f() - (leg1_estimate.delta_f() - leg2_estimate.delta_f())).abs() < 1e-12
+    );
+    assert_eq!(binding.uncertainty(), None);
+    assert!((binding.leg1().delta_f() - leg1_estimate.delta_f()).abs() < 1e-12);
+    assert!((binding.leg2().delta_f() - leg2_estimate.delta_f()).abs() < 1e-12);
+}
+
+#[test]
+fn atm_binding_estimate_requires_opposite_directions() {
+    let leg1 = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Forward),
+        make_standard_samples(),
+    )
+    .unwrap();
+    let leg2 = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Forward),
+        make_standard_samples(),
+    )
+    .unwrap();
+
+    let err = AtmEstimator::default()
+        .estimate_binding(&leg1, &leg2)
+        .unwrap_err();
+    assert!(matches!(err, CoreError::InvalidState(_)));
 }

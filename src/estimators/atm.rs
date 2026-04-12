@@ -1,5 +1,5 @@
-use crate::data::{AtmLogQMatrix, DeltaFMatrix, StatePoint};
-use crate::error::Result;
+use crate::data::{AtmLogQMatrix, AtmSampleSet, DeltaFMatrix, FreeEnergyEstimate, StatePoint};
+use crate::error::{CoreError, Result};
 
 use super::uwham::{fit_log_q_input, UwhamLogQInput, UwhamOptions};
 
@@ -18,6 +18,14 @@ pub struct AtmFit {
     inner: super::uwham::UwhamFit,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtmBindingEstimate {
+    delta_f: f64,
+    uncertainty: Option<f64>,
+    leg1: FreeEnergyEstimate,
+    leg2: FreeEnergyEstimate,
+}
+
 impl AtmEstimator {
     pub fn new(options: AtmOptions) -> Self {
         Self { options }
@@ -29,8 +37,59 @@ impl AtmEstimator {
         Ok(AtmFit { inner })
     }
 
+    pub fn fit_leg(&self, samples: &AtmSampleSet) -> Result<AtmFit> {
+        self.fit(&samples.to_log_q_matrix()?)
+    }
+
     pub fn estimate(&self, data: &AtmLogQMatrix) -> Result<DeltaFMatrix> {
         self.fit(data)?.result()
+    }
+
+    pub fn estimate_leg(&self, samples: &AtmSampleSet) -> Result<FreeEnergyEstimate> {
+        self.fit_leg(samples)?.leg_result()
+    }
+
+    pub fn estimate_binding(
+        &self,
+        leg1: &AtmSampleSet,
+        leg2: &AtmSampleSet,
+    ) -> Result<AtmBindingEstimate> {
+        if leg1.schedule().direction() == leg2.schedule().direction() {
+            return Err(CoreError::InvalidState(
+                "ATM binding analysis requires legs with opposite directions".to_string(),
+            ));
+        }
+        if (leg1.schedule().temperature_k() - leg2.schedule().temperature_k()).abs() > 1.0e-9 {
+            return Err(CoreError::InvalidState(
+                "ATM binding analysis requires both legs to use the same temperature".to_string(),
+            ));
+        }
+
+        let leg1_estimate = self.estimate_leg(leg1)?;
+        let leg2_estimate = self.estimate_leg(leg2)?;
+        let delta_f = leg1_estimate.delta_f() - leg2_estimate.delta_f();
+        Ok(AtmBindingEstimate {
+            delta_f,
+            uncertainty: None,
+            leg1: leg1_estimate,
+            leg2: leg2_estimate,
+        })
+    }
+
+    pub fn estimate_rbfe(
+        &self,
+        leg1: &AtmSampleSet,
+        leg2: &AtmSampleSet,
+    ) -> Result<AtmBindingEstimate> {
+        self.estimate_binding(leg1, leg2)
+    }
+
+    pub fn estimate_abfe(
+        &self,
+        leg1: &AtmSampleSet,
+        leg2: &AtmSampleSet,
+    ) -> Result<AtmBindingEstimate> {
+        self.estimate_binding(leg1, leg2)
     }
 }
 
@@ -61,5 +120,52 @@ impl AtmFit {
 
     pub fn result(&self) -> Result<DeltaFMatrix> {
         self.inner.result()
+    }
+
+    pub fn leg_result(&self) -> Result<FreeEnergyEstimate> {
+        let from_state = self
+            .states()
+            .first()
+            .ok_or(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            })?
+            .clone();
+        let to_state = self
+            .states()
+            .last()
+            .ok_or(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            })?
+            .clone();
+        let delta_f = self
+            .free_energies()
+            .first()
+            .zip(self.free_energies().last())
+            .map(|(first, last)| first - last)
+            .ok_or(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            })?;
+        FreeEnergyEstimate::new(delta_f, None, from_state, to_state)
+    }
+}
+
+impl AtmBindingEstimate {
+    pub fn delta_f(&self) -> f64 {
+        self.delta_f
+    }
+
+    pub fn uncertainty(&self) -> Option<f64> {
+        self.uncertainty
+    }
+
+    pub fn leg1(&self) -> &FreeEnergyEstimate {
+        &self.leg1
+    }
+
+    pub fn leg2(&self) -> &FreeEnergyEstimate {
+        &self.leg2
     }
 }
