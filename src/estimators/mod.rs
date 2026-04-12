@@ -4,12 +4,14 @@ mod exp;
 mod mbar;
 mod nes;
 mod ti;
+mod uwham;
 
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
 pub use nes::{NesEstimator, NesFit, NesOptions};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
+pub use uwham::{UwhamEstimator, UwhamFit, UwhamOptions};
 
 #[cfg(test)]
 mod tests {
@@ -22,6 +24,7 @@ mod tests {
     use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
     use super::nes::{analytic_uncertainty, jarzynski_delta_f, NesEstimator, NesOptions};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
+    use super::uwham::{UwhamEstimator, UwhamOptions};
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
         let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
@@ -880,6 +883,19 @@ mod tests {
     }
 
     #[test]
+    fn uwham_supports_multidimensional_lambda_states() {
+        let fit = UwhamEstimator::default()
+            .fit(&make_multidimensional_windows())
+            .unwrap();
+        let result = fit.result().unwrap();
+        assert_eq!(fit.n_states(), 2);
+        assert_eq!(fit.states()[0].lambdas(), &[0.0, 0.0]);
+        assert_eq!(fit.states()[1].lambdas(), &[1.0, 0.0]);
+        assert_eq!(fit.lambda_labels().unwrap(), &["coul-lambda", "vdw-lambda"]);
+        assert_eq!(result.n_states(), 2);
+    }
+
+    #[test]
     fn exp_supports_multidimensional_lambda_states() {
         let fit = IexpEstimator::default()
             .fit(&make_multidimensional_windows())
@@ -922,6 +938,61 @@ mod tests {
             .estimate_with_uncertainty(&windows)
             .unwrap();
         assert!(result.values().iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn uwham_supports_positive_infinity_u_nk_values() {
+        let windows = make_two_state_windows_with_positive_infinity();
+        let fit = UwhamEstimator::default().fit(&windows).unwrap();
+        let result = fit.result().unwrap();
+        assert!(result.values().iter().all(|value| value.is_finite()));
+        assert!(fit.weights().iter().all(|value| value.is_finite()));
+    }
+
+    #[test]
+    fn uwham_returns_antisymmetric_delta_f_matrix() {
+        let windows = make_two_state_windows();
+        let uwham = UwhamEstimator::default().estimate(&windows).unwrap();
+        assert_eq!(uwham.values()[0], 0.0);
+        assert_eq!(uwham.values()[3], 0.0);
+        assert!((uwham.values()[1] + uwham.values()[2]).abs() < 1e-12);
+    }
+
+    #[test]
+    fn uwham_parallel_matches_serial() {
+        let windows = make_two_state_windows();
+        let serial = UwhamEstimator::new(UwhamOptions {
+            parallel: false,
+            ..UwhamOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let parallel = UwhamEstimator::new(UwhamOptions {
+            parallel: true,
+            ..UwhamOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        assert_slice_close(serial.free_energies(), parallel.free_energies(), 1e-12);
+        assert_slice_close(serial.weights(), parallel.weights(), 1e-12);
+        assert_slice_close(
+            serial.result().unwrap().values(),
+            parallel.result().unwrap().values(),
+            1e-12,
+        );
+    }
+
+    #[test]
+    fn uwham_respects_iteration_limit() {
+        let windows = make_two_state_windows();
+        let err = UwhamEstimator::new(UwhamOptions {
+            max_iterations: 0,
+            tolerance: 1.0e-7,
+            parallel: false,
+        })
+        .fit(&windows)
+        .unwrap_err();
+        assert!(matches!(err, CoreError::ConvergenceFailure));
     }
 
     #[test]

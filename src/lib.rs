@@ -64,7 +64,7 @@ pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{
     IexpEstimator, IexpFit, IexpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
-    NesEstimator, NesFit, NesOptions,
+    NesEstimator, NesFit, NesOptions, UwhamEstimator, UwhamFit, UwhamOptions,
 };
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 pub use parse::{extract_dhdl, extract_nes_trajectory, extract_u_nk, extract_u_nk_with_potential};
