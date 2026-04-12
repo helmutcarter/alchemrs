@@ -82,8 +82,8 @@ fn windows_from_openmm_u_kln(
 
         let mut sample_major = Vec::with_capacity(n_samples * n_states);
         for sample_idx in 0..n_samples {
-            for evaluated_idx in 0..n_states {
-                sample_major.push(evaluated_by_state[evaluated_idx][sample_idx]);
+            for series in evaluated_by_state.iter().take(n_states) {
+                sample_major.push(series[sample_idx]);
             }
         }
 
