@@ -13,6 +13,7 @@ Relevant paths:
 
 - `python/alchemrs`: Python package wrapper around the native extension
 - `python/tests`: Python-side test coverage
+- `python/examples/amber_fixture_analysis.py`: bundled AMBER fixture analysis through the Python API
 - `python/examples/openmm_u_kln_mbar.py`: pure-OpenMM equilibrium MBAR toy example
 - `python/examples/openmm_nes.py`: pure-OpenMM nonequilibrium switching toy example
 
@@ -26,10 +27,21 @@ PowerShell:
 
 ```powershell
 $env:PYTHONPATH=".\python"
+python .\python\examples\amber_fixture_analysis.py
 python .\python\examples\openmm_u_kln_mbar.py
 python .\python\examples\openmm_nes.py
 python -m pytest .\python\tests -q
 ```
+
+## Bundled AMBER fixture workflow
+
+Use `python/examples/amber_fixture_analysis.py` for the simplest end-to-end
+Python example against real repository data. It:
+
+- parses the bundled `fixtures/amber/acetamide_tiny` dataset
+- runs TI directly from `dH/dlambda`
+- runs MBAR from `u_nk` plus `EPtot` decorrelation
+- prints `dG` values in `kcal/mol`
 
 ## Python API shape
 

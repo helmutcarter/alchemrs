@@ -55,6 +55,7 @@ Pure-OpenMM Python toy-system examples are also available:
 
 ```bash
 $env:PYTHONPATH=".\python"
+python .\python\examples\amber_fixture_analysis.py
 python .\python\examples\openmm_u_kln_mbar.py
 python .\python\examples\openmm_nes.py
 ```

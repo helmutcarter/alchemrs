@@ -93,6 +93,7 @@ tensor of reduced potentials into `UNkMatrix` windows for direct MBAR analysis.
 
 There are also runnable Python/OpenMM toy-system examples under `python/examples`:
 
+- `python/examples/amber_fixture_analysis.py`
 - `python/examples/openmm_u_kln_mbar.py`
 - `python/examples/openmm_nes.py`
 
