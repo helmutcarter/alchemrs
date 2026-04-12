@@ -70,6 +70,35 @@ def test_analysis_convergence_and_overlap_module_exports() -> None:
     assert points[-1].delta_f == pytest.approx(-113.58992316, abs=1e-5)
 
 
+def test_openmm_helper_windows_from_u_kln_and_switching_trajectories() -> None:
+    u_kln = np.array(
+        [
+            [[0.0, 0.1], [0.5, 0.6]],
+            [[0.4, 0.3], [0.0, 0.1]],
+        ],
+        dtype=float,
+    )
+    windows = ar.openmm.windows_from_u_kln(u_kln, [0.0, 1.0], 300.0)
+
+    assert len(windows) == 2
+    assert windows[0].n_samples == 2
+    assert windows[0].n_states == 2
+    assert np.allclose(windows[0].data, np.array([[0.0, 0.5], [0.1, 0.6]]))
+
+    trajectories = ar.openmm.switching_trajectories_from_work_values(
+        [1.0, 2.0],
+        initial_lambdas=[0.0],
+        final_lambdas=[1.0],
+        temperature_k=300.0,
+        lambda_paths=[[0.0, 0.5], [0.0, 0.5]],
+        dvdl_paths=[[1.0, 1.5], [2.0, 2.5]],
+    )
+    assert len(trajectories) == 2
+    assert trajectories[0].reduced_work == pytest.approx(1.0)
+    assert len(trajectories[0].lambda_path) == 2
+    assert len(trajectories[0].dvdl_path) == 2
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("openmm") is None,
     reason="openmm is required for the runnable OpenMM examples",
@@ -88,7 +117,7 @@ def test_openmm_equilibrium_example_conversion_and_mbar() -> None:
     temperature_k = config.temperature.value_in_unit(module.unit.kelvin)
 
     u_kln = module.collect_u_kln(config)
-    windows = module.windows_from_u_kln(u_kln, config.lambdas, temperature_k)
+    windows = ar.openmm.windows_from_u_kln(u_kln, config.lambdas, temperature_k)
     fit = ar.MBAR().fit(windows)
     result = fit.result_with_uncertainty()
 
