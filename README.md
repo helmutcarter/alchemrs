@@ -96,6 +96,7 @@ There are also runnable Python/OpenMM toy-system examples under `python/examples
 - `python/examples/amber_fixture_analysis.py`
 - `python/examples/openmm_u_kln_mbar.py`
 - `python/examples/openmm_nes.py`
+- `python/examples/openmm_atm.py`
 
 Optional plotting helpers can be enabled with:
 

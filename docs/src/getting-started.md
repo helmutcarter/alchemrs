@@ -58,6 +58,7 @@ $env:PYTHONPATH=".\python"
 python .\python\examples\amber_fixture_analysis.py
 python .\python\examples\openmm_u_kln_mbar.py
 python .\python\examples\openmm_nes.py
+python .\python\examples\openmm_atm.py
 ```
 
 See [Python and OpenMM](python.md) for the Python package layout, helper APIs,

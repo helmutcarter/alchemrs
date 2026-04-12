@@ -16,6 +16,7 @@ Relevant paths:
 - `python/examples/amber_fixture_analysis.py`: bundled AMBER fixture analysis through the Python API
 - `python/examples/openmm_u_kln_mbar.py`: pure-OpenMM equilibrium MBAR toy example
 - `python/examples/openmm_nes.py`: pure-OpenMM nonequilibrium switching toy example
+- `python/examples/openmm_atm.py`: pure-OpenMM ATM-style toy example
 
 ## Local usage
 
@@ -30,6 +31,7 @@ $env:PYTHONPATH=".\python"
 python .\python\examples\amber_fixture_analysis.py
 python .\python\examples\openmm_u_kln_mbar.py
 python .\python\examples\openmm_nes.py
+python .\python\examples\openmm_atm.py
 python -m pytest .\python\tests -q
 ```
 
@@ -51,10 +53,12 @@ The bindings mirror the Rust crate structure at a high level:
 - `alchemrs.prep`
 - `alchemrs.estimators`
 - `alchemrs.analysis`
+- `alchemrs.atm`
 - `alchemrs.openmm`
 
 Top-level estimator aliases are also available:
 
+- `alchemrs.ATM`
 - `alchemrs.MBAR`
 - `alchemrs.BAR`
 - `alchemrs.TI`
@@ -73,10 +77,21 @@ Current reusable helper module:
 - `alchemrs.openmm.windows_from_u_kln(...)`
 - `alchemrs.openmm.switching_trajectories_from_work_values(...)`
 
+For ATM-style workflows, the Python bindings expose a dedicated analysis model:
+
+- `alchemrs.atm.AtmState`
+- `alchemrs.atm.AtmSchedule`
+- `alchemrs.atm.AtmSample`
+- `alchemrs.atm.AtmSampleSet`
+- `alchemrs.atm.ATM`
+- `alchemrs.atm.schedule_from_arrays(...)`
+- `alchemrs.atm.sample_set_from_arrays(...)`
+
 This keeps the core design simple:
 
 - equilibrium reduced potentials map to `UNkMatrix`
 - nonequilibrium work values map to `SwitchingTrajectory`
+- ATM schedule metadata plus per-sample `state_id`, `potE`, and `pertE` map to `AtmSampleSet`
 
 Once those objects exist, the standard `prep`, `estimators`, and `analysis`
 APIs apply unchanged.
@@ -104,6 +119,31 @@ Use `python/examples/openmm_nes.py` when you want a concrete reference for:
 
 The current example uses a toy harmonic oscillator so it can run with plain
 `openmm` from `pip install openmm`.
+
+## ATM-style OpenMM workflow
+
+Use `python/examples/openmm_atm.py` when you want a concrete reference for:
+
+1. defining an ATM leg schedule from arrays
+2. sampling separate thermodynamic states in OpenMM
+3. recording the per-sample quantities used by AToM-style analysis:
+   - `state_id`
+   - `potE`
+   - `pertE`
+4. converting those samples into `alchemrs.atm.AtmSampleSet`
+5. running `alchemrs.ATM().estimate_leg(...)` and `estimate_rbfe(...)`
+
+The example is intentionally analysis-focused. It does not parse a standard ATM
+output format because OpenMM-based ATM workflows do not currently share one.
+Instead, it documents the stable integration boundary for custom workflows:
+
+- schedule metadata
+- sampled state ids
+- potential energies
+- perturbation energies
+
+That is the Python-level equivalent of the AToM analysis data that feeds its
+UWHAM step.
 
 ## Scope and limitations
 
