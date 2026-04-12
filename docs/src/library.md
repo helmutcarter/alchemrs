@@ -98,10 +98,8 @@ the existing estimators.
 The runnable example in `examples/openmm_u_kln_mbar.rs` demonstrates this
 conversion end to end.
 
-If you prefer Python, the repo also includes pure-OpenMM toy-system examples in:
-
-- `python/examples/openmm_u_kln_mbar.py`
-- `python/examples/openmm_nes.py`
+If you prefer Python, see [Python and OpenMM](python.md) for the bindings API,
+OpenMM helper functions, and the runnable Python toy-system examples.
 
 The same `analysis` module also provides plot-ready convergence series for TI, BAR, MBAR, IEXP,
 DEXP, and NES:

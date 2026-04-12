@@ -13,4 +13,5 @@
 - [Plotting](plotting.md)
 - [Outputs and Provenance](outputs.md)
 - [Library Guide](library.md)
+- [Python and OpenMM](python.md)
 - [Compatibility and Limitations](compatibility.md)

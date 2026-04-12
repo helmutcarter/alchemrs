@@ -59,6 +59,9 @@ python .\python\examples\openmm_u_kln_mbar.py
 python .\python\examples\openmm_nes.py
 ```
 
+See [Python and OpenMM](python.md) for the Python package layout, helper APIs,
+and the current local-usage workflow.
+
 ## Build this book
 
 This documentation uses `mdBook`.
