@@ -105,38 +105,6 @@ cargo build --features plotting --release
 
 ## CLI Output Example
 
-Example JSON output:
-
-```json
-{
-  "delta_f": -113.58,
-  "uncertainty": 1.17,
-  "from_lambda": 0.0,
-  "to_lambda": 1.0,
-  "units": "kT",
-  "overlap": {
-    "scalar": 0.0183,
-    "eigenvalues": [1.0, 0.9817]
-  },
-  "provenance": {
-    "estimator": "mbar",
-    "temperature_k": 300.0,
-    "decorrelate": true,
-    "remove_burnin": 0,
-    "auto_equilibrate": false,
-    "fast": false,
-    "conservative": true,
-    "nskip": 1,
-    "u_nk_observable": "de",
-    "lambda_components": null,
-    "windows": 15,
-    "samples_in": 300,
-    "samples_after_burnin": 300,
-    "samples_kept": 126
-  }
-}
-```
-
 For multidimensional GROMACS schedules, the parsed `UNkMatrix`, estimator `DeltaFMatrix`, and `OverlapMatrix` all preserve parser-derived lambda component names when available through `.lambda_labels()`.
 
 ### Advisor details
