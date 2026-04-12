@@ -6,3 +6,6 @@
 /for_reference_only
 /scripts/bench*
 /reference
+*.pyd
+*.typed
+*.pyc
