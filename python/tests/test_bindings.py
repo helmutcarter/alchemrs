@@ -249,6 +249,46 @@ def test_openmm_nes_example_forward_and_reverse_paths() -> None:
     assert np.isfinite(reverse_result.uncertainty)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("openmm") is None,
+    reason="openmm is required for the runnable OpenMM examples",
+)
+def test_openmm_atm_example_sample_collection_and_binding_estimate() -> None:
+    module = load_example_module("openmm_atm")
+    random.seed(0)
+
+    config = module.AtmConfig(
+        equilibration_steps=50,
+        steps_per_sample=5,
+        n_samples_per_state=20,
+        lambdas=(0.0, 0.5, 1.0),
+    )
+
+    leg1 = module.collect_leg_samples(
+        config,
+        direction="forward",
+        displacement=5.0 * module.unit.angstroms,
+    )
+    leg2 = module.collect_leg_samples(
+        config,
+        direction="reverse",
+        displacement=3.0 * module.unit.angstroms,
+    )
+    estimator = ar.ATM()
+
+    leg1_result = estimator.estimate_leg(leg1)
+    leg2_result = estimator.estimate_leg(leg2)
+    binding = estimator.estimate_rbfe(leg1, leg2)
+
+    assert len(leg1.samples) == 60
+    assert len(leg2.samples) == 60
+    assert leg1.schedule.direction == "forward"
+    assert leg2.schedule.direction == "reverse"
+    assert np.isfinite(leg1_result.delta_f)
+    assert np.isfinite(leg2_result.delta_f)
+    assert np.isfinite(binding.delta_f)
+
+
 def load_example_module(name: str):
     path = EXAMPLES / f"{name}.py"
     spec = importlib.util.spec_from_file_location(f"python_examples_{name}", path)
