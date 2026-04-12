@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
+import random
+import sys
 
+import numpy as np
 import pytest
 
 import alchemrs as ar
 
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "amber" / "acetamide_tiny"
+EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 TEMPERATURE_K = 300.0
 
 
@@ -63,3 +68,73 @@ def test_analysis_convergence_and_overlap_module_exports() -> None:
     assert len(eigenvalues) == len(windows)
     assert len(points) == len(windows)
     assert points[-1].delta_f == pytest.approx(-113.58992316, abs=1e-5)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("openmm") is None,
+    reason="openmm is required for the runnable OpenMM examples",
+)
+def test_openmm_equilibrium_example_conversion_and_mbar() -> None:
+    module = load_example_module("openmm_u_kln_mbar")
+    random.seed(0)
+    np.random.seed(0)
+
+    config = module.EquilibriumConfig(
+        equilibration_steps=50,
+        steps_per_sample=5,
+        n_samples_per_window=20,
+        lambdas=(0.0, 0.5, 1.0),
+    )
+    temperature_k = config.temperature.value_in_unit(module.unit.kelvin)
+
+    u_kln = module.collect_u_kln(config)
+    windows = module.windows_from_u_kln(u_kln, config.lambdas, temperature_k)
+    fit = ar.MBAR().fit(windows)
+    result = fit.result_with_uncertainty()
+
+    assert u_kln.shape == (3, 3, 20)
+    assert len(windows) == 3
+    assert all(window.n_samples == 20 for window in windows)
+    assert np.isfinite(result.values[0, -1])
+    assert np.isfinite(result.uncertainties[0, -1])
+    assert np.isfinite(fit.overlap_scalar())
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("openmm") is None,
+    reason="openmm is required for the runnable OpenMM examples",
+)
+def test_openmm_nes_example_forward_and_reverse_paths() -> None:
+    module = load_example_module("openmm_nes")
+    random.seed(0)
+
+    config = module.SwitchingConfig(
+        equilibration_steps=50,
+        n_steps_per_switch=20,
+        n_switches=8,
+    )
+
+    forward = module.run_switches(config, lambda_start=0.0, lambda_end=1.0)
+    reverse = module.run_switches(config, lambda_start=1.0, lambda_end=0.0)
+
+    forward_result = ar.NES().estimate(forward)
+    reverse_result = ar.NES().estimate(reverse)
+
+    assert len(forward) == 8
+    assert len(reverse) == 8
+    assert all(len(traj.lambda_path) == 20 for traj in forward)
+    assert all(len(traj.dvdl_path) == 20 for traj in forward)
+    assert np.isfinite(forward_result.delta_f)
+    assert np.isfinite(forward_result.uncertainty)
+    assert np.isfinite(reverse_result.delta_f)
+    assert np.isfinite(reverse_result.uncertainty)
+
+
+def load_example_module(name: str):
+    path = EXAMPLES / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"python_examples_{name}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
