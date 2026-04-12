@@ -99,6 +99,30 @@ def test_openmm_helper_windows_from_u_kln_and_switching_trajectories() -> None:
     assert len(trajectories[0].dvdl_path) == 2
 
 
+def test_openmm_helper_builds_atm_schedule_and_sample_set() -> None:
+    schedule = ar.openmm.atm_schedule_from_lambdas(
+        [0.0, 1.0],
+        direction="forward",
+        temperature_k=300.0,
+        alpha=0.0,
+        u0=0.0,
+        w0=0.0,
+    )
+    samples = ar.openmm.atm_sample_set_from_arrays(
+        lambdas=[0.0, 1.0],
+        direction="forward",
+        temperature_k=300.0,
+        state_ids=[0, 1, 0, 1],
+        potential_energies_kcal_per_mol=[10.0, 12.0, 11.0, 13.0],
+        perturbation_energies_kcal_per_mol=[2.0, 2.0, 2.5, 2.5],
+    )
+
+    assert schedule.direction == "forward"
+    assert len(schedule.states) == 2
+    assert len(samples.samples) == 4
+    assert samples.schedule.direction == "forward"
+
+
 def test_atm_module_builds_leg_samples_and_binding_estimate() -> None:
     schedule = ar.atm.schedule_from_arrays(
         state_ids=[0, 1],

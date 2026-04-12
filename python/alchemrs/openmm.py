@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import numpy as np
 
-from . import StatePoint, SwitchingTrajectory, UNkMatrix
+from ._alchemrs import StatePoint, SwitchingTrajectory, UNkMatrix, atm
+
+if TYPE_CHECKING:
+    from . import AtmSampleSet, AtmSchedule
 
 
 def kt_in_kcal_per_mol(temperature_k: float) -> float:
@@ -88,6 +91,75 @@ def switching_trajectories_from_work_values(
     return trajectories
 
 
+def atm_schedule_from_lambdas(
+    lambdas: Sequence[float],
+    *,
+    direction: str,
+    temperature_k: float,
+    alpha: Sequence[float] | float = 0.0,
+    u0: Sequence[float] | float = 0.0,
+    w0: Sequence[float] | float = 0.0,
+    lambda3: Sequence[float] | float | None = None,
+    u1: Sequence[float] | float | None = None,
+) -> AtmSchedule:
+    n_states = len(lambdas)
+    if n_states == 0:
+        raise ValueError("lambdas must contain at least one state")
+
+    return atm.schedule_from_arrays(
+        state_ids=list(range(n_states)),
+        direction=direction,
+        lambda1=[float(value) for value in lambdas],
+        lambda2=[float(value) for value in lambdas],
+        alpha=_broadcast_state_values(alpha, n_states, "alpha"),
+        u0=_broadcast_state_values(u0, n_states, "u0"),
+        w0=_broadcast_state_values(w0, n_states, "w0"),
+        temperature_k=[float(temperature_k)] * n_states,
+        lambda3=(
+            _broadcast_state_values(lambda3, n_states, "lambda3")
+            if lambda3 is not None
+            else None
+        ),
+        u1=(
+            _broadcast_state_values(u1, n_states, "u1")
+            if u1 is not None
+            else None
+        ),
+    )
+
+
+def atm_sample_set_from_arrays(
+    *,
+    lambdas: Sequence[float],
+    direction: str,
+    temperature_k: float,
+    state_ids: Sequence[int],
+    potential_energies_kcal_per_mol,
+    perturbation_energies_kcal_per_mol,
+    alpha: Sequence[float] | float = 0.0,
+    u0: Sequence[float] | float = 0.0,
+    w0: Sequence[float] | float = 0.0,
+    lambda3: Sequence[float] | float | None = None,
+    u1: Sequence[float] | float | None = None,
+) -> AtmSampleSet:
+    schedule = atm_schedule_from_lambdas(
+        lambdas,
+        direction=direction,
+        temperature_k=temperature_k,
+        alpha=alpha,
+        u0=u0,
+        w0=w0,
+        lambda3=lambda3,
+        u1=u1,
+    )
+    return atm.sample_set_from_arrays(
+        schedule,
+        state_ids=list(state_ids),
+        potential_energies_kcal_per_mol=potential_energies_kcal_per_mol,
+        perturbation_energies_kcal_per_mol=perturbation_energies_kcal_per_mol,
+    )
+
+
 def _state_grid(
     lambdas: Sequence[float] | Sequence[Sequence[float]],
     temperature_k: float,
@@ -107,3 +179,15 @@ def _optional_paths(paths, expected_len: int, label: str):
     if len(paths) != expected_len:
         raise ValueError(f"{label} length must match reduced_work_values")
     return paths
+
+
+def _broadcast_state_values(values, n_states: int, label: str) -> list[float]:
+    if np.isscalar(values):
+        return [float(values)] * n_states
+
+    array = np.asarray(values, dtype=float)
+    if array.ndim != 1:
+        raise ValueError(f"{label} must be a scalar or one-dimensional sequence")
+    if len(array) != n_states:
+        raise ValueError(f"{label} length must match lambdas")
+    return array.tolist()

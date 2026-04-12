@@ -109,21 +109,7 @@ def perturbation_energy_kcal_per_mol(config: AtmConfig, x_nm: float, displaced_n
     return displaced - base
 
 
-def make_schedule(config: AtmConfig, direction: str):
-    return ar.atm.schedule_from_arrays(
-        state_ids=list(range(len(config.lambdas))),
-        direction=direction,
-        lambda1=list(config.lambdas),
-        lambda2=list(config.lambdas),
-        alpha=[0.0] * len(config.lambdas),
-        u0=[0.0] * len(config.lambdas),
-        w0=[0.0] * len(config.lambdas),
-        temperature_k=[config.temperature.value_in_unit(unit.kelvin)] * len(config.lambdas),
-    )
-
-
 def collect_leg_samples(config: AtmConfig, *, direction: str, displacement: unit.Quantity):
-    schedule = make_schedule(config, direction)
     displaced_nm = displacement.value_in_unit(unit.nanometers)
     state_ids: list[int] = []
     potential_energies: list[float] = []
@@ -145,8 +131,10 @@ def collect_leg_samples(config: AtmConfig, *, direction: str, displacement: unit
                 perturbation_energy_kcal_per_mol(config, x_nm, displaced_nm)
             )
 
-    return ar.atm.sample_set_from_arrays(
-        schedule,
+    return ar.openmm.atm_sample_set_from_arrays(
+        lambdas=config.lambdas,
+        direction=direction,
+        temperature_k=config.temperature.value_in_unit(unit.kelvin),
         state_ids=state_ids,
         potential_energies_kcal_per_mol=potential_energies,
         perturbation_energies_kcal_per_mol=perturbation_energies,
