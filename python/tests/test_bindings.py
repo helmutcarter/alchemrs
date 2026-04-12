@@ -99,6 +99,30 @@ def test_openmm_helper_windows_from_u_kln_and_switching_trajectories() -> None:
     assert len(trajectories[0].dvdl_path) == 2
 
 
+def test_amber_fixture_python_example_matches_expected_ranges() -> None:
+    module = load_example_module("amber_fixture_analysis")
+    paths = module.amber_windows()
+
+    assert len(paths) == 15
+
+    series = [ar.parse.extract_dhdl(path, module.TEMPERATURE_K) for path in paths]
+    ti_result = ar.TI().estimate(series)
+    ti_kcal = ti_result.delta_f * module.kt_in_kcal_per_mol(module.TEMPERATURE_K)
+
+    windows = []
+    for path in paths:
+        u_nk, epot = ar.parse.extract_u_nk_with_potential(path, module.TEMPERATURE_K)
+        windows.append(ar.prep.decorrelate_u_nk_with_observable(u_nk, epot))
+
+    mbar_fit = ar.MBAR().fit(windows)
+    mbar_result = mbar_fit.result_with_uncertainty()
+    mbar_kcal = mbar_result.values[0, -1] * module.kt_in_kcal_per_mol(module.TEMPERATURE_K)
+
+    assert ti_kcal == pytest.approx(8.048447, abs=1e-6)
+    assert mbar_kcal == pytest.approx(-75.004329, abs=1e-6)
+    assert mbar_fit.overlap_scalar() == pytest.approx(0.005514, abs=1e-6)
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("openmm") is None,
     reason="openmm is required for the runnable OpenMM examples",
