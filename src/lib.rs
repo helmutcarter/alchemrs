@@ -57,8 +57,8 @@ pub use analysis::{
     TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };
 pub use data::{
-    DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, SwitchingTrajectory,
-    UNkMatrix,
+    AtmLogQMatrix, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint,
+    SwitchingTrajectory, UNkMatrix,
 };
 pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};

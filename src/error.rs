@@ -44,6 +44,17 @@ pub(crate) fn ensure_finite_or_positive_infinity(label: &str, values: &[f64]) ->
     Ok(())
 }
 
+pub(crate) fn ensure_finite_or_negative_infinity(label: &str, values: &[f64]) -> Result<()> {
+    for (idx, value) in values.iter().enumerate() {
+        if value.is_nan() || *value == f64::INFINITY {
+            return Err(CoreError::NonFiniteValue(format!(
+                "{label}[{idx}] must be finite or -inf"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn ensure_finite_or_nan(label: &str, values: &[f64]) -> Result<()> {
     for (idx, value) in values.iter().enumerate() {
         if value.is_infinite() {

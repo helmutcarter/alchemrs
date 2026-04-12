@@ -1,8 +1,10 @@
+mod atm;
 mod results;
 mod state;
 mod state_match;
 mod timeseries;
 
+pub use atm::AtmLogQMatrix;
 pub use results::{DeltaFMatrix, FreeEnergyEstimate, OverlapMatrix};
 pub use state::StatePoint;
 pub(crate) use state_match::{
