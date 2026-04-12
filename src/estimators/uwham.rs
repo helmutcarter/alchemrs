@@ -1,4 +1,4 @@
-use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
+use crate::data::{find_state_index_exact, AtmLogQMatrix, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 use nalgebra::{DMatrix, DVector};
 use rayon::prelude::*;
@@ -31,7 +31,7 @@ pub struct UwhamEstimator {
 }
 
 #[derive(Debug, Clone)]
-struct PooledUwhamInput {
+pub(crate) struct UwhamLogQInput {
     log_q: Vec<f64>,
     n_observations: usize,
     n_states: usize,
@@ -51,7 +51,7 @@ struct ReducedUwhamInput {
 
 #[derive(Debug)]
 pub struct UwhamFit {
-    input: PooledUwhamInput,
+    input: UwhamLogQInput,
     free_energies: Vec<f64>,
     weights: OnceLock<Vec<f64>>,
     parallel: bool,
@@ -77,19 +77,23 @@ impl UwhamEstimator {
             });
         }
 
-        let input = PooledUwhamInput::from_windows(windows)?;
-        let free_energies = solve_uwham(&input, &self.options)?;
-        Ok(UwhamFit {
-            input,
-            free_energies,
-            weights: OnceLock::new(),
-            parallel: self.options.parallel,
-        })
+        let input = UwhamLogQInput::from_windows(windows)?;
+        fit_log_q_input(input, &self.options)
     }
 
     pub fn estimate(&self, windows: &[UNkMatrix]) -> Result<DeltaFMatrix> {
         self.fit(windows)?.result()
     }
+}
+
+pub(crate) fn fit_log_q_input(input: UwhamLogQInput, options: &UwhamOptions) -> Result<UwhamFit> {
+    let free_energies = solve_uwham(&input, options)?;
+    Ok(UwhamFit {
+        input,
+        free_energies,
+        weights: OnceLock::new(),
+        parallel: options.parallel,
+    })
 }
 
 impl UwhamFit {
@@ -169,7 +173,7 @@ impl UwhamFit {
     }
 }
 
-impl PooledUwhamInput {
+impl UwhamLogQInput {
     fn from_windows(windows: &[UNkMatrix]) -> Result<Self> {
         let states = ensure_consistent_states(windows)?;
         let lambda_labels = ensure_consistent_lambda_labels(windows)?;
@@ -203,10 +207,25 @@ impl PooledUwhamInput {
             lambda_labels,
         })
     }
+
+    pub(crate) fn from_atm(matrix: &AtmLogQMatrix) -> Self {
+        Self {
+            log_q: matrix.log_q().to_vec(),
+            n_observations: matrix.n_observations(),
+            n_states: matrix.n_states(),
+            size: matrix
+                .sampled_counts()
+                .iter()
+                .map(|&count| count as f64)
+                .collect(),
+            states: matrix.states().to_vec(),
+            lambda_labels: matrix.lambda_labels().map(|labels| labels.to_vec()),
+        }
+    }
 }
 
 impl ReducedUwhamInput {
-    fn from_pooled(input: &PooledUwhamInput) -> Result<Self> {
+    fn from_pooled(input: &UwhamLogQInput) -> Result<Self> {
         let sampled_indices = input
             .size
             .iter()
@@ -259,7 +278,7 @@ impl ReducedUwhamInput {
     }
 }
 
-fn solve_uwham(input: &PooledUwhamInput, options: &UwhamOptions) -> Result<Vec<f64>> {
+pub(crate) fn solve_uwham(input: &UwhamLogQInput, options: &UwhamOptions) -> Result<Vec<f64>> {
     let reduced = ReducedUwhamInput::from_pooled(input)?;
     let sampled_count = reduced.sampled_indices.len();
     let variable_count = sampled_count.saturating_sub(1);
@@ -328,7 +347,7 @@ fn solve_uwham(input: &PooledUwhamInput, options: &UwhamOptions) -> Result<Vec<f
 }
 
 fn finalize_free_energies(
-    input: &PooledUwhamInput,
+    input: &UwhamLogQInput,
     reduced: &ReducedUwhamInput,
     ze_nonbase: &DVector<f64>,
     parallel: bool,
@@ -373,7 +392,7 @@ fn finalize_free_energies(
 }
 
 fn evaluate_objective(
-    input: &PooledUwhamInput,
+    input: &UwhamLogQInput,
     reduced: &ReducedUwhamInput,
     ze_nonbase: &DVector<f64>,
     parallel: bool,
@@ -478,7 +497,7 @@ fn newton_direction(objective: &UwhamObjective) -> Option<DVector<f64>> {
 }
 
 fn log_qsum_per_observation(
-    input: &PooledUwhamInput,
+    input: &UwhamLogQInput,
     reduced: &ReducedUwhamInput,
     sampled_ze: &[f64],
     parallel: bool,
@@ -546,7 +565,7 @@ fn insert_base_state(ze_nonbase: &DVector<f64>, base_index: usize) -> Vec<f64> {
 }
 
 fn uwham_weights(
-    input: &PooledUwhamInput,
+    input: &UwhamLogQInput,
     reduced: &ReducedUwhamInput,
     ze: &[f64],
     parallel: bool,
@@ -684,7 +703,7 @@ fn write_csv_vector(
     Ok(())
 }
 
-fn write_metadata(output_dir: &Path, input: &PooledUwhamInput) -> Result<()> {
+fn write_metadata(output_dir: &Path, input: &UwhamLogQInput) -> Result<()> {
     let mut content = String::new();
     content.push_str("# UWHAM reference input export\n");
     content.push_str("# Generated from alchemrs fixture-backed windows.\n");

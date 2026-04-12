@@ -57,15 +57,16 @@ pub use analysis::{
     TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };
 pub use data::{
-    AtmLogQMatrix, DeltaFMatrix, DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint,
-    SwitchingTrajectory, UNkMatrix,
+    AtmDirection, AtmLogQMatrix, AtmSample, AtmSampleSet, AtmSchedule, AtmState, DeltaFMatrix,
+    DhdlSeries, FreeEnergyEstimate, OverlapMatrix, StatePoint, SwitchingTrajectory, UNkMatrix,
 };
 pub use error::{CoreError, Result};
-pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{
-    IexpEstimator, IexpFit, IexpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
-    NesEstimator, NesFit, NesOptions, UwhamEstimator, UwhamFit, UwhamOptions,
+    AtmEstimator, AtmFit, AtmOptions, IexpEstimator, IexpFit, IexpOptions, MbarEstimator, MbarFit,
+    MbarOptions, MbarSolver, NesEstimator, NesFit, NesOptions, UwhamEstimator, UwhamFit,
+    UwhamOptions,
 };
+pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 pub use parse::{extract_dhdl, extract_nes_trajectory, extract_u_nk, extract_u_nk_with_potential};
 #[cfg(feature = "plotting")]
