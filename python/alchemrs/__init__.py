@@ -19,6 +19,7 @@ from ._alchemrs import (
     UNkMatrix,
     UnsupportedInputError,
 )
+from . import openmm
 from ._alchemrs import analysis, estimators, parse, prep
 
 DecorrelationOptions = prep.DecorrelationOptions
@@ -47,6 +48,7 @@ __all__ = [
     "MBAR",
     "NES",
     "NonFiniteValueError",
+    "openmm",
     "OverlapMatrix",
     "ParseError",
     "RequiresOneDimensionalLambdaError",

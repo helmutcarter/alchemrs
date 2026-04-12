@@ -95,7 +95,7 @@ def reduced_potential(context: Context, temperature_k: float) -> float:
 
 
 def kt_in_kcal_per_mol(temperature_k: float) -> float:
-    return K_B_KCAL_PER_MOL_K * temperature_k
+    return ar.openmm.kt_in_kcal_per_mol(temperature_k)
 
 
 def collect_u_kln(config: EquilibriumConfig) -> np.ndarray:
@@ -121,37 +121,6 @@ def collect_u_kln(config: EquilibriumConfig) -> np.ndarray:
     return u_kln
 
 
-def windows_from_u_kln(
-    u_kln: np.ndarray,
-    lambdas: tuple[float, ...],
-    temperature_k: float,
-) -> list[ar.UNkMatrix]:
-    if u_kln.ndim != 3:
-        raise ValueError("u_kln must have shape (sampled_state, evaluated_state, sample)")
-    if u_kln.shape[0] != len(lambdas) or u_kln.shape[1] != len(lambdas):
-        raise ValueError("u_kln state dimensions must match the lambda grid")
-
-    evaluated_states = [
-        ar.StatePoint([lam], temperature_k)
-        for lam in lambdas
-    ]
-
-    windows: list[ar.UNkMatrix] = []
-    for sampled_idx, sampled_lambda in enumerate(lambdas):
-        data = u_kln[sampled_idx].T.copy()
-        time_ps = np.arange(data.shape[0], dtype=float)
-        windows.append(
-            ar.UNkMatrix(
-                data=data,
-                time_ps=time_ps,
-                sampled_state=ar.StatePoint([sampled_lambda], temperature_k),
-                evaluated_states=evaluated_states,
-            )
-        )
-
-    return windows
-
-
 def main() -> None:
     random.seed(0)
     np.random.seed(0)
@@ -161,7 +130,7 @@ def main() -> None:
     conversion = kt_in_kcal_per_mol(temperature_k)
 
     u_kln = collect_u_kln(config)
-    windows = windows_from_u_kln(u_kln, config.lambdas, temperature_k)
+    windows = ar.openmm.windows_from_u_kln(u_kln, config.lambdas, temperature_k)
 
     fit = ar.MBAR().fit(windows)
     result = fit.result_with_uncertainty()
