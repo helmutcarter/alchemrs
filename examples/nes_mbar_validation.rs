@@ -2,8 +2,8 @@ use std::env;
 use std::path::PathBuf;
 
 use alchemrs::{
-    extract_nes_mbar_trajectory, extract_nes_trajectory, NesEstimator, NesMbarEstimator,
-    NesMbarOptions, NesMbarSample, NesMbarTrajectory, NesMbarWeighting,
+    extract_nes_mbar_block_trajectory, extract_nes_trajectory, NesEstimator, NesMbarBlockSample,
+    NesMbarBlockTrajectory, NesMbarEstimator, NesMbarOptions, NesMbarWeighting,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,13 +20,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let trajectories: Vec<_> = paths
         .iter()
-        .map(|path| extract_nes_mbar_trajectory(path, temperature))
+        .map(|path| extract_nes_mbar_block_trajectory(path, temperature))
         .collect::<Result<_, _>>()?;
 
     let mut mean_work_diff = 0.0f64;
     let mut max_work_diff = 0.0f64;
     for (nes, nes_mbar) in switching.iter().zip(trajectories.iter()) {
-        let diff = (nes.reduced_work() - nes_mbar.samples().last().unwrap().reduced_work()).abs();
+        let diff =
+            (nes.reduced_work() - nes_mbar.blocks().last().unwrap().reduced_work_after()).abs();
         mean_work_diff += diff;
         max_work_diff = max_work_diff.max(diff);
     }
@@ -50,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let delta = endpoint_delta(&fit);
         let samples_kept: usize = trajectories
             .iter()
-            .map(|trajectory| trajectory.samples().iter().step_by(stride).count())
+            .map(|trajectory| trajectory.blocks().iter().step_by(stride).count())
             .sum();
         println!(
             "stride,{stride},{delta:.12},{:.12},{samples_kept}",
@@ -71,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let delta = endpoint_delta(&fit);
         let samples_kept: usize = trajectories
             .iter()
-            .map(|trajectory| trajectory.samples().iter().step_by(stride).count())
+            .map(|trajectory| trajectory.blocks().iter().step_by(stride).count())
             .sum();
         println!(
             "slice_ess,{stride},{delta:.12},{:.12},{samples_kept}",
@@ -92,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let delta = endpoint_delta(&fit);
         let samples_kept: usize = trajectories
             .iter()
-            .map(|trajectory| trajectory.samples().iter().step_by(stride).count())
+            .map(|trajectory| trajectory.blocks().iter().step_by(stride).count())
             .sum();
         println!(
             "slice_ess_filtered,{stride},{delta:.12},{:.12},{samples_kept}",
@@ -107,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Result<_, _>>()?;
         let fit = NesMbarEstimator::default().estimate(&end_trajectories)?;
         let delta = endpoint_delta(&fit);
-        let samples_kept: usize = end_trajectories.iter().map(|t| t.samples().len()).sum();
+        let samples_kept: usize = end_trajectories.iter().map(|t| t.blocks().len()).sum();
         println!(
             "block_end,{block},{delta:.12},{:.12},{samples_kept}",
             delta - nes_anchor.delta_f()
@@ -119,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .collect::<Result<_, _>>()?;
         let fit = NesMbarEstimator::default().estimate(&avg_trajectories)?;
         let delta = endpoint_delta(&fit);
-        let samples_kept: usize = avg_trajectories.iter().map(|t| t.samples().len()).sum();
+        let samples_kept: usize = avg_trajectories.iter().map(|t| t.blocks().len()).sum();
         println!(
             "block_avg,{block},{delta:.12},{:.12},{samples_kept}",
             delta - nes_anchor.delta_f()
@@ -153,18 +154,18 @@ fn endpoint_delta(matrix: &alchemrs::DeltaFMatrix) -> f64 {
 }
 
 fn block_end_trajectory(
-    trajectory: &NesMbarTrajectory,
+    trajectory: &NesMbarBlockTrajectory,
     block_size: usize,
-) -> Result<NesMbarTrajectory, Box<dyn std::error::Error>> {
+) -> Result<NesMbarBlockTrajectory, Box<dyn std::error::Error>> {
     if block_size == 0 {
         return Err("block_size must be positive".into());
     }
     let samples = trajectory
-        .samples()
+        .blocks()
         .chunks(block_size)
         .map(|chunk| chunk.last().unwrap().clone())
         .collect::<Vec<_>>();
-    Ok(NesMbarTrajectory::new(
+    Ok(NesMbarBlockTrajectory::new(
         trajectory.initial_state().clone(),
         trajectory.final_state().clone(),
         trajectory.target_states().to_vec(),
@@ -173,45 +174,67 @@ fn block_end_trajectory(
 }
 
 fn block_average_trajectory(
-    trajectory: &NesMbarTrajectory,
+    trajectory: &NesMbarBlockTrajectory,
     block_size: usize,
-) -> Result<NesMbarTrajectory, Box<dyn std::error::Error>> {
+) -> Result<NesMbarBlockTrajectory, Box<dyn std::error::Error>> {
     if block_size == 0 {
         return Err("block_size must be positive".into());
     }
     let n_targets = trajectory.target_states().len();
     let mut samples = Vec::new();
-    for chunk in trajectory.samples().chunks(block_size) {
-        let mut lambda = 0.0;
+    for chunk in trajectory.blocks().chunks(block_size) {
+        let mut lambda_before = 0.0;
+        let mut lambda_after = 0.0;
+        let mut reduced_dvdl_avg = 0.0;
+        let mut reduced_rms_dvdl = 0.0;
+        let mut reduced_rms_count = 0usize;
         let mut energy_protocol = 0.0;
+        let mut energy_protocol_count = 0usize;
         let mut energies_states = vec![0.0; n_targets];
-        for sample in chunk {
-            lambda += sample.lambda_protocol();
-            energy_protocol += sample.reduced_energy_protocol();
+        for block in chunk {
+            lambda_before += block.lambda_before();
+            lambda_after += block.lambda_after();
+            reduced_dvdl_avg += block.reduced_dvdl_avg();
+            if let Some(value) = block.reduced_rms_dvdl() {
+                reduced_rms_dvdl += value;
+                reduced_rms_count += 1;
+            }
+            if let Some(value) = block.reduced_energy_protocol() {
+                energy_protocol += value;
+                energy_protocol_count += 1;
+            }
             for (acc, value) in energies_states
                 .iter_mut()
-                .zip(sample.reduced_energies_states().iter())
+                .zip(block.reduced_energies_states().iter())
             {
                 *acc += *value;
             }
         }
         let denom = chunk.len() as f64;
-        lambda /= denom;
-        energy_protocol /= denom;
+        lambda_before /= denom;
+        lambda_after /= denom;
+        reduced_dvdl_avg /= denom;
+        let reduced_rms_dvdl =
+            (reduced_rms_count > 0).then_some(reduced_rms_dvdl / reduced_rms_count as f64);
+        let reduced_energy_protocol =
+            (energy_protocol_count > 0).then_some(energy_protocol / energy_protocol_count as f64);
         for value in &mut energies_states {
             *value /= denom;
         }
         let last = chunk.last().unwrap();
-        samples.push(NesMbarSample::new(
-            last.step_index(),
+        samples.push(NesMbarBlockSample::new(
+            last.block_index(),
             last.time_ps(),
-            lambda,
-            last.reduced_work(),
-            energy_protocol,
+            lambda_before,
+            lambda_after,
+            last.reduced_work_after(),
+            reduced_dvdl_avg,
+            reduced_rms_dvdl,
+            reduced_energy_protocol,
             energies_states,
         )?);
     }
-    Ok(NesMbarTrajectory::new(
+    Ok(NesMbarBlockTrajectory::new(
         trajectory.initial_state().clone(),
         trajectory.final_state().clone(),
         trajectory.target_states().to_vec(),

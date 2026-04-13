@@ -1,4 +1,6 @@
-use crate::data::{DhdlSeries, NesMbarTrajectory, SwitchingTrajectory, UNkMatrix};
+use crate::data::{
+    DhdlSeries, NesMbarBlockTrajectory, NesMbarTrajectory, SwitchingTrajectory, UNkMatrix,
+};
 use crate::error::{CoreError, Result as CoreResult};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -77,6 +79,20 @@ pub fn extract_nes_mbar_trajectory(
     }
 }
 
+pub fn extract_nes_mbar_block_trajectory(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> CoreResult<NesMbarBlockTrajectory> {
+    match detect_format(path.as_ref())? {
+        ParseFormat::Amber => {
+            amber::extract_nes_mbar_block_trajectory(path, temperature_k).map_err(Into::into)
+        }
+        ParseFormat::Gromacs => Err(CoreError::Unsupported(
+            "NES MBAR block parsing is only implemented for AMBER outputs".to_string(),
+        )),
+    }
+}
+
 fn detect_format(path: &Path) -> CoreResult<ParseFormat> {
     let file = File::open(path).map_err(|err| {
         CoreError::Parse(format!("failed to open input for format detection: {err}"))
@@ -121,7 +137,9 @@ mod tests {
     use super::amber::extract_u_nk;
     use super::amber::extract_u_nk_with_potential;
     use super::amber::{extract_dhdl, extract_dhdl_with_options, AmberDhdlOptions};
-    use super::amber::{extract_nes_mbar_trajectory, extract_nes_trajectory};
+    use super::amber::{
+        extract_nes_mbar_block_trajectory, extract_nes_mbar_trajectory, extract_nes_trajectory,
+    };
     use std::io::Write;
 
     #[test]
@@ -438,6 +456,74 @@ End of dvdl summary
         assert!((trajectory.samples()[0].reduced_energy_protocol() - (-9.0 * beta)).abs() < 1e-12);
         assert!((trajectory.samples()[1].lambda_protocol() - 0.025).abs() < 1e-12);
         assert!((trajectory.samples()[1].reduced_work() - 6.0 * beta * 0.002).abs() < 1e-12);
+    }
+
+    #[test]
+    fn parse_amber_nes_mbar_block_trajectory_tracks_lambda_jumps() {
+        let content = r#"
+   2.  CONTROL  DATA  FOR  THE  RUN
+Molecular dynamics:
+ dt = 0.002
+temperature regulation:
+ temp0 = 300.0
+Free energy options:
+ clambda = 0.0050
+ dynlmb = 0.0200
+ ntave = 10
+FEP MBAR options:
+    ifmbar = 1, bar_intervall = 1
+    mbar_states = 2
+    MBAR - lambda values considered:
+      2 total:  0.0050 0.0250
+    Extra energies will be computed 2 times.
+   4.  RESULTS
+      A V E R A G E S   O V E R      10 S T E P S
+ NSTEP =       10   TIME(PS) =       0.020
+ DV/DL  =       12.0000
+      R M S  F L U C T U A T I O N S
+ NSTEP =       10   TIME(PS) =       0.020
+ DV/DL  =        1.5000
+Dynamically changing lambda: Increased clambda by       0.0200 to       0.0250
+MBAR Energy analysis:
+Energy at 0.0050 =    -10.0
+Energy at 0.0250 =     -8.0
+ ------------------------------------------------------------------------------
+      A V E R A G E S   O V E R      10 S T E P S
+ NSTEP =       20   TIME(PS) =       0.040
+ DV/DL  =       14.0000
+Dynamically changing lambda: Increased clambda by       0.0200 to       0.0450
+MBAR Energy analysis:
+Energy at 0.0050 =    -11.0
+Energy at 0.0250 =     -7.0
+ ------------------------------------------------------------------------------
+Summary of dvdl values over  20 steps:
+    1.0000
+End of dvdl summary
+"#;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+        let trajectory = extract_nes_mbar_block_trajectory(file.path(), 300.0).unwrap();
+        let beta = 1.0 / (0.00198720425864083 * 300.0);
+        assert_eq!(trajectory.initial_state().lambdas(), &[0.005]);
+        assert_eq!(trajectory.final_state().lambdas(), &[0.045]);
+        assert_eq!(trajectory.blocks().len(), 2);
+
+        let first = &trajectory.blocks()[0];
+        assert_eq!(first.block_index(), 1);
+        assert!((first.time_ps() - 0.020).abs() < 1e-12);
+        assert!((first.lambda_before() - 0.005).abs() < 1e-12);
+        assert!((first.lambda_after() - 0.025).abs() < 1e-12);
+        assert!((first.reduced_work_after() - 12.0 * beta * 0.020).abs() < 1e-12);
+        assert!((first.reduced_dvdl_avg() - 12.0 * beta).abs() < 1e-12);
+        assert_eq!(first.reduced_rms_dvdl(), Some(1.5 * beta));
+        assert_eq!(first.reduced_energy_protocol(), Some(-8.0 * beta));
+
+        let second = &trajectory.blocks()[1];
+        assert_eq!(second.block_index(), 2);
+        assert!((second.lambda_before() - 0.025).abs() < 1e-12);
+        assert!((second.lambda_after() - 0.045).abs() < 1e-12);
+        assert!((second.reduced_work_after() - (12.0 + 14.0) * beta * 0.020).abs() < 1e-12);
+        assert_eq!(second.reduced_energy_protocol(), None);
     }
 
     #[test]

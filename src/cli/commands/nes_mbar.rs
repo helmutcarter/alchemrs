@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use alchemrs::{extract_nes_mbar_trajectory, NesMbarEstimator, NesMbarOptions, NesMbarWeighting};
+use alchemrs::{
+    extract_nes_mbar_block_trajectory, NesMbarEstimator, NesMbarOptions, NesMbarWeighting,
+};
 
 use crate::cli::input::AnalysisSampleCounts;
 use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
@@ -24,8 +26,8 @@ pub fn run(
     let mut trajectories = Vec::with_capacity(inputs.len());
     let mut total_samples_in = 0usize;
     for path in inputs {
-        let trajectory = extract_nes_mbar_trajectory(path, temperature)?;
-        total_samples_in += trajectory.samples().len();
+        let trajectory = extract_nes_mbar_block_trajectory(path, temperature)?;
+        total_samples_in += trajectory.blocks().len();
         trajectories.push(trajectory);
     }
 
@@ -44,7 +46,7 @@ pub fn run(
         .iter()
         .map(|trajectory| {
             trajectory
-                .samples()
+                .blocks()
                 .iter()
                 .step_by(run_options.sample_stride)
                 .count()

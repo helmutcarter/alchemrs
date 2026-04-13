@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 
-use alchemrs::{extract_nes_mbar_trajectory, NesMbarEstimator};
+use alchemrs::{extract_nes_mbar_block_trajectory, NesMbarEstimator};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (temperature, paths) = parse_args()?;
@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let trajectories = paths
         .iter()
-        .map(|path| extract_nes_mbar_trajectory(path, temperature))
+        .map(|path| extract_nes_mbar_block_trajectory(path, temperature))
         .collect::<Result<Vec<_>, _>>()?;
 
     let diagnostics = NesMbarEstimator::default().diagnostics(&trajectories)?;

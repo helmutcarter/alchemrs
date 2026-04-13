@@ -19,7 +19,8 @@ pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 #[cfg(test)]
 mod tests {
     use crate::data::{
-        DhdlSeries, NesMbarSample, NesMbarTrajectory, StatePoint, SwitchingTrajectory, UNkMatrix,
+        DhdlSeries, NesMbarBlockSample, NesMbarBlockTrajectory, StatePoint, SwitchingTrajectory,
+        UNkMatrix,
     };
     use crate::error::CoreError;
 
@@ -181,7 +182,7 @@ mod tests {
         ]
     }
 
-    fn make_nes_mbar_trajectories() -> Vec<NesMbarTrajectory> {
+    fn make_nes_mbar_trajectories() -> Vec<NesMbarBlockTrajectory> {
         let initial = StatePoint::new(vec![0.0], 300.0).unwrap();
         let final_state = StatePoint::new(vec![1.0], 300.0).unwrap();
         let targets = vec![
@@ -190,18 +191,62 @@ mod tests {
         ];
         let sample_sets = [
             vec![
-                NesMbarSample::new(1, 0.001, 0.1, 0.0, 0.0, vec![0.2, 0.4]).unwrap(),
-                NesMbarSample::new(2, 0.002, 0.2, 0.1, 0.1, vec![0.3, 0.5]).unwrap(),
+                NesMbarBlockSample::new(
+                    1,
+                    0.001,
+                    0.0,
+                    0.5,
+                    0.0,
+                    0.0,
+                    None,
+                    Some(0.0),
+                    vec![0.2, 0.4],
+                )
+                .unwrap(),
+                NesMbarBlockSample::new(
+                    2,
+                    0.002,
+                    0.5,
+                    1.0,
+                    0.1,
+                    0.1,
+                    None,
+                    Some(0.1),
+                    vec![0.3, 0.5],
+                )
+                .unwrap(),
             ],
             vec![
-                NesMbarSample::new(1, 0.001, 0.1, 0.2, 0.0, vec![0.1, 0.6]).unwrap(),
-                NesMbarSample::new(2, 0.002, 0.2, 0.3, 0.2, vec![0.2, 0.7]).unwrap(),
+                NesMbarBlockSample::new(
+                    1,
+                    0.001,
+                    0.0,
+                    0.5,
+                    0.2,
+                    0.0,
+                    None,
+                    Some(0.0),
+                    vec![0.1, 0.6],
+                )
+                .unwrap(),
+                NesMbarBlockSample::new(
+                    2,
+                    0.002,
+                    0.5,
+                    1.0,
+                    0.3,
+                    0.2,
+                    None,
+                    Some(0.2),
+                    vec![0.2, 0.7],
+                )
+                .unwrap(),
             ],
         ];
         sample_sets
             .into_iter()
             .map(|samples| {
-                NesMbarTrajectory::new(
+                NesMbarBlockTrajectory::new(
                     initial.clone(),
                     final_state.clone(),
                     targets.clone(),

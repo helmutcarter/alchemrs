@@ -4,7 +4,8 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use crate::data::{
-    DhdlSeries, NesMbarSample, NesMbarTrajectory, StatePoint, SwitchingTrajectory, UNkMatrix,
+    DhdlSeries, NesMbarBlockSample, NesMbarBlockTrajectory, NesMbarSample, NesMbarTrajectory,
+    StatePoint, SwitchingTrajectory, UNkMatrix,
 };
 use crate::error::CoreError;
 use thiserror::Error;
@@ -568,6 +569,154 @@ pub fn extract_nes_mbar_trajectory(
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(AmberParseError::from)?;
     NesMbarTrajectory::new(initial_state, final_state, target_states, samples).map_err(Into::into)
+}
+
+pub fn extract_nes_mbar_block_trajectory(
+    path: impl AsRef<Path>,
+    temperature_k: f64,
+) -> Result<NesMbarBlockTrajectory> {
+    let header = read_nes_mbar_header(path.as_ref())?;
+    if (temperature_k - header.temp0).abs() > 1e-2 {
+        return Err(AmberParseError::TemperatureMismatch {
+            file_temperature_k: header.temp0,
+            input_temperature_k: temperature_k,
+        });
+    }
+
+    let beta = 1.0 / (K_B_KCAL_PER_MOL_K * temperature_k);
+    let lambda_index = build_lambda_index(&header.mbar_lambdas);
+    let file = File::open(path.as_ref()).map_err(|err| AmberParseError::Io {
+        operation: "open",
+        message: err.to_string(),
+    })?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut current_lambda = header.clambda;
+    let mut cumulative_work = 0.0f64;
+    let mut in_average_block = false;
+    let mut in_rms_block = false;
+    let mut pending_average: Option<(f64, f64)> = None;
+    let mut pending_rms: Option<f64> = None;
+    let mut average_time_ps: Option<f64> = None;
+    let mut average_dvdl: Option<f64> = None;
+    let mut rms_dvdl: Option<f64> = None;
+    let mut pending_after_lambda: Option<f64> = None;
+    let mut in_mbar_block = false;
+    let mut block_energies = vec![None; header.mbar_lambdas.len()];
+    let mut blocks = Vec::new();
+
+    loop {
+        line.clear();
+        let bytes = reader
+            .read_line(&mut line)
+            .map_err(|err| AmberParseError::Io {
+                operation: "read",
+                message: err.to_string(),
+            })?;
+        if bytes == 0 {
+            break;
+        }
+        let line = line.trim_end_matches(&['\r', '\n'][..]);
+
+        if is_nes_average_header(line.as_bytes()) {
+            in_average_block = true;
+            in_rms_block = false;
+            average_time_ps = None;
+            average_dvdl = None;
+            continue;
+        }
+        if is_nes_rms_header(line.as_bytes()) {
+            in_average_block = false;
+            in_rms_block = true;
+            rms_dvdl = None;
+            continue;
+        }
+        if is_mbar_energy_start(line) {
+            in_mbar_block = true;
+            block_energies.fill(None);
+            continue;
+        }
+        if in_mbar_block {
+            if line.trim_start().starts_with("---") {
+                let reduced_energies_states = finalize_nes_mbar_energy_block(
+                    &block_energies,
+                    &header.mbar_lambdas,
+                    beta,
+                    blocks.len(),
+                )?;
+                if let (Some((time_ps, reduced_dvdl_avg)), Some(lambda_after)) =
+                    (pending_average.take(), pending_after_lambda.take())
+                {
+                    let lambda_before = current_lambda;
+                    let delta_lambda = lambda_after - lambda_before;
+                    cumulative_work += reduced_dvdl_avg * delta_lambda;
+                    let reduced_energy_protocol = lambda_index
+                        .get(&lambda_key(lambda_after))
+                        .and_then(|idx| reduced_energies_states.get(*idx).copied());
+                    blocks.push(NesMbarBlockSample::new(
+                        blocks.len() + 1,
+                        time_ps,
+                        lambda_before,
+                        lambda_after,
+                        cumulative_work,
+                        reduced_dvdl_avg,
+                        pending_rms.take(),
+                        reduced_energy_protocol,
+                        reduced_energies_states,
+                    )?);
+                    current_lambda = lambda_after;
+                }
+                in_mbar_block = false;
+                continue;
+            }
+            parse_mbar_energy_line(line, blocks.len(), &lambda_index, &mut block_energies)?;
+            continue;
+        }
+
+        if let Some(value) = capture_dynamic_lambda(line)? {
+            pending_after_lambda = Some(value);
+            continue;
+        }
+
+        if in_average_block {
+            if average_time_ps.is_none() {
+                average_time_ps = capture_field(line, "TIME(PS)")?;
+            }
+            if average_dvdl.is_none() {
+                average_dvdl = capture_field(line, "DV/DL")?.map(|value| value * beta);
+            }
+            if let (Some(time_ps), Some(reduced_dvdl)) = (average_time_ps, average_dvdl) {
+                pending_average = Some((time_ps, reduced_dvdl));
+                in_average_block = false;
+            }
+            continue;
+        }
+
+        if in_rms_block {
+            if rms_dvdl.is_none() {
+                rms_dvdl = capture_field(line, "DV/DL")?.map(|value| value * beta);
+            }
+            if let Some(value) = rms_dvdl {
+                pending_rms = Some(value);
+                in_rms_block = false;
+            }
+        }
+    }
+
+    if blocks.is_empty() {
+        return Err(AmberParseError::NoMbarSamples);
+    }
+
+    let initial_state = StatePoint::new(vec![header.clambda], temperature_k)?;
+    let final_state = StatePoint::new(vec![current_lambda], temperature_k)?;
+    let target_states = header
+        .mbar_lambdas
+        .iter()
+        .map(|lambda| StatePoint::new(vec![*lambda], temperature_k))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(AmberParseError::from)?;
+    NesMbarBlockTrajectory::new(initial_state, final_state, target_states, blocks)
+        .map_err(Into::into)
 }
 
 pub fn extract_u_nk(path: impl AsRef<Path>, temperature_k: f64) -> Result<UNkMatrix> {

@@ -224,6 +224,186 @@ impl NesMbarSample {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct NesMbarBlockSample {
+    block_index: usize,
+    time_ps: f64,
+    lambda_before: f64,
+    lambda_after: f64,
+    reduced_work_after: f64,
+    reduced_dvdl_avg: f64,
+    reduced_rms_dvdl: Option<f64>,
+    reduced_energy_protocol: Option<f64>,
+    reduced_energies_states: Vec<f64>,
+}
+
+impl NesMbarBlockSample {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        block_index: usize,
+        time_ps: f64,
+        lambda_before: f64,
+        lambda_after: f64,
+        reduced_work_after: f64,
+        reduced_dvdl_avg: f64,
+        reduced_rms_dvdl: Option<f64>,
+        reduced_energy_protocol: Option<f64>,
+        reduced_energies_states: Vec<f64>,
+    ) -> Result<Self> {
+        if block_index == 0 {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        ensure_finite("time", &[time_ps])?;
+        ensure_finite("lambda_before", &[lambda_before])?;
+        ensure_finite("lambda_after", &[lambda_after])?;
+        ensure_finite("reduced_work_after", &[reduced_work_after])?;
+        ensure_finite("reduced_dvdl_avg", &[reduced_dvdl_avg])?;
+        if let Some(value) = reduced_rms_dvdl {
+            ensure_finite("reduced_rms_dvdl", &[value])?;
+        }
+        if let Some(value) = reduced_energy_protocol {
+            ensure_finite("reduced_energy_protocol", &[value])?;
+        }
+        ensure_finite_or_positive_infinity("reduced_energies_states", &reduced_energies_states)?;
+        if reduced_energies_states.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        Ok(Self {
+            block_index,
+            time_ps,
+            lambda_before,
+            lambda_after,
+            reduced_work_after,
+            reduced_dvdl_avg,
+            reduced_rms_dvdl,
+            reduced_energy_protocol,
+            reduced_energies_states,
+        })
+    }
+
+    pub fn block_index(&self) -> usize {
+        self.block_index
+    }
+
+    pub fn time_ps(&self) -> f64 {
+        self.time_ps
+    }
+
+    pub fn lambda_before(&self) -> f64 {
+        self.lambda_before
+    }
+
+    pub fn lambda_after(&self) -> f64 {
+        self.lambda_after
+    }
+
+    pub fn reduced_work_after(&self) -> f64 {
+        self.reduced_work_after
+    }
+
+    pub fn reduced_dvdl_avg(&self) -> f64 {
+        self.reduced_dvdl_avg
+    }
+
+    pub fn reduced_rms_dvdl(&self) -> Option<f64> {
+        self.reduced_rms_dvdl
+    }
+
+    pub fn reduced_energy_protocol(&self) -> Option<f64> {
+        self.reduced_energy_protocol
+    }
+
+    pub fn reduced_energies_states(&self) -> &[f64] {
+        &self.reduced_energies_states
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NesMbarBlockTrajectory {
+    initial_state: StatePoint,
+    final_state: StatePoint,
+    target_states: Vec<StatePoint>,
+    blocks: Vec<NesMbarBlockSample>,
+}
+
+impl NesMbarBlockTrajectory {
+    pub fn new(
+        initial_state: StatePoint,
+        final_state: StatePoint,
+        target_states: Vec<StatePoint>,
+        blocks: Vec<NesMbarBlockSample>,
+    ) -> Result<Self> {
+        if initial_state.temperature_k() != final_state.temperature_k() {
+            return Err(CoreError::InvalidState(
+                "NES MBAR block trajectory states must have the same temperature".to_string(),
+            ));
+        }
+        if target_states.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        if blocks.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        for state in &target_states {
+            if (state.temperature_k() - initial_state.temperature_k()).abs() > 0.0 {
+                return Err(CoreError::InvalidState(
+                    "NES MBAR block target states must have the same temperature".to_string(),
+                ));
+            }
+        }
+        let expected_n_states = target_states.len();
+        let mut previous_time = f64::NEG_INFINITY;
+        for block in &blocks {
+            if block.reduced_energies_states().len() != expected_n_states {
+                return Err(CoreError::InvalidShape {
+                    expected: expected_n_states,
+                    found: block.reduced_energies_states().len(),
+                });
+            }
+            if block.time_ps() < previous_time {
+                return Err(CoreError::InvalidTimeOrder(
+                    "NES MBAR block times must be nondecreasing".to_string(),
+                ));
+            }
+            previous_time = block.time_ps();
+        }
+        Ok(Self {
+            initial_state,
+            final_state,
+            target_states,
+            blocks,
+        })
+    }
+
+    pub fn initial_state(&self) -> &StatePoint {
+        &self.initial_state
+    }
+
+    pub fn final_state(&self) -> &StatePoint {
+        &self.final_state
+    }
+
+    pub fn target_states(&self) -> &[StatePoint] {
+        &self.target_states
+    }
+
+    pub fn blocks(&self) -> &[NesMbarBlockSample] {
+        &self.blocks
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct NesMbarTrajectory {
     initial_state: StatePoint,
     final_state: StatePoint,

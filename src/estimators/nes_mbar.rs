@@ -1,7 +1,7 @@
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
-use crate::data::{find_state_index_exact, DeltaFMatrix, NesMbarTrajectory, StatePoint};
+use crate::data::{find_state_index_exact, DeltaFMatrix, NesMbarBlockTrajectory, StatePoint};
 use crate::error::{CoreError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -80,7 +80,7 @@ impl NesMbarEstimator {
         Self { options }
     }
 
-    pub fn fit(&self, trajectories: &[NesMbarTrajectory]) -> Result<NesMbarFit> {
+    pub fn fit(&self, trajectories: &[NesMbarBlockTrajectory]) -> Result<NesMbarFit> {
         if trajectories.is_empty() {
             return Err(CoreError::InvalidShape {
                 expected: 1,
@@ -117,11 +117,14 @@ impl NesMbarEstimator {
         })
     }
 
-    pub fn estimate(&self, trajectories: &[NesMbarTrajectory]) -> Result<DeltaFMatrix> {
+    pub fn estimate(&self, trajectories: &[NesMbarBlockTrajectory]) -> Result<DeltaFMatrix> {
         self.fit(trajectories)?.result()
     }
 
-    pub fn diagnostics(&self, trajectories: &[NesMbarTrajectory]) -> Result<NesMbarDiagnostics> {
+    pub fn diagnostics(
+        &self,
+        trajectories: &[NesMbarBlockTrajectory],
+    ) -> Result<NesMbarDiagnostics> {
         if trajectories.is_empty() {
             return Err(CoreError::InvalidShape {
                 expected: 1,
@@ -205,7 +208,7 @@ impl NesMbarFit {
     }
 }
 
-fn estimator_states(trajectories: &[NesMbarTrajectory]) -> Result<Vec<StatePoint>> {
+fn estimator_states(trajectories: &[NesMbarBlockTrajectory]) -> Result<Vec<StatePoint>> {
     let first = &trajectories[0];
     let mut states = vec![first.initial_state().clone()];
     for state in first.target_states() {
@@ -229,7 +232,7 @@ fn estimator_states(trajectories: &[NesMbarTrajectory]) -> Result<Vec<StatePoint
 }
 
 fn estimate_relative_free_energies(
-    trajectories: &[NesMbarTrajectory],
+    trajectories: &[NesMbarBlockTrajectory],
     states: &[StatePoint],
     options: &NesMbarOptions,
 ) -> Result<Vec<f64>> {
@@ -273,7 +276,7 @@ struct SliceEstimate {
 }
 
 fn estimate_slice_weights(
-    trajectories: &[NesMbarTrajectory],
+    trajectories: &[NesMbarBlockTrajectory],
     sample_stride: usize,
     target_idx: usize,
 ) -> Result<Vec<SliceEstimate>> {
@@ -281,13 +284,16 @@ fn estimate_slice_weights(
     let mut slice_by_trajectory: Vec<Vec<Vec<f64>>> = Vec::new();
     for (trajectory_idx, trajectory) in trajectories.iter().enumerate() {
         for (ordinal, sample) in trajectory
-            .samples()
+            .blocks()
             .iter()
             .step_by(sample_stride)
             .enumerate()
         {
-            let log_weight = -sample.reduced_work()
-                - (sample.reduced_energies_states()[target_idx] - sample.reduced_energy_protocol());
+            let Some(reduced_energy_protocol) = sample.reduced_energy_protocol() else {
+                continue;
+            };
+            let log_weight = -sample.reduced_work_after()
+                - (sample.reduced_energies_states()[target_idx] - reduced_energy_protocol);
             if !log_weight.is_finite() {
                 continue;
             }
@@ -519,7 +525,7 @@ fn log_mean_exp(log_values: &[f64]) -> Result<f64> {
 }
 
 fn bootstrap_uncertainties(
-    trajectories: &[NesMbarTrajectory],
+    trajectories: &[NesMbarBlockTrajectory],
     states: &[StatePoint],
     options: &NesMbarOptions,
     n_bootstrap: usize,
@@ -556,7 +562,7 @@ fn bootstrap_uncertainties(
 }
 
 fn state_diagnostics(
-    trajectories: &[NesMbarTrajectory],
+    trajectories: &[NesMbarBlockTrajectory],
     state: StatePoint,
     sample_stride: usize,
     target_idx: usize,
@@ -567,13 +573,16 @@ fn state_diagnostics(
 
     for (trajectory_idx, trajectory) in trajectories.iter().enumerate() {
         for (slice_idx, sample) in trajectory
-            .samples()
+            .blocks()
             .iter()
             .step_by(sample_stride)
             .enumerate()
         {
-            let log_weight = -sample.reduced_work()
-                - (sample.reduced_energies_states()[target_idx] - sample.reduced_energy_protocol());
+            let Some(reduced_energy_protocol) = sample.reduced_energy_protocol() else {
+                continue;
+            };
+            let log_weight = -sample.reduced_work_after()
+                - (sample.reduced_energies_states()[target_idx] - reduced_energy_protocol);
             if !log_weight.is_finite() {
                 continue;
             }
@@ -605,9 +614,12 @@ fn state_diagnostics(
     let mut sample_weight_squares = 0.0;
     let mut per_sample_weights = Vec::new();
     for trajectory in trajectories {
-        for sample in trajectory.samples().iter().step_by(sample_stride) {
-            let log_weight = -sample.reduced_work()
-                - (sample.reduced_energies_states()[target_idx] - sample.reduced_energy_protocol());
+        for sample in trajectory.blocks().iter().step_by(sample_stride) {
+            let Some(reduced_energy_protocol) = sample.reduced_energy_protocol() else {
+                continue;
+            };
+            let log_weight = -sample.reduced_work_after()
+                - (sample.reduced_energies_states()[target_idx] - reduced_energy_protocol);
             if log_weight.is_finite() {
                 per_sample_weights.push((log_weight - max_log).exp() / total);
             }
