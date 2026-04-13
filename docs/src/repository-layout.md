@@ -1,11 +1,12 @@
 # Repository Layout
 
-The repository is centered on a single Cargo package, `alchemrs`.
+The repository is organized as a Cargo workspace with two Rust packages:
 
-That package contains:
+- `alchemrs`: the core library crate and CLI binary
+- `alchemrs-py`: the Python binding crate built as a `cdylib`
 
-- the `alchemrs` library crate
-- the `alchemrs` command-line binary
+The surrounding top-level directories then hold tests, examples, fixtures,
+documentation, and Python-side packaging/test code.
 
 ## `alchemrs` library layout
 
@@ -20,6 +21,12 @@ The `alchemrs` crate is organized into modules rather than separate library crat
 - `plot`: optional SVG rendering helpers behind the `plotting` feature
 
 The crate root also re-exports the most common types and functions directly for a flatter API.
+
+## `alchemrs-py` package
+
+`alchemrs-py` is a separate Rust package in the same workspace. It provides the
+native Python extension layer and depends on the core `alchemrs` crate, but the
+dependency does not go the other way.
 
 ## CLI binary
 
@@ -36,4 +43,5 @@ estimators -> data + error
 analysis -> data + error + estimators
 ```
 
-The binary depends on the library through the same package source tree.
+The CLI depends on the core library crate, and `alchemrs-py` depends on the
+same core library crate through the workspace.

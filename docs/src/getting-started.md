@@ -7,7 +7,7 @@ The fastest way to use `alchemrs` is through the CLI. The Rust API is documented
 - Rust 1.85 or newer
 - AMBER output files or GROMACS `dhdl.xvg` files
 
-The repository is a normal Cargo package and can be built and tested with standard Rust tooling.
+The repository is a normal Cargo workspace and can be built and tested with standard Rust tooling.
 
 ## Build the package
 
