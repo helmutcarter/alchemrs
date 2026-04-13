@@ -7,7 +7,7 @@ mod nes;
 mod ti;
 mod uwham;
 
-pub use atm::{AtmBindingEstimate, AtmEstimator, AtmFit, AtmOptions};
+pub use atm::{AtmBindingEstimate, AtmEstimator, AtmFit, AtmOptions, AtmUncertaintyMethod};
 pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
@@ -982,6 +982,27 @@ mod tests {
             parallel.result().unwrap().values(),
             1e-12,
         );
+        assert_slice_close(
+            &serial.covariance().unwrap(),
+            &parallel.covariance().unwrap(),
+            1e-12,
+        );
+    }
+
+    #[test]
+    fn uwham_result_with_uncertainty_is_finite() {
+        let windows = make_two_state_windows();
+        let fit = UwhamEstimator::default().fit(&windows).unwrap();
+        let result = fit.result_with_uncertainty().unwrap();
+
+        assert!(result.values().iter().all(|value| value.is_finite()));
+        assert!(result
+            .uncertainties()
+            .unwrap()
+            .iter()
+            .all(|value| value.is_finite()));
+        assert_eq!(result.uncertainties().unwrap()[0], 0.0);
+        assert_eq!(result.uncertainties().unwrap()[3], 0.0);
     }
 
     #[test]

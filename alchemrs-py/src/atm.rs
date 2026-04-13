@@ -1,6 +1,6 @@
 use alchemrs::{
     AtmBindingEstimate, AtmDirection, AtmEstimator, AtmFit, AtmLogQMatrix, AtmOptions, AtmSample,
-    AtmSampleSet, AtmSchedule, AtmState, UwhamOptions,
+    AtmSampleSet, AtmSchedule, AtmState, AtmUncertaintyMethod, UwhamOptions,
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -320,17 +320,26 @@ pub struct PyAtmEstimator {
 #[pymethods]
 impl PyAtmEstimator {
     #[new]
-    #[pyo3(signature = (max_iterations=10_000, tolerance=1e-7, parallel=false))]
-    fn new(max_iterations: usize, tolerance: f64, parallel: bool) -> Self {
-        Self {
+    #[pyo3(signature = (max_iterations=10_000, tolerance=1e-7, parallel=false, uncertainty="analytical", n_bootstrap=256, seed=0))]
+    fn new(
+        max_iterations: usize,
+        tolerance: f64,
+        parallel: bool,
+        uncertainty: &str,
+        n_bootstrap: usize,
+        seed: u64,
+    ) -> PyResult<Self> {
+        let uncertainty = parse_uncertainty_method(uncertainty, n_bootstrap, seed)?;
+        Ok(Self {
             inner: AtmEstimator::new(AtmOptions {
                 uwham: UwhamOptions {
                     max_iterations,
                     tolerance,
                     parallel,
                 },
+                uncertainty,
             }),
-        }
+        })
     }
 
     fn fit(&self, py: Python<'_>, data: Py<PyAtmLogQMatrix>) -> PyResult<PyAtmFit> {
@@ -442,6 +451,11 @@ impl PyAtmFit {
     #[getter]
     fn weights(&self) -> Vec<f64> {
         self.inner.weights().to_vec()
+    }
+
+    #[getter]
+    fn leg_uncertainty(&self) -> Option<f64> {
+        self.inner.leg_uncertainty()
     }
 
     fn result(&self) -> PyResult<PyDeltaFMatrix> {
@@ -621,6 +635,29 @@ fn parse_direction(direction: &str) -> PyResult<AtmDirection> {
         "reverse" | "leg2" => Ok(AtmDirection::Reverse),
         _ => Err(PyValueError::new_err(
             "direction must be one of: 'forward', 'reverse', 'leg1', 'leg2'",
+        )),
+    }
+}
+
+fn parse_uncertainty_method(
+    uncertainty: &str,
+    n_bootstrap: usize,
+    seed: u64,
+) -> PyResult<AtmUncertaintyMethod> {
+    match uncertainty {
+        "analytical" => Ok(AtmUncertaintyMethod::Analytical),
+        "bootstrap" => {
+            if n_bootstrap == 0 {
+                Err(PyValueError::new_err(
+                    "n_bootstrap must be positive when uncertainty='bootstrap'",
+                ))
+            } else {
+                Ok(AtmUncertaintyMethod::Bootstrap { n_bootstrap, seed })
+            }
+        }
+        "none" => Ok(AtmUncertaintyMethod::None),
+        _ => Err(PyValueError::new_err(
+            "uncertainty must be one of: 'analytical', 'bootstrap', 'none'",
         )),
     }
 }

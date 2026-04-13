@@ -1,5 +1,5 @@
-mod atm;
 mod analysis;
+mod atm;
 mod data;
 mod error;
 mod estimators;

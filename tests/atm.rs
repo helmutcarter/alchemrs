@@ -1,6 +1,6 @@
 use alchemrs::{
-    AtmDirection, AtmEstimator, AtmLogQMatrix, AtmSample, AtmSampleSet, AtmSchedule, AtmState,
-    CoreError, StatePoint, UwhamOptions,
+    AtmDirection, AtmEstimator, AtmLogQMatrix, AtmOptions, AtmSample, AtmSampleSet, AtmSchedule,
+    AtmState, AtmUncertaintyMethod, CoreError, StatePoint, UwhamOptions,
 };
 
 fn two_states() -> Vec<StatePoint> {
@@ -102,6 +102,7 @@ fn atm_estimator_parallel_matches_serial() {
             parallel: true,
             ..UwhamOptions::default()
         },
+        uncertainty: AtmUncertaintyMethod::Analytical,
     })
     .fit(&matrix)
     .unwrap();
@@ -165,6 +166,7 @@ fn atm_estimate_leg_matches_fit_leg_result() {
 
     assert!((estimate.delta_f() - fit_result.delta_f()).abs() < 1e-12);
     assert_eq!(estimate.uncertainty(), fit_result.uncertainty());
+    assert!(estimate.uncertainty().is_some());
     assert_eq!(
         estimate.from_state().lambdas(),
         fit_result.from_state().lambdas()
@@ -196,7 +198,10 @@ fn atm_binding_estimate_combines_two_legs() {
     assert!(
         (binding.delta_f() - (leg1_estimate.delta_f() - leg2_estimate.delta_f())).abs() < 1e-12
     );
-    assert_eq!(binding.uncertainty(), None);
+    let expected_sigma = (leg1_estimate.uncertainty().unwrap().powi(2)
+        + leg2_estimate.uncertainty().unwrap().powi(2))
+    .sqrt();
+    assert!((binding.uncertainty().unwrap() - expected_sigma).abs() < 1e-12);
     assert!((binding.leg1().delta_f() - leg1_estimate.delta_f()).abs() < 1e-12);
     assert!((binding.leg2().delta_f() - leg2_estimate.delta_f()).abs() < 1e-12);
 }
@@ -218,4 +223,53 @@ fn atm_binding_estimate_requires_opposite_directions() {
         .estimate_binding(&leg1, &leg2)
         .unwrap_err();
     assert!(matches!(err, CoreError::InvalidState(_)));
+}
+
+#[test]
+fn atm_bootstrap_uncertainty_is_deterministic() {
+    let samples = AtmSampleSet::new(
+        make_standard_schedule(AtmDirection::Forward),
+        vec![
+            AtmSample::new(0, 10.0, 1.0).unwrap(),
+            AtmSample::new(0, 11.0, 1.2).unwrap(),
+            AtmSample::new(1, 12.0, 2.0).unwrap(),
+            AtmSample::new(1, 12.5, 2.3).unwrap(),
+        ],
+    )
+    .unwrap();
+    let estimator = AtmEstimator::new(AtmOptions {
+        uwham: UwhamOptions::default(),
+        uncertainty: AtmUncertaintyMethod::Bootstrap {
+            n_bootstrap: 32,
+            seed: 7,
+        },
+    });
+
+    let first = estimator.estimate_leg(&samples).unwrap();
+    let second = estimator.estimate_leg(&samples).unwrap();
+
+    assert_eq!(first.uncertainty(), second.uncertainty());
+    assert!(first.uncertainty().unwrap().is_finite());
+}
+
+#[test]
+fn atm_log_q_bootstrap_requires_sample_set_input() {
+    let matrix = AtmLogQMatrix::new(
+        4,
+        2,
+        vec![0.0, -0.2, -0.1, -0.3, -0.2, 0.0, -0.3, -0.1],
+        two_states(),
+        vec![2, 2],
+    )
+    .unwrap();
+    let estimator = AtmEstimator::new(AtmOptions {
+        uwham: UwhamOptions::default(),
+        uncertainty: AtmUncertaintyMethod::Bootstrap {
+            n_bootstrap: 16,
+            seed: 1,
+        },
+    });
+
+    let err = estimator.fit(&matrix).unwrap_err();
+    assert!(matches!(err, CoreError::Unsupported(_)));
 }

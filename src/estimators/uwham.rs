@@ -134,6 +134,37 @@ impl UwhamFit {
         )
     }
 
+    pub fn variances(&self) -> Result<Vec<f64>> {
+        let covariance = self.covariance()?;
+        Ok((0..self.n_states())
+            .map(|state_idx| covariance[state_idx * self.n_states() + state_idx])
+            .collect())
+    }
+
+    pub fn covariance(&self) -> Result<Vec<f64>> {
+        uwham_covariance(self)
+    }
+
+    pub fn result_with_uncertainty(&self) -> Result<DeltaFMatrix> {
+        let covariance = self.covariance()?;
+        let n_states = self.n_states();
+        let mut uncertainties = vec![0.0; n_states * n_states];
+        for i in 0..n_states {
+            for j in 0..n_states {
+                let variance = covariance[i * n_states + i] + covariance[j * n_states + j]
+                    - 2.0 * covariance[i * n_states + j];
+                uncertainties[i * n_states + j] = variance.max(0.0).sqrt();
+            }
+        }
+        DeltaFMatrix::new_with_labels(
+            self.result()?.values().to_vec(),
+            Some(uncertainties),
+            n_states,
+            self.input.states.clone(),
+            self.input.lambda_labels.clone(),
+        )
+    }
+
     pub fn write_reference_inputs(&self, output_dir: impl AsRef<Path>) -> Result<()> {
         let output_dir = output_dir.as_ref();
         fs::create_dir_all(output_dir).map_err(|err| {
@@ -609,6 +640,112 @@ fn fill_weights_row(
             (relative_row[state_idx] - ze[state_idx] - log_denom).exp()
         };
     }
+}
+
+fn uwham_covariance(fit: &UwhamFit) -> Result<Vec<f64>> {
+    let input = &fit.input;
+    let n_states = input.n_states;
+    let sampled_indices = input
+        .size
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, &count)| (count > 0.0).then_some(idx))
+        .collect::<Vec<_>>();
+    if sampled_indices.is_empty() {
+        return Err(CoreError::InvalidState(
+            "UWHAM requires at least one sampled state".to_string(),
+        ));
+    }
+    let base = sampled_indices[0];
+    let n_observations = input.n_observations as f64;
+    let weights = fit.weights();
+
+    let mut overlap = vec![0.0; n_states * n_states];
+    for row in weights.chunks(n_states) {
+        for i in 0..n_states {
+            for j in 0..n_states {
+                overlap[i * n_states + j] += row[i] * row[j];
+            }
+        }
+    }
+    for value in &mut overlap {
+        *value /= n_observations;
+    }
+
+    let mut d_matrix = vec![0.0; n_states * n_states];
+    for &sampled_idx in &sampled_indices {
+        let rho = input.size[sampled_idx] / n_observations;
+        for row_idx in 0..n_states {
+            d_matrix[row_idx * n_states + sampled_idx] =
+                overlap[row_idx * n_states + sampled_idx] * rho;
+        }
+    }
+
+    let mut h_full = vec![0.0; n_states * n_states];
+    for i in 0..n_states {
+        for j in 0..n_states {
+            h_full[i * n_states + j] = d_matrix[i * n_states + j];
+        }
+        h_full[i * n_states + i] -= 1.0;
+    }
+
+    let mut g_full = vec![0.0; n_states * n_states];
+    for i in 0..n_states {
+        for j in 0..n_states {
+            let mut value = overlap[i * n_states + j];
+            for &sampled_idx in &sampled_indices {
+                value -= d_matrix[i * n_states + sampled_idx] * overlap[sampled_idx * n_states + j];
+            }
+            g_full[i * n_states + j] = value;
+        }
+    }
+
+    let mut ihg_full = vec![0.0; n_states * n_states];
+    for i in 0..n_states {
+        for j in 0..n_states {
+            ihg_full[i * n_states + j] = -overlap[i * n_states + j] + overlap[base * n_states + j];
+        }
+    }
+
+    let reduced_dim = n_states - 1;
+    if reduced_dim == 0 {
+        return Ok(vec![0.0]);
+    }
+    let mut reduced_h = DMatrix::zeros(reduced_dim, reduced_dim);
+    let mut reduced_ihg = DMatrix::zeros(reduced_dim, reduced_dim);
+    for (i_reduced, i_full) in (0..n_states).filter(|&idx| idx != base).enumerate() {
+        for (j_reduced, j_full) in (0..n_states).filter(|&idx| idx != base).enumerate() {
+            reduced_h[(i_reduced, j_reduced)] = h_full[i_full * n_states + j_full];
+            reduced_ihg[(i_reduced, j_reduced)] = ihg_full[i_full * n_states + j_full];
+        }
+    }
+
+    let solved = reduced_h
+        .transpose()
+        .lu()
+        .solve(&reduced_ihg.transpose())
+        .ok_or_else(|| {
+            CoreError::Unsupported(
+                "failed to invert UWHAM Fisher information matrix for analytical uncertainty"
+                    .to_string(),
+            )
+        })?;
+    let mut reduced_covariance = solved.transpose() / n_observations;
+    reduced_covariance = 0.5 * (&reduced_covariance + reduced_covariance.transpose());
+
+    let mut covariance = vec![0.0; n_states * n_states];
+    for (i_reduced, i_full) in (0..n_states).filter(|&idx| idx != base).enumerate() {
+        for (j_reduced, j_full) in (0..n_states).filter(|&idx| idx != base).enumerate() {
+            covariance[i_full * n_states + j_full] = reduced_covariance[(i_reduced, j_reduced)];
+        }
+    }
+
+    if covariance.iter().any(|value| !value.is_finite()) {
+        return Err(CoreError::NonFiniteValue(
+            "UWHAM analytical covariance became non-finite".to_string(),
+        ));
+    }
+    Ok(covariance)
 }
 
 fn accumulate_logsumexp(max_term: &mut f64, sum: &mut f64, value: f64) {

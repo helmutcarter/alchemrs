@@ -170,7 +170,10 @@ def test_atm_module_builds_leg_samples_and_binding_estimate() -> None:
     assert matrix.sampled_counts == [2, 2]
     assert fit.n_observations == 4
     assert np.isfinite(leg.delta_f)
+    assert np.isfinite(leg.uncertainty)
+    assert np.isfinite(fit.leg_uncertainty)
     assert np.isfinite(binding.delta_f)
+    assert np.isfinite(binding.uncertainty)
 
 
 def test_atm_python_example_runs() -> None:
@@ -185,8 +188,11 @@ def test_atm_python_example_runs() -> None:
     binding = estimator.estimate_rbfe(leg1, leg2)
 
     assert np.isfinite(leg1_result.delta_f)
+    assert np.isfinite(leg1_result.uncertainty)
     assert np.isfinite(leg2_result.delta_f)
+    assert np.isfinite(leg2_result.uncertainty)
     assert np.isfinite(binding.delta_f)
+    assert np.isfinite(binding.uncertainty)
 
 
 def test_amber_fixture_python_example_matches_expected_ranges() -> None:
@@ -309,8 +315,36 @@ def test_openmm_atm_example_sample_collection_and_binding_estimate() -> None:
     assert leg1.schedule.direction == "forward"
     assert leg2.schedule.direction == "reverse"
     assert np.isfinite(leg1_result.delta_f)
+    assert np.isfinite(leg1_result.uncertainty)
     assert np.isfinite(leg2_result.delta_f)
+    assert np.isfinite(leg2_result.uncertainty)
     assert np.isfinite(binding.delta_f)
+    assert np.isfinite(binding.uncertainty)
+
+
+def test_atm_bootstrap_uncertainty_is_deterministic() -> None:
+    schedule = ar.atm.schedule_from_arrays(
+        state_ids=[0, 1],
+        direction="forward",
+        lambda1=[0.0, 1.0],
+        lambda2=[0.0, 1.0],
+        alpha=[0.0, 0.0],
+        u0=[0.0, 0.0],
+        w0=[0.0, 0.0],
+        temperature_k=[300.0, 300.0],
+    )
+    samples = ar.atm.sample_set_from_arrays(
+        schedule,
+        state_ids=[0, 0, 1, 1],
+        potential_energies_kcal_per_mol=[10.0, 11.0, 12.0, 12.5],
+        perturbation_energies_kcal_per_mol=[1.0, 1.2, 2.0, 2.3],
+    )
+    estimator = ar.ATM(uncertainty="bootstrap", n_bootstrap=32, seed=7)
+
+    first = estimator.estimate_leg(samples)
+    second = estimator.estimate_leg(samples)
+
+    assert first.uncertainty == pytest.approx(second.uncertainty, abs=1e-12)
 
 
 def load_example_module(name: str):

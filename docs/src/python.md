@@ -133,6 +133,13 @@ Use `python/examples/openmm_atm.py` when you want a concrete reference for:
 4. converting those samples into `alchemrs.atm.AtmSampleSet`
 5. running `alchemrs.ATM().estimate_leg(...)` and `estimate_rbfe(...)`
 
+ATM uncertainty uses analytical UWHAM covariance by default. For Python
+workflows that want bootstrap instead, construct the estimator as:
+
+```python
+estimator = ar.ATM(uncertainty="bootstrap", n_bootstrap=256, seed=7)
+```
+
 The example is intentionally analysis-focused. It does not parse a standard ATM
 output format because OpenMM-based ATM workflows do not currently share one.
 Instead, it documents the stable integration boundary for custom workflows:
