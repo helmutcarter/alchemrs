@@ -10,7 +10,10 @@ pub use bar::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
 pub use nes::{NesEstimator, NesFit, NesOptions};
-pub use nes_mbar::{NesMbarEstimator, NesMbarFit, NesMbarOptions};
+pub use nes_mbar::{
+    NesMbarContribution, NesMbarDiagnostics, NesMbarEstimator, NesMbarFit, NesMbarOptions,
+    NesMbarStateDiagnostics, NesMbarWeighting,
+};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
 
 #[cfg(test)]
@@ -25,7 +28,7 @@ mod tests {
     use super::exp::{IexpEstimator, IexpOptions};
     use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
     use super::nes::{analytic_uncertainty, jarzynski_delta_f, NesEstimator, NesOptions};
-    use super::nes_mbar::{NesMbarEstimator, NesMbarOptions};
+    use super::nes_mbar::{NesMbarEstimator, NesMbarOptions, NesMbarWeighting};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
@@ -1096,6 +1099,9 @@ mod tests {
             n_bootstrap: 8,
             seed: 7,
             sample_stride: 1,
+            weighting: NesMbarWeighting::Uniform,
+            max_slice_trajectory_fraction: None,
+            min_slice_ess_fraction: None,
         })
         .fit(&trajectories)
         .unwrap();
@@ -1104,5 +1110,22 @@ mod tests {
         assert_eq!(uncertainties[0], 0.0);
         assert!(uncertainties[1] > 0.0);
         assert!(uncertainties[2] > 0.0);
+    }
+
+    #[test]
+    fn nes_mbar_diagnostics_identify_dominant_slices_and_trajectories() {
+        let trajectories = make_nes_mbar_trajectories();
+        let diagnostics = NesMbarEstimator::default()
+            .diagnostics(&trajectories)
+            .unwrap();
+        assert_eq!(diagnostics.states.len(), 3);
+        let state_diag = &diagnostics.states[2];
+        assert_eq!(state_diag.state.lambdas(), &[1.0]);
+        assert!(state_diag.effective_sample_size > 0.0);
+        assert!(state_diag.max_sample_fraction > 0.0);
+        assert!(!state_diag.top_slices.is_empty());
+        assert!(!state_diag.top_trajectories.is_empty());
+        assert_eq!(state_diag.top_slices[0].index, 0);
+        assert_eq!(state_diag.top_trajectories[0].index, 0);
     }
 }

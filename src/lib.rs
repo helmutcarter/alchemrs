@@ -64,7 +64,8 @@ pub use error::{CoreError, Result};
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{
     IexpEstimator, IexpFit, IexpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver,
-    NesEstimator, NesFit, NesMbarEstimator, NesMbarFit, NesMbarOptions, NesOptions,
+    NesEstimator, NesFit, NesMbarContribution, NesMbarDiagnostics, NesMbarEstimator, NesMbarFit,
+    NesMbarOptions, NesMbarStateDiagnostics, NesMbarWeighting, NesOptions,
 };
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};
 pub use parse::{

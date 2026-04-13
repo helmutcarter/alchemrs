@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use alchemrs::{extract_nes_mbar_trajectory, NesMbarEstimator, NesMbarOptions};
+use alchemrs::{extract_nes_mbar_trajectory, NesMbarEstimator, NesMbarOptions, NesMbarWeighting};
 
 use crate::cli::input::AnalysisSampleCounts;
 use crate::cli::output::{print_scalar_result, OutputProvenance, ScalarResult};
@@ -33,6 +33,9 @@ pub fn run(
         n_bootstrap: run_options.n_bootstrap,
         seed: run_options.seed,
         sample_stride: run_options.sample_stride,
+        weighting: NesMbarWeighting::Uniform,
+        max_slice_trajectory_fraction: None,
+        min_slice_ess_fraction: None,
     });
     let result = estimator.estimate(&trajectories)?;
     let n_states = result.n_states();
