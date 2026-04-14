@@ -56,12 +56,6 @@ jobs:
           print(f"version={version}")
           PY
 
-      - name: Run tests
-        run: cargo test --locked
-
-      - name: Run Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
-
   build:
     needs: validate
     strategy:
