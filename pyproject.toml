@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "alchemrs"
-version = "0.3.2"
+version = "0.3.3"
 description = "Python bindings for the alchemrs Rust free-energy toolkit"
 readme = "README.md"
 requires-python = ">=3.9"
