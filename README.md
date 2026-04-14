@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP/NES estimators, and computing diagnostics such as overlap analysis and schedule advice. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
+`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP/NES estimators, and computing diagnostics such as overlap analysis and schedule advice. Support for OpenMM is provided through python bindings. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
 
 Native SVG plotting is available as an optional `plotting` feature.
 
