@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -12,6 +11,7 @@ use crate::error::CoreError;
 
 const FP_RE: &str = r"[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?";
 const K_B_KJ_PER_MOL_K: f64 = 0.00831446261815324;
+type StateKey = Box<[i64]>;
 
 pub type Result<T> = std::result::Result<T, GromacsParseError>;
 
@@ -147,52 +147,67 @@ fn extract_u_nk_internal(
     }
 
     let sampled_key = state_key(&header.sampled_state);
-    let mut seen_targets = HashSet::new();
-    for (_, state) in &header.delta_h_columns {
-        let key = state_key(state);
-        if key != sampled_key && !seen_targets.insert(key) {
+    let delta_h_keys = header
+        .delta_h_columns
+        .iter()
+        .map(|(_, state)| state_key(state))
+        .collect::<Vec<_>>();
+    let mut unique_target_keys = Vec::with_capacity(delta_h_keys.len());
+    for ((_, state), key) in header.delta_h_columns.iter().zip(delta_h_keys.iter()) {
+        if key != &sampled_key && unique_target_keys.iter().any(|existing| existing == key) {
             return Err(GromacsParseError::DuplicateState {
                 state: format_state(state),
             });
         }
+        unique_target_keys.push(key.clone());
     }
 
     let mut evaluated_states = vec![header.sampled_state.clone()];
-    let mut evaluated_keys = HashSet::from([sampled_key.clone()]);
-    for (_, state) in &header.delta_h_columns {
-        let key = state_key(state);
-        if evaluated_keys.insert(key) {
+    let mut evaluated_keys = vec![sampled_key.clone()];
+    for ((_, state), key) in header.delta_h_columns.iter().zip(delta_h_keys.iter()) {
+        if !evaluated_keys.iter().any(|existing| existing == key) {
             evaluated_states.push(state.clone());
+            evaluated_keys.push(key.clone());
         }
     }
     evaluated_states.sort_by(|left, right| compare_state_vectors(left, right));
+    evaluated_keys = evaluated_states
+        .iter()
+        .map(|state| state_key(state))
+        .collect();
 
-    let mut state_to_column = HashMap::with_capacity(evaluated_states.len());
-    for (idx, state) in evaluated_states.iter().enumerate() {
-        state_to_column.insert(state_key(state), idx);
-    }
-
-    let sampled_idx = *state_to_column
-        .get(&sampled_key)
+    let sampled_idx = evaluated_keys
+        .iter()
+        .position(|key| key == &sampled_key)
         .expect("sampled state indexed");
+    let column_targets = header
+        .delta_h_columns
+        .iter()
+        .zip(delta_h_keys.iter())
+        .map(|((series_idx, _), key)| {
+            let target_idx = evaluated_keys
+                .iter()
+                .position(|existing| existing == key)
+                .expect("target state indexed");
+            (*series_idx, target_idx)
+        })
+        .collect::<Vec<_>>();
     let beta = 1.0 / (K_B_KJ_PER_MOL_K * temperature_k);
 
     let mut time_ps = Vec::new();
     let mut data = Vec::new();
     let mut potential = include_potential.then(Vec::new);
+    let mut reduced = vec![0.0; evaluated_states.len()];
 
     for row in read_data_rows(path)? {
-        let mut reduced = vec![0.0; evaluated_states.len()];
-        for (series_idx, target_state) in &header.delta_h_columns {
+        reduced.fill(0.0);
+        for &(series_idx, target_idx) in &column_targets {
             let raw =
                 *row.values
-                    .get(*series_idx)
+                    .get(series_idx)
                     .ok_or_else(|| GromacsParseError::InvalidDataLine {
                         line: row.raw_line.clone(),
                     })?;
-            let target_idx = *state_to_column
-                .get(&state_key(target_state))
-                .expect("target state indexed");
             if target_idx != sampled_idx {
                 reduced[target_idx] = beta * raw;
             }
@@ -207,7 +222,7 @@ fn extract_u_nk_internal(
             }
         }
         time_ps.push(row.time_ps);
-        data.extend(reduced);
+        data.extend_from_slice(&reduced);
     }
 
     if time_ps.is_empty() {
@@ -524,11 +539,12 @@ fn compare_state_vectors(left: &[f64], right: &[f64]) -> Ordering {
     left.len().cmp(&right.len())
 }
 
-fn state_key(values: &[f64]) -> Vec<i64> {
+fn state_key(values: &[f64]) -> StateKey {
     values
         .iter()
         .map(|value| (value * 10_000.0).round() as i64)
-        .collect()
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
 }
 
 fn format_state(values: &[f64]) -> String {
