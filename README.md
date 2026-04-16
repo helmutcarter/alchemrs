@@ -1,6 +1,6 @@
 # alchemrs
 
-`alchemrs` is a CLI-first tool for alchemical free energy analysis. The package ships an `alchemrs` command-line binary for the main workflow and a Rust library crate for embedding, custom pipelines, and future bindings. The scientific core covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP/NES estimators, and computing diagnostics such as overlap analysis and schedule advice. Support for OpenMM is provided through python bindings. Fixtures and tests compare results against established reference implementations (`alchemlyb`) to keep the numerical behavior grounded.
+`alchemrs` is a CLI-first tool for alchemical free energy analysis. The workspace includes the `alchemrs` command-line binary, a Rust library crate, and a local Python package backed by the `alchemrs-py` extension crate. The CLI covers parsing AMBER and GROMACS outputs, preprocessing time series, running TI/BAR/MBAR/IEXP/DEXP/NES estimators, and computing diagnostics such as overlap analysis and schedule advice. The library and Python bindings also expose UWHAM and ATM analysis building blocks, plus OpenMM-oriented helpers and examples. Fixtures and tests compare results against established reference implementations (`alchemlyb`, `pymbar`, and R `UWHAM`) to keep the numerical behavior grounded.
 
 Native SVG plotting is available as an optional `plotting` feature.
 
@@ -9,14 +9,13 @@ Native SVG plotting is available as an optional `plotting` feature.
 The `alchemrs` binary is the primary entry point. Top-level commands are `advise-schedule`, `ti`, `bar`, `mbar`, `nes`, `iexp`, and `dexp`. Don't see your favorite estimator here? Submit an issue and I'd be happy to add it!
 
 ### Build
-Pre-built binaries for versioned releases can be found at https://github.com/helmutcarter/alchemrs/releases 
-crates.io support will come later in development.
+Pre-built binaries for tagged releases can be found at https://github.com/helmutcarter/alchemrs/releases.
 
-If you want the latest update, or to compile it for your machine:
+If you want the current source version, or to compile it for your machine:
 
 First, clone this repo
 ```bash
-git clone git@github.com:helmutcarter/alchemrs.git
+git clone https://github.com/helmutcarter/alchemrs.git
 cd alchemrs
 ```
 
@@ -87,16 +86,42 @@ Use the Rust API when you need embedding, custom orchestration, or tighter contr
 - `cargo run --example amber_ti -- 300 path/to/lambda0.out path/to/lambda1.out`
 - `cargo run --example amber_mbar -- 300 path/to/lambda0.out path/to/lambda1.out path/to/lambda2.out`
 - `cargo run --example openmm_u_kln_mbar`
+- `cargo run --example export_uwham_reference -- ./target/uwham-reference`
 
 The OpenMM example shows how to convert a tutorial-style `u_kln[k][l][n]`
 tensor of reduced potentials into `UNkMatrix` windows for direct MBAR analysis.
 
+Library-only estimators currently include:
+
+- `UwhamEstimator` for pooled equilibrium-window analysis from `UNkMatrix`
+- `AtmEstimator` for ATM leg and paired binding analysis over `AtmLogQMatrix` or `AtmSampleSet`
+
+## Python package
+
+The repository also includes a local Python package configured by `pyproject.toml`
+and backed by the `alchemrs-py` extension crate.
+
+Build and install it into the active Python environment with:
+
+```bash
+maturin develop
+```
+
 There are also runnable Python/OpenMM toy-system examples under `python/examples`:
 
 - `python/examples/amber_fixture_analysis.py`
+- `python/examples/atm_analysis.py`
 - `python/examples/openmm_u_kln_mbar.py`
 - `python/examples/openmm_nes.py`
 - `python/examples/openmm_atm.py`
+
+Python tests can be run with:
+
+```bash
+python -m pytest python/tests -q
+```
+
+The OpenMM examples additionally require `openmm`.
 
 Optional plotting helpers can be enabled with:
 
@@ -237,11 +262,10 @@ cargo install mdbook
 mdbook serve docs
 ```
 
-## Performance
+## Validation
 
-Initial internal benchmarks on the bundled fixtures show substantial speedups over
-`alchemlyb` for several workflows. Ongoing profiling notes and experiment results live in
-[`optimizations.md`](optimizations.md).
+The repository includes fixture-backed comparisons against `alchemlyb`, `pymbar`,
+and committed R `UWHAM` reference data under `tests/` and `fixtures/`.
 
 ## License Information
 
