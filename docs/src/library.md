@@ -6,14 +6,15 @@ Use the library when the CLI is not enough:
 
 - embedding `alchemrs` inside another Rust application
 - building custom preprocessing or estimation pipelines
-- preparing for later Python or other bindings on top of the same core implementation
+- sharing the same scientific core used by the existing Python bindings
 
 ## Common imports
 
 ```rust
 use alchemrs::{
+    AtmDirection, AtmEstimator, AtmSample, AtmSampleSet, AtmSchedule, AtmState,
     DecorrelationOptions, MbarEstimator, MbarOptions, NesEstimator, NesOptions, TiEstimator,
-    TiOptions,
+    TiOptions, UwhamEstimator,
     decorrelate_dhdl, decorrelate_u_nk_with_observable, extract_dhdl,
     extract_nes_trajectory, extract_u_nk_with_potential, mbar_convergence, nes_convergence,
 };
@@ -22,8 +23,7 @@ use alchemrs::{
 ## TI example
 
 ```rust
-use alchemrs::estimators::{TiEstimator, TiOptions};
-use alchemrs::parse::amber::extract_dhdl;
+use alchemrs::{TiEstimator, TiOptions, extract_dhdl};
 
 fn run_ti(paths: &[String], temperature_k: f64) -> Result<(), Box<dyn std::error::Error>> {
     let mut series = Vec::new();
@@ -38,6 +38,28 @@ fn run_ti(paths: &[String], temperature_k: f64) -> Result<(), Box<dyn std::error
     Ok(())
 }
 ```
+
+## UWHAM example
+
+```rust
+use alchemrs::{UwhamEstimator, extract_u_nk};
+
+fn run_uwham(paths: &[String], temperature_k: f64) -> Result<(), Box<dyn std::error::Error>> {
+    let mut windows = Vec::new();
+    for path in paths {
+        windows.push(extract_u_nk(path, temperature_k)?);
+    }
+
+    let fit = UwhamEstimator::default().fit(&windows)?;
+    let result = fit.result_with_uncertainty()?;
+    println!("UWHAM dG = {:.6}", result.values()[result.n_states() - 1]);
+    Ok(())
+}
+```
+
+`UwhamFit::write_reference_inputs(...)` is also available when you want to
+export `logQ.csv`, `size.csv`, and the fitted reference outputs for comparison
+against external UWHAM implementations.
 
 ## MBAR example with `EPtot` decorrelation
 
@@ -79,6 +101,35 @@ fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## ATM leg example
+
+```rust
+use alchemrs::{
+    AtmDirection, AtmEstimator, AtmSample, AtmSampleSet, AtmSchedule, AtmState,
+};
+
+fn run_atm_leg() -> Result<(), Box<dyn std::error::Error>> {
+    let leg = AtmSampleSet::new(
+        AtmSchedule::new(vec![
+            AtmState::new(0, AtmDirection::Forward, 0.0, 0.0, None, 0.0, 0.0, None, 0.0, 300.0)?,
+            AtmState::new(1, AtmDirection::Forward, 1.0, 1.0, None, 0.0, 0.0, None, 0.0, 300.0)?,
+        ])?,
+        vec![
+            AtmSample::new(0, 10.0, 2.0)?,
+            AtmSample::new(1, 12.0, 2.0)?,
+        ],
+    )?;
+
+    let estimate = AtmEstimator::default().estimate_leg(&leg)?;
+    println!("ATM leg dG = {:.6}", estimate.delta_f());
+    println!("ATM leg sigma = {:?}", estimate.uncertainty());
+    Ok(())
+}
+```
+
+For paired binding legs, use `estimate_binding(...)`, `estimate_rbfe(...)`, or
+`estimate_abfe(...)` on two `AtmSampleSet` values with opposite directions.
 
 For GROMACS multidimensional schedules, parser-derived component names are available from the parsed windows too:
 

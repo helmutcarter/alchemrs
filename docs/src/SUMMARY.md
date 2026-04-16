@@ -5,7 +5,7 @@
 - [CLI Guide](cli.md)
 - [Repository Layout](repository-layout.md)
 - [Data Model](data-model.md)
-- [Parsing AMBER Outputs](parsing.md)
+- [Parsing Outputs](parsing.md)
 - [Preprocessing](preprocessing.md)
 - [Estimators](estimators.md)
 - [Overlap Diagnostics](overlap.md)

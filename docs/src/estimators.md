@@ -2,6 +2,9 @@
 
 Estimator implementations live in the `alchemrs::estimators` module.
 
+The CLI currently exposes TI, BAR, MBAR, IEXP, DEXP, and NES. The library and
+Python bindings additionally expose UWHAM and ATM.
+
 ## Shared assumptions
 
 For `UNkMatrix`-based estimators, the current implementation assumes:
@@ -126,6 +129,65 @@ Typical usage:
 
 The analysis layer uses MBAR-derived log weights to compute overlap diagnostics.
 
+## UWHAM
+
+Types:
+
+- `UwhamEstimator`
+- `UwhamFit`
+- `UwhamOptions`
+
+Important options:
+
+- `max_iterations`
+- `tolerance`
+- `parallel`
+
+Input:
+
+- slice of `UNkMatrix`
+
+Behavior:
+
+- pools all windows into log unnormalized densities (`log_q`)
+- accepts positive infinity in `u_nk` by mapping it to negative infinity in `log_q`
+- solves the UWHAM equations on the pooled observations
+- `fit(...)` returns `UwhamFit`
+- `result()` materializes a `DeltaFMatrix`
+- `result_with_uncertainty()` uses the analytical UWHAM covariance
+- `weights()`, `covariance()`, and `variances()` expose fitted internals without rerunning the solve
+- `write_reference_inputs(...)` exports `logQ.csv`, `size.csv`, `delta_f.csv`, `ze.csv`, and metadata for cross-checking against external UWHAM implementations
+
+## ATM
+
+Types:
+
+- `AtmEstimator`
+- `AtmFit`
+- `AtmOptions`
+- `AtmUncertaintyMethod::{Analytical, Bootstrap { .. }, None}`
+- `AtmBindingEstimate`
+
+Input:
+
+- `fit(...)`: `AtmLogQMatrix`
+- `fit_leg(...)`, `estimate_leg(...)`, `estimate_binding(...)`: `AtmSampleSet`
+
+Behavior:
+
+- converts ATM schedule/sample data into pooled `log_q`
+- delegates the core statistical solve to the UWHAM implementation
+- `result()` on `AtmFit` returns a `DeltaFMatrix` across all ATM schedule states
+- `leg_result()` and `estimate_leg(...)` collapse that fit to one endpoint-to-endpoint `FreeEnergyEstimate`
+- `estimate_binding(...)`, `estimate_rbfe(...)`, and `estimate_abfe(...)` combine two opposite-direction legs and propagate leg uncertainties in quadrature
+- preserves ATM-derived lambda component labels when available
+
+Uncertainty behavior:
+
+- `Analytical` uses UWHAM covariance on the fitted leg
+- `Bootstrap { n_bootstrap, seed }` is only available when starting from `AtmSampleSet`
+- `None` suppresses uncertainty reporting
+
 ## IEXP and DEXP
 
 Several different free energy methods utilize perturbation to estimate free energy differences, but when people say Free Energy Perturbation (FEP) they are typically referring to an exponential averaging scheme based on perturbing potential energies from one lambda state to another. This perturbation can take place in either the forward or the reverse direction. In accordance with Klimovich, Shirts, and Mobley's 2016 [Guidelines for the analysis of free energy calculations](https://pmc.ncbi.nlm.nih.gov/articles/PMC4420631/), we define `iexp` as insertion exponential averaging, typically proceeding in the direction of decreasing entropy, and `dexp` as deletion exponential averaging, typically proceeding in the direction of increasing entropy.
@@ -199,3 +261,11 @@ The estimator interfaces follow one shared pattern:
 - `Fit::result() -> primary result`
 
 Estimators with an explicit uncertainty split also expose `estimate_with_uncertainty()` and `Fit::result_with_uncertainty()`.
+
+ATM extends that shape with:
+
+- `fit_leg(...)`
+- `estimate_leg(...)`
+- `estimate_binding(...)`
+- `estimate_rbfe(...)`
+- `estimate_abfe(...)`

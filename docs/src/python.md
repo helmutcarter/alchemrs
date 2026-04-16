@@ -11,29 +11,41 @@ build/release flow is finalized.
 
 Relevant paths:
 
+- `pyproject.toml`: `maturin` project configuration for the Python package
 - `python/alchemrs`: Python package wrapper around the native extension
 - `python/tests`: Python-side test coverage
 - `python/examples/amber_fixture_analysis.py`: bundled AMBER fixture analysis through the Python API
+- `python/examples/atm_analysis.py`: bundled ATM leg analysis through the Python API
 - `python/examples/openmm_u_kln_mbar.py`: pure-OpenMM equilibrium MBAR toy example
 - `python/examples/openmm_nes.py`: pure-OpenMM nonequilibrium switching toy example
 - `python/examples/openmm_atm.py`: pure-OpenMM ATM-style toy example
 
 ## Local usage
 
-The local package is not installed into your Python environment automatically.
-For now, run the examples and tests from the repository root with `python/` on
-`PYTHONPATH`.
+Recommended workflow:
+
+1. from the repository root, run `maturin develop`
+2. run tests or examples against the installed local package
+
+POSIX shell:
+
+```bash
+python -m pytest python/tests -q
+python python/examples/amber_fixture_analysis.py
+python python/examples/atm_analysis.py
+```
 
 PowerShell:
 
 ```powershell
-$env:PYTHONPATH=".\python"
-python .\python\examples\amber_fixture_analysis.py
-python .\python\examples\openmm_u_kln_mbar.py
-python .\python\examples\openmm_nes.py
-python .\python\examples\openmm_atm.py
 python -m pytest .\python\tests -q
+python .\python\examples\amber_fixture_analysis.py
+python .\python\examples\atm_analysis.py
 ```
+
+For pytest-only edit/test loops, `cargo build -p alchemrs-py` also works:
+`python/tests/conftest.py` will stage the newest debug-built extension into
+`python/alchemrs` before the test session starts.
 
 ## Bundled AMBER fixture workflow
 
@@ -44,6 +56,16 @@ Python example against real repository data. It:
 - runs TI directly from `dH/dlambda`
 - runs MBAR from `u_nk` plus `EPtot` decorrelation
 - prints `dG` values in `kcal/mol`
+
+## Bundled ATM fixture workflow
+
+Use `python/examples/atm_analysis.py` for the smallest pure-Python ATM example.
+It:
+
+- builds forward and reverse ATM legs from arrays
+- converts them into `AtmSampleSet`
+- runs `alchemrs.ATM().estimate_leg(...)`
+- combines the two legs with `estimate_rbfe(...)`
 
 ## Python API shape
 
@@ -76,6 +98,8 @@ Current reusable helper module:
 - `alchemrs.openmm.kt_in_kcal_per_mol(temperature_k)`
 - `alchemrs.openmm.windows_from_u_kln(...)`
 - `alchemrs.openmm.switching_trajectories_from_work_values(...)`
+- `alchemrs.openmm.atm_schedule_from_lambdas(...)`
+- `alchemrs.openmm.atm_sample_set_from_arrays(...)`
 
 For ATM-style workflows, the Python bindings expose a dedicated analysis model:
 

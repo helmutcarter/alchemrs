@@ -86,6 +86,88 @@ That last point matters for preprocessing:
 - some `u_nk`-derived observables fail on positive infinity
 - observable-based preprocessing using an external potential-energy series such as `EPtot` can still work if the external observable is finite
 
+## `AtmState` and `AtmSchedule`
+
+ATM workflows use dedicated schedule types in addition to generic `StatePoint`.
+
+`AtmState` stores:
+
+- `state_id`
+- leg direction (`Forward` or `Reverse`)
+- standard-softplus parameters `lambda1`, `lambda2`, `alpha`, `u0`, `w0`
+- optional multi-softplus parameters `lambda3`, `u1`
+- temperature in Kelvin
+
+Validation rules:
+
+- all numeric parameters must be finite
+- temperature must be finite and positive
+- `lambda3` and `u1` must either both be present or both be absent
+
+`AtmSchedule` stores one ATM leg as an ordered set of `AtmState` values.
+
+Validation rules:
+
+- at least one state
+- unique `state_id`
+- one leg direction per schedule
+- one temperature per schedule
+- either all states use standard softplus or all use multi-softplus
+
+Each ATM state can also be converted into a `StatePoint`. The resulting state
+vector is ordered as `lambda1`, `lambda2`, optional `lambda3`, `alpha`, `u0`,
+optional `u1`, `w0`, and those names are retained as `lambda_labels` when the
+ATM data is converted into matrix results.
+
+## `AtmSample` and `AtmSampleSet`
+
+`AtmSample` represents one ATM observation.
+
+It stores:
+
+- `state_id`
+- `potential_energy_kcal_per_mol`
+- `perturbation_energy_kcal_per_mol`
+
+Validation rules:
+
+- both stored energies must be finite
+
+`AtmSampleSet` combines:
+
+- one `AtmSchedule`
+- one or more `AtmSample` values assigned to that schedule
+
+Validation rules:
+
+- at least one sample
+- every sample `state_id` must exist in the schedule
+
+This is the most convenient library and Python entry point for ATM leg analysis,
+because it can be converted into a pooled `AtmLogQMatrix` automatically.
+
+## `AtmLogQMatrix`
+
+`AtmLogQMatrix` stores pooled log unnormalized densities for ATM/UWHAM-style
+analysis.
+
+It stores:
+
+- `n_observations`
+- `n_states`
+- dense `log_q` data in observation-major order
+- the ordered state list
+- `sampled_counts` per state
+- `lambda_labels`, when present
+
+Validation rules:
+
+- `log_q.len() == n_observations * n_states`
+- `states.len() == n_states`
+- `sampled_counts.len() == n_states`
+- `sum(sampled_counts) == n_observations`
+- `log_q` values may be finite or negative infinity, but not `NaN` or positive infinity
+
 ## `FreeEnergyEstimate`
 
 Represents a scalar free energy result with:
@@ -95,7 +177,7 @@ Represents a scalar free energy result with:
 - `from_state`
 - `to_state`
 
-This is used by TI.
+This is used by TI, NES, and ATM leg results.
 
 ## `DeltaFMatrix`
 
@@ -108,7 +190,7 @@ It stores:
 - the ordered state list
 - `lambda_labels`, when present, naming the lambda-vector components in state order
 
-This is used by BAR, MBAR, IEXP, and DEXP.
+This is used by BAR, MBAR, IEXP, DEXP, UWHAM, and ATM matrix results.
 
 ## `OverlapMatrix`
 

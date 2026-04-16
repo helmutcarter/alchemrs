@@ -6,6 +6,7 @@ The fastest way to use `alchemrs` is through the CLI. The Rust API is documented
 
 - Rust 1.85 or newer
 - AMBER output files or GROMACS `dhdl.xvg` files
+- Python 3.9 or newer plus `maturin` if you want the local Python package
 
 The repository is a normal Cargo workspace and can be built and tested with standard Rust tooling.
 
@@ -51,14 +52,28 @@ cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/\*/acetami
 cargo run --example openmm_u_kln_mbar
 ```
 
-Pure-OpenMM Python toy-system examples are also available:
+## Run the Python package locally
+
+Build and install the Python extension into the active environment:
 
 ```bash
-$env:PYTHONPATH=".\python"
-python .\python\examples\amber_fixture_analysis.py
-python .\python\examples\openmm_u_kln_mbar.py
-python .\python\examples\openmm_nes.py
-python .\python\examples\openmm_atm.py
+maturin develop
+```
+
+Then run the Python tests and example scripts from the repository root:
+
+```bash
+python -m pytest python/tests -q
+python python/examples/amber_fixture_analysis.py
+python python/examples/atm_analysis.py
+```
+
+The OpenMM toy-system examples are also available when `openmm` is installed:
+
+```bash
+python python/examples/openmm_u_kln_mbar.py
+python python/examples/openmm_nes.py
+python python/examples/openmm_atm.py
 ```
 
 See [Python and OpenMM](python.md) for the Python package layout, helper APIs,

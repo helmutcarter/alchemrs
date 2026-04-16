@@ -8,12 +8,14 @@ The repository includes fixtures and tests intended to compare behavior against:
 
 - `alchemlyb`
 - `pymbar`
+- the R `UWHAM` package
 
 Important matches include:
 
 - `u_nk` `DE` decorrelation semantics
 - `pymbar`-style statistical inefficiency estimation
 - `pymbar`-style automated equilibration detection
+- UWHAM free-energy estimates and pooled-input exports validated against committed R reference CSVs
 - AMBER NES Jarzynski estimates and preprocessing semantics validated against external reference scripts
 
 Important intentional difference:
@@ -25,6 +27,8 @@ Important intentional difference:
 The implemented parser surface supports AMBER outputs, including AMBER nonequilibrium switching outputs for NES, and GROMACS `dhdl.xvg` outputs.
 
 AMBER still has the broader and more battle-tested workflow coverage, but the documented and tested parsing workflow now includes both engines. Multidimensional GROMACS schedules are supported for `u_nk`-based analysis; multidimensional TI is still unsupported.
+
+ATM and OpenMM workflows currently enter through the typed data model and Python helper APIs rather than through a dedicated file parser.
 
 ## One-dimensional lambda assumption
 
@@ -55,9 +59,10 @@ This book documents the current implementation, not a frozen public-stability pr
 
 This repository does not currently provide:
 
-- a large plotting/reporting surface beyond the current optional SVG helpers
+- a large general-purpose plotting/reporting surface beyond the current SVG helpers and advisor HTML reports
 - production-grade parser coverage for every major MD engine
-- Python bindings in the current package
+- a dedicated CLI surface for ATM or direct UWHAM analysis
+- a polished published Python distribution workflow beyond the current repo-local `maturin` setup
 - versioned public API guarantees
 
 Those may come later, but they are not part of the implemented surface documented in this book.

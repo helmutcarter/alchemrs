@@ -6,17 +6,18 @@ The repository is organized as a Cargo workspace with two Rust packages:
 - `alchemrs-py`: the Python binding crate built as a `cdylib`
 
 The surrounding top-level directories then hold tests, examples, fixtures,
-documentation, and Python-side packaging/test code.
+documentation, the `python/` package wrapper, and `pyproject.toml` for the
+repo-local Python build workflow.
 
 ## `alchemrs` library layout
 
 The `alchemrs` crate is organized into modules rather than separate library crates:
 
-- `data`: domain types and scientific data-model structures
+- `data`: domain types and scientific data-model structures, including ATM schedules and samples
 - `error`: shared crate-level error handling
 - `parse`: engine-specific parsers for AMBER outputs and GROMACS `dhdl.xvg` files
 - `prep`: time-series preparation such as duplicate cleanup, sorting, equilibration detection, and decorrelation
-- `estimators`: TI, BAR, MBAR, IEXP, DEXP, and NES implementations
+- `estimators`: TI, BAR, MBAR, IEXP, DEXP, NES, UWHAM, and ATM implementations
 - `analysis`: overlap diagnostics, schedule advisors, and plot-ready convergence series
 - `plot`: optional SVG rendering helpers behind the `plotting` feature
 
@@ -27,6 +28,18 @@ The crate root also re-exports the most common types and functions directly for 
 `alchemrs-py` is a separate Rust package in the same workspace. It provides the
 native Python extension layer and depends on the core `alchemrs` crate, but the
 dependency does not go the other way.
+
+## `python/` package wrapper
+
+The `python/` directory contains:
+
+- the importable `python/alchemrs` package
+- OpenMM helper utilities in `python/alchemrs/openmm.py`
+- runnable Python examples
+- Python-side tests
+
+`pyproject.toml` points `maturin` at `alchemrs-py/Cargo.toml` and stages the
+extension into that package layout.
 
 ## CLI binary
 
