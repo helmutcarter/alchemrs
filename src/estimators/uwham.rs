@@ -48,6 +48,7 @@ struct ReducedUwhamInput {
     sampled_indices: Vec<usize>,
     base_sampled_index: usize,
     rho: Vec<f64>,
+    log_rho: Vec<f64>,
     sampled_log_q_relative: Vec<f64>,
 }
 
@@ -64,6 +65,19 @@ struct UwhamObjective {
     value: f64,
     gradient: DVector<f64>,
     hessian: DMatrix<f64>,
+}
+
+#[derive(Debug)]
+struct ObjectiveAccumulator {
+    value: f64,
+    col_sums: Vec<f64>,
+    gram_upper: Vec<f64>,
+}
+
+#[derive(Debug)]
+struct ObjectiveWorker {
+    accumulator: ObjectiveAccumulator,
+    weights: Vec<f64>,
 }
 
 impl UwhamEstimator {
@@ -296,10 +310,13 @@ impl ReducedUwhamInput {
         }
 
         let mut rho = Vec::with_capacity(sampled_indices.len());
+        let mut log_rho = Vec::with_capacity(sampled_indices.len());
         let mut sampled_log_q_relative =
             Vec::with_capacity(input.n_observations * sampled_indices.len());
         for &state_idx in &sampled_indices {
-            rho.push(input.size[state_idx] / input.n_observations as f64);
+            let rho_value = input.size[state_idx] / input.n_observations as f64;
+            rho.push(rho_value);
+            log_rho.push(rho_value.ln());
         }
         for observation_idx in 0..input.n_observations {
             let row = observation_row(&log_q_relative, input.n_states, observation_idx);
@@ -313,6 +330,7 @@ impl ReducedUwhamInput {
             sampled_indices,
             base_sampled_index,
             rho,
+            log_rho,
             sampled_log_q_relative,
         })
     }
@@ -438,44 +456,49 @@ fn evaluate_objective(
     parallel: bool,
 ) -> Result<UwhamObjective> {
     let sampled_ze = insert_base_state(ze_nonbase, reduced.base_sampled_index);
-    let log_qsum = log_qsum_per_observation(input, reduced, &sampled_ze, parallel)?;
     let sampled_count = reduced.sampled_indices.len();
     let variable_count = sampled_count.saturating_sub(1);
-    let mut value = 0.0;
-    let mut col_sums = vec![0.0; variable_count];
-    let mut gram = vec![0.0; variable_count * variable_count];
+    let accumulator = if parallel {
+        (0..input.n_observations)
+            .into_par_iter()
+            .try_fold(
+                || ObjectiveWorker::new(variable_count),
+                |mut worker, observation_idx| -> Result<_> {
+                    worker.accumulator.value += accumulate_objective_observation(
+                        reduced,
+                        &sampled_ze,
+                        observation_idx,
+                        &mut worker.accumulator.col_sums,
+                        &mut worker.accumulator.gram_upper,
+                        &mut worker.weights,
+                    )?;
+                    Ok(worker)
+                },
+            )
+            .try_reduce(
+                || ObjectiveWorker::new(variable_count),
+                |mut left, right| -> Result<_> {
+                    left.accumulator.merge(right.accumulator);
+                    Ok(left)
+                },
+            )?
+            .accumulator
+    } else {
+        let mut worker = ObjectiveWorker::new(variable_count);
+        for observation_idx in 0..input.n_observations {
+            worker.accumulator.value += accumulate_objective_observation(
+                reduced,
+                &sampled_ze,
+                observation_idx,
+                &mut worker.accumulator.col_sums,
+                &mut worker.accumulator.gram_upper,
+                &mut worker.weights,
+            )?;
+        }
+        worker.accumulator
+    };
 
-    for (observation_idx, &log_denom) in log_qsum.iter().enumerate() {
-        value += log_denom;
-        let row = observation_row(
-            &reduced.sampled_log_q_relative,
-            sampled_count,
-            observation_idx,
-        );
-        let mut weights = vec![0.0; variable_count];
-        let mut variable_idx = 0;
-        for sampled_idx in 0..sampled_count {
-            if sampled_idx == reduced.base_sampled_index {
-                continue;
-            }
-            let contribution = if row[sampled_idx] == f64::NEG_INFINITY {
-                0.0
-            } else {
-                (reduced.rho[sampled_idx].ln() + row[sampled_idx]
-                    - sampled_ze[sampled_idx]
-                    - log_denom)
-                    .exp()
-            };
-            weights[variable_idx] = contribution;
-            col_sums[variable_idx] += contribution;
-            variable_idx += 1;
-        }
-        for i in 0..variable_count {
-            for j in 0..variable_count {
-                gram[i * variable_count + j] += weights[i] * weights[j];
-            }
-        }
-    }
+    let mut value = accumulator.value;
 
     value /= input.n_observations as f64;
     for (sampled_idx, &sampled_ze_value) in sampled_ze.iter().enumerate().take(sampled_count) {
@@ -488,17 +511,20 @@ fn evaluate_objective(
         if sampled_idx == reduced.base_sampled_index {
             continue;
         }
-        gradient[variable_idx] =
-            -col_sums[variable_idx] / input.n_observations as f64 + reduced.rho[sampled_idx];
+        gradient[variable_idx] = -accumulator.col_sums[variable_idx] / input.n_observations as f64
+            + reduced.rho[sampled_idx];
         variable_idx += 1;
     }
 
     let mut hessian = DMatrix::zeros(variable_count, variable_count);
     for i in 0..variable_count {
-        for j in 0..variable_count {
-            hessian[(i, j)] = -gram[i * variable_count + j] / input.n_observations as f64;
+        for j in i..variable_count {
+            let value = -accumulator.gram_upper[upper_triangle_index(variable_count, i, j)]
+                / input.n_observations as f64;
+            hessian[(i, j)] = value;
+            hessian[(j, i)] = value;
         }
-        hessian[(i, i)] += col_sums[i] / input.n_observations as f64;
+        hessian[(i, i)] += accumulator.col_sums[i] / input.n_observations as f64;
     }
 
     if !value.is_finite() || gradient.iter().any(|value| !value.is_finite()) {
@@ -579,7 +605,7 @@ fn log_qsum_for_row(
         accumulate_logsumexp(
             &mut max_term,
             &mut sum,
-            reduced.rho[sampled_idx].ln() + row[sampled_idx] - sampled_ze_value,
+            reduced.log_rho[sampled_idx] + row[sampled_idx] - sampled_ze_value,
         );
     }
     if max_term == f64::NEG_INFINITY || !sum.is_finite() {
@@ -588,6 +614,107 @@ fn log_qsum_for_row(
         )));
     }
     Ok(max_term + sum.ln())
+}
+
+impl ObjectiveAccumulator {
+    fn new(variable_count: usize) -> Self {
+        Self {
+            value: 0.0,
+            col_sums: vec![0.0; variable_count],
+            gram_upper: vec![0.0; upper_triangle_len(variable_count)],
+        }
+    }
+
+    fn merge(&mut self, other: Self) {
+        self.value += other.value;
+        for (left, right) in self.col_sums.iter_mut().zip(other.col_sums) {
+            *left += right;
+        }
+        for (left, right) in self.gram_upper.iter_mut().zip(other.gram_upper) {
+            *left += right;
+        }
+    }
+}
+
+impl ObjectiveWorker {
+    fn new(variable_count: usize) -> Self {
+        Self {
+            accumulator: ObjectiveAccumulator::new(variable_count),
+            weights: vec![0.0; variable_count],
+        }
+    }
+}
+
+fn accumulate_objective_observation(
+    reduced: &ReducedUwhamInput,
+    sampled_ze: &[f64],
+    observation_idx: usize,
+    col_sums: &mut [f64],
+    gram_upper: &mut [f64],
+    weights: &mut [f64],
+) -> Result<f64> {
+    let sampled_count = reduced.sampled_indices.len();
+    let row = observation_row(
+        &reduced.sampled_log_q_relative,
+        sampled_count,
+        observation_idx,
+    );
+    let mut max_term = f64::NEG_INFINITY;
+    let mut sum = 0.0;
+    for (sampled_idx, &sampled_ze_value) in sampled_ze.iter().enumerate().take(sampled_count) {
+        if row[sampled_idx] == f64::NEG_INFINITY {
+            continue;
+        }
+        accumulate_logsumexp(
+            &mut max_term,
+            &mut sum,
+            reduced.log_rho[sampled_idx] + row[sampled_idx] - sampled_ze_value,
+        );
+    }
+    if max_term == f64::NEG_INFINITY || !sum.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "UWHAM denominator became non-finite at observation {observation_idx}"
+        )));
+    }
+
+    let log_denom = max_term + sum.ln();
+    let mut variable_idx = 0;
+    for sampled_idx in 0..sampled_count {
+        if sampled_idx == reduced.base_sampled_index {
+            continue;
+        }
+        let weight = if row[sampled_idx] == f64::NEG_INFINITY {
+            0.0
+        } else {
+            (reduced.log_rho[sampled_idx] + row[sampled_idx] - sampled_ze[sampled_idx] - log_denom)
+                .exp()
+        };
+        weights[variable_idx] = weight;
+        col_sums[variable_idx] += weight;
+        variable_idx += 1;
+    }
+
+    for i in 0..weights.len() {
+        let left = weights[i];
+        if left == 0.0 {
+            continue;
+        }
+        for j in i..weights.len() {
+            gram_upper[upper_triangle_index(weights.len(), i, j)] += left * weights[j];
+        }
+    }
+
+    Ok(log_denom)
+}
+
+fn upper_triangle_len(variable_count: usize) -> usize {
+    variable_count * (variable_count + 1) / 2
+}
+
+fn upper_triangle_index(variable_count: usize, i: usize, j: usize) -> usize {
+    debug_assert!(i <= j);
+    let row_start = i * (2 * variable_count - i + 1) / 2;
+    row_start + (j - i)
 }
 
 fn insert_base_state(ze_nonbase: &DVector<f64>, base_index: usize) -> Vec<f64> {
