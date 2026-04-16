@@ -2,8 +2,14 @@ use crate::data::{find_scalar_lambda_state_index_exact, DhdlSeries, UNkMatrix};
 use crate::error::{CoreError, Result};
 use rustfft::{num_complex::Complex, FftPlanner};
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 type SeriesCowPair<'a> = (Cow<'a, [f64]>, Cow<'a, [f64]>);
+const DIRECT_AUTOCORRELATION_TRIAL_STEPS: usize = 64;
+
+thread_local! {
+    static FFT_PLANNER: RefCell<FftPlanner<f64>> = RefCell::new(FftPlanner::<f64>::new());
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UNkSeriesMethod {
@@ -555,19 +561,49 @@ fn statistical_inefficiency(values: &[f64], fast: bool) -> Result<f64> {
         ));
     }
 
-    if d_values.len() < 1024 {
-        return statistical_inefficiency_direct(&d_values, sigma2, fast);
+    if let Some(g) = statistical_inefficiency_direct_limited(
+        &d_values,
+        sigma2,
+        fast,
+        DIRECT_AUTOCORRELATION_TRIAL_STEPS,
+    )? {
+        return Ok(g);
     }
     statistical_inefficiency_fft(&d_values, sigma2, fast)
 }
 
+#[cfg(test)]
 fn statistical_inefficiency_direct(d_values: &[f64], sigma2: f64, fast: bool) -> Result<f64> {
+    statistical_inefficiency_direct_inner(d_values, sigma2, fast, None).map(|result| {
+        result.expect("unbounded direct statistical inefficiency should always complete")
+    })
+}
+
+fn statistical_inefficiency_direct_limited(
+    d_values: &[f64],
+    sigma2: f64,
+    fast: bool,
+    max_steps: usize,
+) -> Result<Option<f64>> {
+    statistical_inefficiency_direct_inner(d_values, sigma2, fast, Some(max_steps))
+}
+
+fn statistical_inefficiency_direct_inner(
+    d_values: &[f64],
+    sigma2: f64,
+    fast: bool,
+    max_steps: Option<usize>,
+) -> Result<Option<f64>> {
     let n = d_values.len();
     let mut g = 1.0;
     let mut t = 1usize;
     let mut increment = 1usize;
     let mintime = 3usize;
+    let mut steps = 0usize;
     while t < n - 1 {
+        if max_steps.is_some_and(|limit| steps >= limit) {
+            return Ok(None);
+        }
         let mut sum = 0.0;
         let denom = (n - t) as f64;
         for i in 0..(n - t) {
@@ -582,11 +618,12 @@ fn statistical_inefficiency_direct(d_values: &[f64], sigma2: f64, fast: bool) ->
         if fast {
             increment += 1;
         }
+        steps += 1;
     }
     if g < 1.0 {
         g = 1.0;
     }
-    Ok(g)
+    Ok(Some(g))
 }
 
 fn statistical_inefficiency_fft(d_values: &[f64], sigma2: f64, fast: bool) -> Result<f64> {
@@ -616,9 +653,13 @@ fn statistical_inefficiency_fft(d_values: &[f64], sigma2: f64, fast: bool) -> Re
 fn autocovariance_fft(d_values: &[f64]) -> Vec<f64> {
     let n = d_values.len();
     let fft_len = (n * 2).next_power_of_two();
-    let mut planner = FftPlanner::<f64>::new();
-    let forward = planner.plan_fft_forward(fft_len);
-    let inverse = planner.plan_fft_inverse(fft_len);
+    let (forward, inverse) = FFT_PLANNER.with(|planner| {
+        let mut planner = planner.borrow_mut();
+        (
+            planner.plan_fft_forward(fft_len),
+            planner.plan_fft_inverse(fft_len),
+        )
+    });
 
     let mut buffer = vec![Complex::new(0.0, 0.0); fft_len];
     for (slot, &value) in buffer.iter_mut().zip(d_values.iter()) {
