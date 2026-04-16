@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
-use alchemrs::{extract_u_nk, UwhamEstimator};
+use alchemrs::{extract_u_nk, UwhamEstimator, UwhamFit, UNkMatrix};
 use tempfile::tempdir;
 
 fn amber_fixture_paths() -> Vec<PathBuf> {
@@ -37,6 +38,37 @@ fn amber_fixture_paths() -> Vec<PathBuf> {
     paths
 }
 
+fn reduced_fixture_paths() -> Vec<PathBuf> {
+    amber_fixture_paths()
+        .into_iter()
+        .filter(|path| {
+            path.parent()
+                .and_then(|p| p.file_name())
+                .and_then(|s| s.to_str())
+                .is_some_and(|name| matches!(name, "0.2" | "0.3" | "0.4" | "0.5" | "0.6"))
+        })
+        .collect()
+}
+
+fn amber_fixture_windows() -> &'static [UNkMatrix] {
+    static WINDOWS: OnceLock<Vec<UNkMatrix>> = OnceLock::new();
+    WINDOWS.get_or_init(|| {
+        reduced_fixture_paths()
+            .into_iter()
+            .map(|path| extract_u_nk(path, 300.0).expect("parse AMBER output"))
+            .collect()
+    })
+}
+
+fn amber_fixture_uwham_fit() -> &'static UwhamFit {
+    static FIT: OnceLock<UwhamFit> = OnceLock::new();
+    FIT.get_or_init(|| {
+        UwhamEstimator::default()
+            .fit(amber_fixture_windows())
+            .expect("UWHAM fit")
+    })
+}
+
 fn read_csv_vector(path: &str) -> Vec<f64> {
     fs::read_to_string(path)
         .expect("read csv vector")
@@ -62,14 +94,7 @@ fn read_csv_matrix(path: &str) -> Vec<f64> {
 
 #[test]
 fn uwham_produces_finite_result_for_amber_fixture() {
-    let mut windows = Vec::new();
-    for path in amber_fixture_paths() {
-        windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
-    }
-
-    let uwham = UwhamEstimator::default()
-        .estimate(&windows)
-        .expect("UWHAM fit");
+    let uwham = amber_fixture_uwham_fit().result().expect("UWHAM delta_f");
 
     assert!(uwham.values().iter().all(|value| value.is_finite()));
     for i in 0..uwham.n_states() {
@@ -79,12 +104,7 @@ fn uwham_produces_finite_result_for_amber_fixture() {
 
 #[test]
 fn uwham_weights_satisfy_sampled_state_check_on_fixture() {
-    let mut windows = Vec::new();
-    for path in amber_fixture_paths() {
-        windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
-    }
-
-    let uwham = UwhamEstimator::default().fit(&windows).expect("UWHAM fit");
+    let uwham = amber_fixture_uwham_fit();
     assert!(uwham.free_energies().iter().all(|value| value.is_finite()));
 
     let n_observations = uwham.n_observations() as f64;
@@ -104,12 +124,7 @@ fn uwham_weights_satisfy_sampled_state_check_on_fixture() {
 
 #[test]
 fn uwham_matches_committed_r_reference_on_fixture() {
-    let mut windows = Vec::new();
-    for path in amber_fixture_paths() {
-        windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
-    }
-
-    let uwham = UwhamEstimator::default().fit(&windows).expect("UWHAM fit");
+    let uwham = amber_fixture_uwham_fit();
     let ze = read_csv_vector("fixtures/uwham/ze.csv");
     let delta_f = read_csv_matrix("fixtures/uwham/delta_f.csv");
 
@@ -135,12 +150,7 @@ fn uwham_matches_committed_r_reference_on_fixture() {
 
 #[test]
 fn uwham_exports_reference_inputs() {
-    let mut windows = Vec::new();
-    for path in amber_fixture_paths() {
-        windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
-    }
-
-    let fit = UwhamEstimator::default().fit(&windows).expect("UWHAM fit");
+    let fit = amber_fixture_uwham_fit();
     let dir = tempdir().expect("tempdir");
     fit.write_reference_inputs(dir.path())
         .expect("write UWHAM reference inputs");

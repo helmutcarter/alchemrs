@@ -37,18 +37,25 @@ fn amber_fixture_paths() -> Vec<PathBuf> {
 }
 
 fn main() {
-    let output_dir = std::env::args_os()
-        .nth(1)
+    let mut args = std::env::args_os().skip(1);
+    let output_dir = args.next().map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("uwham-reference")
+            .join("acetamide_tiny")
+    });
+    let selected = args
         .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("target")
-                .join("uwham-reference")
-                .join("acetamide_tiny")
-        });
+        .collect::<Vec<_>>();
+
+    let input_paths = if selected.is_empty() {
+        amber_fixture_paths()
+    } else {
+        selected
+    };
 
     let mut windows = Vec::new();
-    for path in amber_fixture_paths() {
+    for path in input_paths {
         windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
     }
 

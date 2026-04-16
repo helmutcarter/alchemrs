@@ -13,9 +13,9 @@ Each window contains:
 - 20 DV/DL blocks with unique NSTEP values
 
 These fixtures are used by:
-- `crates/alchemrs-parse` AMBER integration tests
-- `crates/alchemrs-prep` decorrelation comparisons against alchemlyb
-- `crates/alchemrs-estimators` TI comparisons against alchemlyb
+- `tests/amber_integration.rs` and `tests/amber_errors.rs` for parser coverage
+- `tests/decorrelation_alchemlyb.rs`, `tests/decorrelation_u_nk_alchemlyb.rs`, and `tests/detect_equilibration_alchemlyb.rs` for preprocessing comparisons against `alchemlyb`
+- `tests/ti_alchemlyb.rs`, `tests/mbar_alchemlyb.rs`, `tests/bar_alchemlyb.rs`, `tests/exp_pymbar.rs`, `tests/overlap_alchemlyb.rs`, `tests/uwham_matches_mbar.rs`, and `tests/cli_regression.rs` for estimator and CLI regression coverage
 
 ### Regenerating the fixtures
 
@@ -50,7 +50,7 @@ decorrelate_dhdl(df).reset_index().to_csv(base/'0.1'/'dhdl.decorrelated.csv', in
 df=extract_u_nk(base/'0.1'/'acetamide.prod.out', T=300.0)
 decorrelate_u_nk(df, method='dE').reset_index().to_csv(base/'0.1'/'u_nk.decorrelated.csv', index=False)
 
-# TI delta for 0.0 -> 1.0 (all windows)
+# TI delta and sigma for 0.0 -> 1.0 (all windows)
 paths=sorted([p/'acetamide.prod.out' for p in base.iterdir() if p.is_dir()], key=lambda p: float(p.parent.name))
 frames=[extract_dHdl(p, T=300.0) for p in paths]
 dhdl=pd.concat(frames)
@@ -59,6 +59,7 @@ states=result.states_
 idx0=states.index((0.0,)) if isinstance(states[0], tuple) else states.index(0.0)
 idx1=states.index((1.0,)) if isinstance(states[0], tuple) else states.index(1.0)
 value=result.delta_f_.iloc[idx0, idx1]
-(base/'ti_0.0_1.0.delta_f.txt').write_text(f\"{value:.8f}\\n\")
+sigma=result.d_delta_f_.iloc[idx0, idx1]
+(base/'ti_0.0_1.0.delta_f_sigma.txt').write_text(f\"{value:.8f},{sigma:.8f}\\n\")
 PY
 ```
