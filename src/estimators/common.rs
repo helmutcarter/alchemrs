@@ -7,7 +7,66 @@ pub(crate) type CombinedWindows = (
     Vec<StatePoint>,
     Option<Vec<String>>,
 );
-pub(crate) type PairEstimate = (f64, f64);
+pub(crate) fn sample_variance(values: &[f64]) -> Option<f64> {
+    if values.len() < 2 {
+        return None;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let ssq = values
+        .iter()
+        .map(|value| {
+            let diff = value - mean;
+            diff * diff
+        })
+        .sum::<f64>();
+    Some(ssq / (values.len() - 1) as f64)
+}
+
+pub(crate) fn sample_covariance(lhs: &[f64], rhs: &[f64]) -> Result<Option<f64>> {
+    if lhs.len() != rhs.len() {
+        return Err(CoreError::InvalidShape {
+            expected: lhs.len(),
+            found: rhs.len(),
+        });
+    }
+    if lhs.len() < 2 {
+        return Ok(None);
+    }
+
+    let mean_lhs = lhs.iter().sum::<f64>() / lhs.len() as f64;
+    let mean_rhs = rhs.iter().sum::<f64>() / rhs.len() as f64;
+    let ssq = lhs
+        .iter()
+        .zip(rhs.iter())
+        .map(|(left, right)| (left - mean_lhs) * (right - mean_rhs))
+        .sum::<f64>();
+    Ok(Some(ssq / (lhs.len() - 1) as f64))
+}
+
+pub(crate) fn checked_nonnegative_sqrt(variance: f64, scale: f64, context: &str) -> Result<f64> {
+    if !variance.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "{context} became non-finite"
+        )));
+    }
+    if !scale.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "{context} scale became non-finite"
+        )));
+    }
+
+    let tolerance = 1.0e-8 * scale.abs().max(1.0);
+    if variance < -tolerance {
+        return Err(CoreError::NonFiniteValue(format!(
+            "{context} produced a negative variance ({variance})"
+        )));
+    }
+    Ok(variance.max(0.0).sqrt())
+}
+
+pub(crate) fn checked_nonnegative_sqrt_or_nan(variance: f64, scale: f64, context: &str) -> f64 {
+    checked_nonnegative_sqrt(variance, scale, context).unwrap_or(f64::NAN)
+}
 
 pub(crate) fn ensure_consistent_states(windows: &[UNkMatrix]) -> Result<Vec<StatePoint>> {
     let first = windows[0].evaluated_states();

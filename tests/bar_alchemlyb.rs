@@ -45,7 +45,7 @@ fn bar_matches_alchemlyb_all_windows() {
     let result = fit.result().expect("BAR result");
 
     let expected_delta = 37.39789124;
-    let expected_sigma = 0.44660501995747376;
+    let expected_sigma = 1.3509471515963036;
 
     let n = result.n_states();
     let delta_index = n - 1;

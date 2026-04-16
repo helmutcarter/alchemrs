@@ -2,7 +2,7 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{ensure_consistent_lambda_labels, work_values};
+use super::common::{ensure_consistent_lambda_labels, sample_variance, work_values};
 
 #[derive(Debug, Clone, Default)]
 pub struct IexpOptions {
@@ -331,12 +331,9 @@ fn exp_uncertainty(work: &[f64]) -> Result<f64> {
             "EXP uncertainty became non-finite; no finite Boltzmann weight remained".to_string(),
         ));
     }
-    let mut var = 0.0;
-    for value in &x {
-        let diff = value - mean;
-        var += diff * diff;
-    }
-    var /= t;
+    let Some(var) = sample_variance(&x) else {
+        return Ok(f64::NAN);
+    };
     let std = var.sqrt();
     let dx = std / (t.sqrt());
     let uncertainty = dx / mean;

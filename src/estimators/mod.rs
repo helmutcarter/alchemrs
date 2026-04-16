@@ -1027,7 +1027,7 @@ mod tests {
             .uncertainties()
             .expect("uncertainties")
             .iter()
-            .any(|value| value.is_nan()));
+            .all(|value| value.is_finite()));
     }
 
     #[test]
@@ -1084,7 +1084,7 @@ mod tests {
     }
 
     #[test]
-    fn bar_cumulative_uncertainty_propagates_adjacent_sigmas() {
+    fn bar_cumulative_uncertainty_matches_quadrature_when_neighbor_covariance_cancels() {
         let windows = make_three_state_local_bar_windows();
         let result = BarEstimator::default().estimate(&windows).unwrap();
         let uncertainties = result.uncertainties().expect("uncertainties");

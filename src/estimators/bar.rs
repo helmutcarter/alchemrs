@@ -2,7 +2,10 @@ use crate::analysis::{self, BlockEstimate};
 use crate::data::{find_state_index_exact, DeltaFMatrix, StatePoint, UNkMatrix};
 use crate::error::{CoreError, Result};
 
-use super::common::{ensure_consistent_lambda_labels, work_values, PairEstimate};
+use super::common::{
+    checked_nonnegative_sqrt_or_nan, ensure_consistent_lambda_labels, sample_covariance,
+    sample_variance, work_values,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BarMethod {
@@ -43,6 +46,16 @@ pub struct BarFit {
     lambda_labels: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone)]
+struct BarEdgeEstimate {
+    delta_f: f64,
+    variance: f64,
+    sigma: f64,
+    derivative: f64,
+    forward_weights: Vec<f64>,
+    reverse_weights: Vec<f64>,
+}
+
 impl BarEstimator {
     pub fn new(options: BarOptions) -> Self {
         Self { options }
@@ -71,7 +84,7 @@ impl BarEstimator {
             window_by_index[idx] = Some(window);
         }
 
-        let pair_results: Vec<Result<PairEstimate>> = if self.options.parallel {
+        let pair_results: Vec<Result<BarEdgeEstimate>> = if self.options.parallel {
             use rayon::prelude::*;
             (0..(eval_states.len() - 1))
                 .into_par_iter()
@@ -89,14 +102,13 @@ impl BarEstimator {
                         .into_iter()
                         .map(|w| -w)
                         .collect::<Vec<_>>();
-                    let (df, ddf) = bar_estimate(
+                    bar_edge_estimate(
                         &w_f,
                         &w_r,
                         self.options.method,
                         self.options.maximum_iterations,
                         self.options.relative_tolerance,
-                    )?;
-                    Ok((df, ddf))
+                    )
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -115,24 +127,28 @@ impl BarEstimator {
                     .into_iter()
                     .map(|w| -w)
                     .collect::<Vec<_>>();
-                let (df, ddf) = bar_estimate(
+                out.push(bar_edge_estimate(
                     &w_f,
                     &w_r,
                     self.options.method,
                     self.options.maximum_iterations,
                     self.options.relative_tolerance,
-                )?;
-                out.push(Ok((df, ddf)));
+                ));
             }
             out
         };
 
-        let mut deltas = Vec::with_capacity(pair_results.len());
-        let mut d_deltas = Vec::with_capacity(pair_results.len());
+        let mut edge_estimates = Vec::with_capacity(pair_results.len());
         for result in pair_results {
-            let (delta, d_delta) = result?;
-            deltas.push(delta);
-            d_deltas.push(d_delta);
+            edge_estimates.push(result?);
+        }
+        let deltas = edge_estimates
+            .iter()
+            .map(|estimate| estimate.delta_f)
+            .collect::<Vec<_>>();
+        let mut adjacent_covariances = Vec::with_capacity(edge_estimates.len().saturating_sub(1));
+        for pair in edge_estimates.windows(2) {
+            adjacent_covariances.push(adjacent_bar_covariance(&pair[0], &pair[1])?);
         }
 
         let n_states = eval_states.len();
@@ -144,14 +160,15 @@ impl BarEstimator {
             let mut dout = Vec::new();
             for i in 0..(deltas.len() - j) {
                 out.push(deltas[i..=i + j].iter().sum::<f64>());
-                let variances = d_deltas[i..=i + j]
-                    .iter()
-                    .map(|sigma| sigma * sigma)
-                    .collect::<Vec<_>>();
-                if variances.iter().all(|variance| variance.is_finite()) {
-                    dout.push(variances.iter().sum::<f64>().sqrt());
+                if j == 0 {
+                    dout.push(edge_estimates[i].sigma);
                 } else {
-                    dout.push(f64::NAN);
+                    dout.push(path_uncertainty(
+                        &edge_estimates,
+                        &adjacent_covariances,
+                        i,
+                        i + j,
+                    ));
                 }
             }
             for (i, value) in out.into_iter().enumerate() {
@@ -328,6 +345,7 @@ fn neg_log1pexp(value: f64) -> f64 {
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn bar_estimate(
     w_f: &[f64],
     w_r: &[f64],
@@ -335,6 +353,17 @@ pub(crate) fn bar_estimate(
     maximum_iterations: usize,
     relative_tolerance: f64,
 ) -> Result<(f64, f64)> {
+    let estimate = bar_edge_estimate(w_f, w_r, method, maximum_iterations, relative_tolerance)?;
+    Ok((estimate.delta_f, estimate.sigma))
+}
+
+fn bar_edge_estimate(
+    w_f: &[f64],
+    w_r: &[f64],
+    method: BarMethod,
+    maximum_iterations: usize,
+    relative_tolerance: f64,
+) -> Result<BarEdgeEstimate> {
     if w_f.is_empty() || w_r.is_empty() {
         return Err(CoreError::InvalidShape {
             expected: 1,
@@ -411,8 +440,15 @@ pub(crate) fn bar_estimate(
         return Err(CoreError::ConvergenceFailure);
     }
 
-    let d_delta_f = bar_uncertainty(w_f, w_r, delta_f)?;
-    Ok((delta_f, d_delta_f))
+    let uncertainty = bar_uncertainty(w_f, w_r, delta_f)?;
+    Ok(BarEdgeEstimate {
+        delta_f,
+        variance: uncertainty.0,
+        sigma: uncertainty.1,
+        derivative: uncertainty.2,
+        forward_weights: uncertainty.3,
+        reverse_weights: uncertainty.4,
+    })
 }
 
 fn bracket_bar_root(
@@ -456,40 +492,103 @@ fn bracket_bar_root(
     Err(CoreError::ConvergenceFailure)
 }
 
-fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<f64> {
-    if w_f.iter().any(|v| !v.is_finite()) || w_r.iter().any(|v| !v.is_finite()) {
-        return Ok(f64::NAN);
-    }
+fn bar_uncertainty(
+    w_f: &[f64],
+    w_r: &[f64],
+    delta_f: f64,
+) -> Result<(f64, f64, f64, Vec<f64>, Vec<f64>)> {
     let t_f = w_f.len() as f64;
     let t_r = w_r.len() as f64;
     let m = (t_f / t_r).ln();
-    let c = m - delta_f;
 
-    let exp_arg_f: Vec<f64> = w_f.iter().map(|w| w + c).collect();
-    let max_arg_f = exp_arg_f.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let log_f_f: Vec<f64> = exp_arg_f
-        .iter()
-        .map(|arg| -(((-max_arg_f).exp() + (arg - max_arg_f).exp()).ln()))
-        .collect();
-    let af_f = (logsumexp(&log_f_f) - max_arg_f).exp() / t_f;
-    let af_f2 = (logsumexp(&log_f_f.iter().map(|v| 2.0 * v).collect::<Vec<_>>()) - 2.0 * max_arg_f)
-        .exp()
-        / t_f;
+    let mut forward_weights = Vec::with_capacity(w_f.len());
+    let mut reverse_weights = Vec::with_capacity(w_r.len());
+    let mut derivative = 0.0;
 
-    let exp_arg_r: Vec<f64> = w_r.iter().map(|w| w - c).collect();
-    let max_arg_r = exp_arg_r.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let log_f_r: Vec<f64> = exp_arg_r
-        .iter()
-        .map(|arg| -(((-max_arg_r).exp() + (arg - max_arg_r).exp()).ln()))
-        .collect();
-    let af_r = (logsumexp(&log_f_r) - max_arg_r).exp() / t_r;
-    let af_r2 = (logsumexp(&log_f_r.iter().map(|v| 2.0 * v).collect::<Vec<_>>()) - 2.0 * max_arg_r)
-        .exp()
-        / t_r;
+    for &work in w_f {
+        let weight = fermi_weight(m + work - delta_f);
+        derivative += weight * (1.0 - weight) / t_f;
+        forward_weights.push(weight);
+    }
+    for &work in w_r {
+        let weight = fermi_weight(-m + work + delta_f);
+        derivative += weight * (1.0 - weight) / t_r;
+        reverse_weights.push(weight);
+    }
 
-    let nrat = (t_f + t_r) / (t_f * t_r);
-    let variance = (af_f2 / (af_f * af_f)) / t_f + (af_r2 / (af_r * af_r)) / t_r - nrat;
-    Ok(variance.max(0.0).sqrt())
+    let variance = match (
+        sample_variance(&forward_weights),
+        sample_variance(&reverse_weights),
+    ) {
+        (Some(var_f), Some(var_r)) if derivative.is_finite() && derivative > 0.0 => {
+            (var_f / t_f + var_r / t_r) / (derivative * derivative)
+        }
+        _ => f64::NAN,
+    };
+    let sigma = if variance.is_finite() {
+        checked_nonnegative_sqrt_or_nan(variance, variance.abs(), "BAR adjacent uncertainty")
+    } else {
+        f64::NAN
+    };
+    Ok((
+        variance,
+        sigma,
+        derivative,
+        forward_weights,
+        reverse_weights,
+    ))
+}
+
+fn adjacent_bar_covariance(left: &BarEdgeEstimate, right: &BarEdgeEstimate) -> Result<f64> {
+    if !left.derivative.is_finite()
+        || !right.derivative.is_finite()
+        || left.derivative <= 0.0
+        || right.derivative <= 0.0
+    {
+        return Ok(f64::NAN);
+    }
+
+    let shared_covariance = match sample_covariance(&left.reverse_weights, &right.forward_weights)?
+    {
+        Some(value) => value,
+        None => return Ok(f64::NAN),
+    };
+    let n_shared = left.reverse_weights.len() as f64;
+    Ok(-shared_covariance / (n_shared * left.derivative * right.derivative))
+}
+
+fn path_uncertainty(
+    edge_estimates: &[BarEdgeEstimate],
+    adjacent_covariances: &[f64],
+    start_edge: usize,
+    end_edge: usize,
+) -> f64 {
+    let mut variance = 0.0;
+    let mut scale = 0.0;
+    for edge in &edge_estimates[start_edge..=end_edge] {
+        if !edge.variance.is_finite() {
+            return f64::NAN;
+        }
+        variance += edge.variance;
+        scale += edge.variance.abs();
+    }
+    for covariance in &adjacent_covariances[start_edge..end_edge] {
+        if !covariance.is_finite() {
+            return f64::NAN;
+        }
+        variance += 2.0 * covariance;
+        scale += 2.0 * covariance.abs();
+    }
+    checked_nonnegative_sqrt_or_nan(variance, scale, "BAR cumulative uncertainty")
+}
+
+fn fermi_weight(argument: f64) -> f64 {
+    if argument >= 0.0 {
+        let exp_neg = (-argument).exp();
+        exp_neg / (1.0 + exp_neg)
+    } else {
+        1.0 / (1.0 + argument.exp())
+    }
 }
 
 fn logsumexp(values: &[f64]) -> f64 {
@@ -499,4 +598,42 @@ fn logsumexp(values: &[f64]) -> f64 {
     }
     let sum = values.iter().map(|v| (v - max).exp()).sum::<f64>();
     max + sum.ln()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        adjacent_bar_covariance, bar_edge_estimate, path_uncertainty, BarEdgeEstimate, BarMethod,
+        BarOptions,
+    };
+
+    fn edge(w_f: &[f64], w_r: &[f64]) -> BarEdgeEstimate {
+        bar_edge_estimate(
+            w_f,
+            w_r,
+            BarMethod::FalsePosition,
+            BarOptions::default().maximum_iterations,
+            BarOptions::default().relative_tolerance,
+        )
+        .expect("BAR edge estimate")
+    }
+
+    #[test]
+    fn cumulative_uncertainty_includes_neighbor_covariance() {
+        let left = edge(&[0.0, 0.4, 0.8, 1.2], &[-0.8, -0.2, 0.4, 1.0]);
+        let right = edge(&[-0.6, 0.0, 0.6, 1.2], &[0.2, 0.5, 0.8, 1.1]);
+
+        let covariance = adjacent_bar_covariance(&left, &right).expect("adjacent covariance");
+        assert!(covariance.is_finite());
+        assert!(covariance.abs() > 1.0e-6);
+
+        let sigma = path_uncertainty(&[left.clone(), right.clone()], &[covariance], 0, 1);
+        let quadrature = (left.sigma * left.sigma + right.sigma * right.sigma).sqrt();
+        let expected = (left.variance + right.variance + 2.0 * covariance)
+            .max(0.0)
+            .sqrt();
+
+        assert!((sigma - expected).abs() < 1.0e-12);
+        assert!((sigma - quadrature).abs() > 1.0e-6);
+    }
 }

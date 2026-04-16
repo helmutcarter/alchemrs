@@ -221,7 +221,7 @@ alchemrs bar \
   /path/to/*/prod.out
 ```
 
-BAR now reports adjacent-edge uncertainties directly and propagates cumulative endpoint uncertainty from those adjacent contributions.
+BAR reports adjacent-edge uncertainties from the implicit BAR root equation and propagates cumulative endpoint uncertainty with the neighboring-edge covariance induced by shared intermediate windows.
 
 ### MBAR
 
@@ -241,7 +241,7 @@ alchemrs dexp \
   /path/to/*/prod.out
 ```
 
-IEXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction.
+IEXP reports FEP results in the forward direction, DEXP reports FEP results in the reverse direction. Their reported uncertainties come from a delta-method propagation of the Jarzynski weights with an unbiased finite-sample variance estimate.
 
 ### NES
 
@@ -251,7 +251,7 @@ alchemrs nes \
   /path/to/run_*/fwd.out
 ```
 
-`nes` parses AMBER nonequilibrium switching outputs, integrates the switching work from the final `Summary of dvdl values ...` block, and applies the Jarzynski equality. Analytic uncertainty is used by default; pass `--n-bootstrap <N>` to request bootstrap uncertainty instead, or `--no-uncertainty` to suppress it.
+`nes` parses AMBER nonequilibrium switching outputs, integrates the switching work from the final `Summary of dvdl values ...` block, and applies the Jarzynski equality. Analytic uncertainty is used by default and is computed from the trajectory-level Jarzynski weights with an unbiased finite-sample variance estimate; pass `--n-bootstrap <N>` to request bootstrap uncertainty instead, or `--no-uncertainty` to suppress it.
 
 ## Documentation
 

@@ -3,6 +3,7 @@ use crate::error::{CoreError, Result};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 
+use super::common::{checked_nonnegative_sqrt, sample_variance};
 use super::uwham::{fit_log_q_input, UwhamLogQInput, UwhamOptions};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -67,7 +68,10 @@ impl AtmEstimator {
         let input = UwhamLogQInput::from_atm(data);
         let inner = fit_log_q_input(input, &self.options.uwham)?;
         let leg_uncertainty = match self.options.uncertainty {
-            AtmUncertaintyMethod::Analytical => Some(endpoint_uncertainty(&inner)?),
+            AtmUncertaintyMethod::Analytical => {
+                let sigma = endpoint_uncertainty(&inner)?;
+                sigma.is_finite().then_some(sigma)
+            }
             AtmUncertaintyMethod::Bootstrap { .. } | AtmUncertaintyMethod::None => None,
         };
         Ok(AtmFit {
@@ -81,9 +85,13 @@ impl AtmEstimator {
         let input = UwhamLogQInput::from_atm(&matrix);
         let inner = fit_log_q_input(input, &self.options.uwham)?;
         let leg_uncertainty = match self.options.uncertainty {
-            AtmUncertaintyMethod::Analytical => Some(endpoint_uncertainty(&inner)?),
+            AtmUncertaintyMethod::Analytical => {
+                let sigma = endpoint_uncertainty(&inner)?;
+                sigma.is_finite().then_some(sigma)
+            }
             AtmUncertaintyMethod::Bootstrap { n_bootstrap, seed } => {
-                Some(bootstrap_leg_uncertainty(self, samples, n_bootstrap, seed)?)
+                let sigma = bootstrap_leg_uncertainty(self, samples, n_bootstrap, seed)?;
+                sigma.is_finite().then_some(sigma)
             }
             AtmUncertaintyMethod::None => None,
         };
@@ -235,12 +243,10 @@ fn endpoint_uncertainty(fit: &super::uwham::UwhamFit) -> Result<f64> {
     let covariance = fit.covariance()?;
     let variance = covariance[0] + covariance[(n_states - 1) * n_states + (n_states - 1)]
         - 2.0 * covariance[n_states - 1];
-    if !variance.is_finite() {
-        return Err(CoreError::NonFiniteValue(
-            "ATM analytical uncertainty became non-finite".to_string(),
-        ));
-    }
-    Ok(variance.max(0.0).sqrt())
+    let scale = covariance[0].abs()
+        + covariance[(n_states - 1) * n_states + (n_states - 1)].abs()
+        + 2.0 * covariance[n_states - 1].abs();
+    checked_nonnegative_sqrt(variance, scale, "ATM analytical uncertainty")
 }
 
 fn bootstrap_leg_uncertainty(
@@ -283,15 +289,9 @@ fn bootstrap_leg_uncertainty(
         estimates.push(leg_delta_f(&inner)?);
     }
 
-    let mean = estimates.iter().sum::<f64>() / estimates.len() as f64;
-    let variance = estimates
-        .iter()
-        .map(|value| {
-            let diff = value - mean;
-            diff * diff
-        })
-        .sum::<f64>()
-        / estimates.len() as f64;
+    let Some(variance) = sample_variance(&estimates) else {
+        return Ok(f64::NAN);
+    };
     if !variance.is_finite() {
         return Err(CoreError::NonFiniteValue(
             "ATM bootstrap uncertainty became non-finite".to_string(),

@@ -4,6 +4,8 @@ use rand::{Rng, SeedableRng};
 use crate::data::{FreeEnergyEstimate, SwitchingTrajectory};
 use crate::error::{CoreError, Result};
 
+use super::common::sample_variance;
+
 #[derive(Debug, Clone, Default)]
 pub struct NesOptions {
     pub n_bootstrap: usize,
@@ -51,13 +53,11 @@ impl NesEstimator {
         let work: Vec<f64> = trajectories.iter().map(|t| t.reduced_work()).collect();
         let delta_f = jarzynski_delta_f(&work)?;
         let uncertainty = if self.options.n_bootstrap == 0 {
-            Some(analytic_uncertainty(&work)?)
+            let sigma = analytic_uncertainty(&work)?;
+            sigma.is_finite().then_some(sigma)
         } else {
-            Some(bootstrap_uncertainty(
-                &work,
-                self.options.n_bootstrap,
-                self.options.seed,
-            )?)
+            let sigma = bootstrap_uncertainty(&work, self.options.n_bootstrap, self.options.seed)?;
+            sigma.is_finite().then_some(sigma)
         };
 
         Ok(NesFit {
@@ -145,14 +145,9 @@ pub(crate) fn analytic_uncertainty(work: &[f64]) -> Result<f64> {
                 .to_string(),
         ));
     }
-    let variance = x
-        .iter()
-        .map(|value| {
-            let diff = value - mean;
-            diff * diff
-        })
-        .sum::<f64>()
-        / n;
+    let Some(variance) = sample_variance(&x) else {
+        return Ok(f64::NAN);
+    };
     let uncertainty = variance.sqrt() / (n.sqrt() * mean);
     if !uncertainty.is_finite() {
         return Err(CoreError::NonFiniteValue(
@@ -175,14 +170,8 @@ fn bootstrap_uncertainty(work: &[f64], n_bootstrap: usize, seed: u64) -> Result<
         samples.push(jarzynski_delta_f(&resample)?);
     }
 
-    let mean = samples.iter().sum::<f64>() / samples.len() as f64;
-    let variance = samples
-        .iter()
-        .map(|value| {
-            let diff = value - mean;
-            diff * diff
-        })
-        .sum::<f64>()
-        / samples.len() as f64;
+    let Some(variance) = sample_variance(&samples) else {
+        return Ok(f64::NAN);
+    };
     Ok(variance.sqrt())
 }

@@ -6,7 +6,9 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states};
+use super::common::{
+    checked_nonnegative_sqrt, ensure_consistent_lambda_labels, ensure_consistent_states,
+};
 
 #[derive(Debug, Clone)]
 pub struct UwhamOptions {
@@ -153,7 +155,14 @@ impl UwhamFit {
             for j in 0..n_states {
                 let variance = covariance[i * n_states + i] + covariance[j * n_states + j]
                     - 2.0 * covariance[i * n_states + j];
-                uncertainties[i * n_states + j] = variance.max(0.0).sqrt();
+                let scale = covariance[i * n_states + i].abs()
+                    + covariance[j * n_states + j].abs()
+                    + 2.0 * covariance[i * n_states + j].abs();
+                uncertainties[i * n_states + j] = checked_nonnegative_sqrt(
+                    variance,
+                    scale,
+                    &format!("UWHAM uncertainty for states {i}->{j}"),
+                )?;
             }
         }
         DeltaFMatrix::new_with_labels(

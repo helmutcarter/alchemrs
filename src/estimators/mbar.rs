@@ -4,7 +4,10 @@ use crate::error::{CoreError, Result};
 use rayon::prelude::*;
 use std::sync::OnceLock;
 
-use super::common::{ensure_consistent_lambda_labels, ensure_consistent_states, CombinedWindows};
+use super::common::{
+    checked_nonnegative_sqrt, ensure_consistent_lambda_labels, ensure_consistent_states,
+    CombinedWindows,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MbarSolver {
@@ -487,7 +490,7 @@ fn mbar_uncertainty(
     let mut uncertainties = vec![0.0; n_states * n_states];
     for i in 0..n_states {
         for j in 0..n_states {
-            uncertainties[i * n_states + j] = pair_uncertainty_from_theta(&theta, i, j);
+            uncertainties[i * n_states + j] = pair_uncertainty_from_theta(&theta, i, j)?;
         }
     }
     Ok(uncertainties)
@@ -714,16 +717,17 @@ fn pair_uncertainty_from_theta(
     theta: &nalgebra::DMatrix<f64>,
     from_idx: usize,
     to_idx: usize,
-) -> f64 {
-    let val =
+) -> Result<f64> {
+    let variance =
         theta[(from_idx, from_idx)] + theta[(to_idx, to_idx)] - 2.0 * theta[(from_idx, to_idx)];
-    if val < 0.0 && val > -1e-10 {
-        0.0
-    } else if val < 0.0 {
-        val.abs().sqrt()
-    } else {
-        val.sqrt()
-    }
+    let scale = theta[(from_idx, from_idx)].abs()
+        + theta[(to_idx, to_idx)].abs()
+        + 2.0 * theta[(from_idx, to_idx)].abs();
+    checked_nonnegative_sqrt(
+        variance,
+        scale,
+        &format!("MBAR uncertainty for states {from_idx}->{to_idx}"),
+    )
 }
 
 fn mbar_log_weights(

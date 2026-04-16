@@ -749,7 +749,7 @@ fn bar_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrel
     );
     assert_close(
         payload["uncertainty"].as_f64().expect("uncertainty"),
-        0.2526263733867086,
+        0.3686121225882859,
     );
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("bar"));
     assert_eq!(payload["provenance"]["temperature_k"].as_f64(), Some(298.0));
@@ -795,7 +795,7 @@ fn exp_cli_matches_gromacs_1k_epot_fixture_after_auto_equilibration_and_decorrel
     );
     assert_close(
         payload["uncertainty"].as_f64().expect("uncertainty"),
-        0.35187862240137463,
+        0.357782805128965,
     );
     assert_eq!(payload["provenance"]["estimator"].as_str(), Some("iexp"));
     assert_eq!(payload["provenance"]["temperature_k"].as_f64(), Some(298.0));

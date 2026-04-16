@@ -1297,7 +1297,7 @@ fn schedule_edge_metrics_mbar(
             overlap_forward,
             overlap_reverse,
             delta_f: pair_result.values()[1],
-            uncertainty: pair_result.uncertainties().map(|values| values[1]),
+            uncertainty: finite_matrix_uncertainty(&pair_result, 1),
             block_mean: block_stats.map(|(mean, _, _)| mean),
             block_stddev: block_stats.map(|(_, stddev, _)| stddev),
             block_cv: block_stats.map(|(_, _, cv)| cv),
@@ -1337,7 +1337,7 @@ fn schedule_edge_metrics_bar(
             overlap_forward,
             overlap_reverse,
             delta_f: pair_result.values()[1],
-            uncertainty: pair_result.uncertainties().map(|values| values[1]),
+            uncertainty: finite_matrix_uncertainty(&pair_result, 1),
             block_mean: block_stats.map(|(mean, _, _)| mean),
             block_stddev: block_stats.map(|(_, stddev, _)| stddev),
             block_cv: block_stats.map(|(_, _, cv)| cv),
@@ -2677,6 +2677,13 @@ fn fit_pair(windows: &[UNkMatrix], estimator: AdvisorEstimator) -> Result<DeltaF
     }
 }
 
+fn finite_matrix_uncertainty(result: &DeltaFMatrix, index: usize) -> Option<f64> {
+    result
+        .uncertainties()
+        .and_then(|values| values.get(index).copied())
+        .filter(|value| value.is_finite())
+}
+
 fn mean_dhdl_values(values: &[f64]) -> Result<f64> {
     if values.is_empty() {
         return Err(CoreError::InvalidShape {
@@ -3329,7 +3336,7 @@ fn convergence_point_from_matrix(
     ConvergencePoint::new(
         n_windows,
         result.values()[index],
-        result.uncertainties().map(|values| values[index]),
+        finite_matrix_uncertainty(result, index),
         from_state,
         to_state,
         result.lambda_labels().map(|labels| labels.to_vec()),
@@ -3358,7 +3365,7 @@ fn block_estimate_from_matrix(
         block_index,
         n_blocks,
         result.values()[index],
-        result.uncertainties().map(|values| values[index]),
+        finite_matrix_uncertainty(result, index),
         if reverse {
             result.states().last().unwrap().clone()
         } else {

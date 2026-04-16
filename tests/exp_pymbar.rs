@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use alchemrs::{extract_u_nk, IexpEstimator};
+use alchemrs::{extract_u_nk, IexpEstimator, StatePoint, UNkMatrix};
 
 fn read_matrix(path: &str) -> Vec<f64> {
     let content = fs::read_to_string(path).expect("read expected matrix");
@@ -17,6 +17,45 @@ fn read_matrix(path: &str) -> Vec<f64> {
         }
     }
     values
+}
+
+fn state_index(window: &UNkMatrix, state: &StatePoint) -> usize {
+    window
+        .evaluated_states()
+        .iter()
+        .position(|candidate| candidate == state)
+        .expect("state present in evaluated_states")
+}
+
+fn work_values(window: &UNkMatrix, from_idx: usize, to_idx: usize) -> Vec<f64> {
+    let mut out = Vec::with_capacity(window.n_samples());
+    for sample_idx in 0..window.n_samples() {
+        let offset = sample_idx * window.n_states();
+        out.push(window.data()[offset + to_idx] - window.data()[offset + from_idx]);
+    }
+    out
+}
+
+fn exp_sigma_from_work(work: &[f64]) -> f64 {
+    let n = work.len() as f64;
+    let max_arg = work
+        .iter()
+        .map(|value| -value)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let x = work
+        .iter()
+        .map(|value| (-value - max_arg).exp())
+        .collect::<Vec<_>>();
+    let mean = x.iter().sum::<f64>() / n;
+    let variance = x
+        .iter()
+        .map(|value| {
+            let diff = value - mean;
+            diff * diff
+        })
+        .sum::<f64>()
+        / (x.len() - 1) as f64;
+    variance.sqrt() / (n.sqrt() * mean)
 }
 
 #[test]
@@ -63,14 +102,11 @@ fn exp_matches_pymbar_adjacent_fep_chain() {
         .expect("EXP result with uncertainty");
 
     let expected_delta_path = format!("{base}/fixtures/amber/acetamide_tiny/exp_matrix.txt");
-    let expected_sigma_path = format!("{base}/fixtures/amber/acetamide_tiny/exp_sigma.txt");
     let expected_delta = read_matrix(&expected_delta_path);
-    let expected_sigma = read_matrix(&expected_sigma_path);
 
     let values = result.values();
     let sigma = result.uncertainties().expect("uncertainties missing");
     assert_eq!(values.len(), expected_delta.len());
-    assert_eq!(sigma.len(), expected_sigma.len());
 
     let n_states = result.n_states();
     let mut expected_forward_endpoint = 0.0;
@@ -81,6 +117,20 @@ fn exp_matches_pymbar_adjacent_fep_chain() {
     for state_idx in 0..(n_states - 1) {
         let upper = state_idx * n_states + state_idx + 1;
         let lower = (state_idx + 1) * n_states + state_idx;
+        let from_state = windows[state_idx].sampled_state().expect("sampled_state");
+        let to_state = windows[state_idx + 1]
+            .sampled_state()
+            .expect("sampled_state");
+        let forward_sigma = exp_sigma_from_work(&work_values(
+            &windows[state_idx],
+            state_index(&windows[state_idx], from_state),
+            state_index(&windows[state_idx], to_state),
+        ));
+        let reverse_sigma = exp_sigma_from_work(&work_values(
+            &windows[state_idx + 1],
+            state_index(&windows[state_idx + 1], to_state),
+            state_index(&windows[state_idx + 1], from_state),
+        ));
 
         assert!(
             (values[upper] - expected_delta[upper]).abs() < 1e-6,
@@ -95,22 +145,22 @@ fn exp_matches_pymbar_adjacent_fep_chain() {
             expected_delta[lower]
         );
         assert!(
-            (sigma[upper] - expected_sigma[upper]).abs() < 1e-6,
+            (sigma[upper] - forward_sigma).abs() < 1e-6,
             "forward adjacent sigma mismatch at {upper}: {} vs {}",
             sigma[upper],
-            expected_sigma[upper]
+            forward_sigma
         );
         assert!(
-            (sigma[lower] - expected_sigma[lower]).abs() < 1e-6,
+            (sigma[lower] - reverse_sigma).abs() < 1e-6,
             "reverse adjacent sigma mismatch at {lower}: {} vs {}",
             sigma[lower],
-            expected_sigma[lower]
+            reverse_sigma
         );
 
         expected_forward_endpoint += expected_delta[upper];
         expected_reverse_endpoint += expected_delta[lower];
-        expected_forward_var += expected_sigma[upper] * expected_sigma[upper];
-        expected_reverse_var += expected_sigma[lower] * expected_sigma[lower];
+        expected_forward_var += forward_sigma * forward_sigma;
+        expected_reverse_var += reverse_sigma * reverse_sigma;
     }
 
     assert!(

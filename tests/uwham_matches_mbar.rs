@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use alchemrs::{extract_u_nk, UwhamEstimator, UwhamFit, UNkMatrix};
+use alchemrs::{extract_u_nk, UNkMatrix, UwhamEstimator, UwhamFit};
 use tempfile::tempdir;
 
 fn amber_fixture_paths() -> Vec<PathBuf> {

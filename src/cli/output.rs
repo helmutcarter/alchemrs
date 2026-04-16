@@ -72,7 +72,8 @@ fn render_scalar_result(result: &ScalarResult, format: OutputFormat) -> Result<S
         delta: convert_value(result.delta, result.units, result.temperature),
         sigma: result
             .sigma
-            .map(|value| convert_value(value, result.units, result.temperature)),
+            .map(|value| convert_value(value, result.units, result.temperature))
+            .filter(|value| value.is_finite()),
         from_state: result.from_state.clone(),
         to_state: result.to_state.clone(),
         units: format_units(result.units),
@@ -349,7 +350,10 @@ fn format_state_csv(state: &[f64]) -> String {
 }
 
 fn option_string(value: Option<f64>) -> String {
-    value.map(|value| value.to_string()).unwrap_or_default()
+    value
+        .filter(|value| value.is_finite())
+        .map(|value| value.to_string())
+        .unwrap_or_default()
 }
 
 fn option_str_value(value: Option<&str>) -> Value {
@@ -538,6 +542,85 @@ mod tests {
             output,
             "delta_f: 1.5 kT\nuncertainty: 0.25 kT\nfrom_lambda: 0\nto_lambda: 1\nwindows: 15\nsamples_in: 300\nsamples_after_burnin: 300\nsamples_kept: 120\nu_nk_observable: de\noverlap_scalar: 0.125\noverlap_eigenvalues: 1, 0.875, 0.5\n"
         );
+    }
+
+    #[test]
+    fn renders_nonfinite_uncertainty_as_missing_in_text() {
+        let output = render_scalar_result(
+            &ScalarResult {
+                delta: 1.5,
+                sigma: Some(f64::NAN),
+                from_state: vec![0.0],
+                to_state: vec![1.0],
+                units: OutputUnits::KT,
+                temperature: 300.0,
+                overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "bar",
+                    decorrelate: false,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                    u_nk_observable: None,
+                    ti_method: None,
+                    ti_method_reason: None,
+                    lambda_components: None,
+                },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 2,
+                    samples_in: 40,
+                    samples_after_burnin: 40,
+                    samples_kept: 20,
+                },
+            },
+            OutputFormat::Text,
+        )
+        .unwrap();
+
+        assert!(output.contains("uncertainty: none"));
+        assert!(!output.contains("nan"));
+    }
+
+    #[test]
+    fn renders_nonfinite_uncertainty_as_missing_in_csv() {
+        let output = render_scalar_result(
+            &ScalarResult {
+                delta: 1.5,
+                sigma: Some(f64::NAN),
+                from_state: vec![0.0],
+                to_state: vec![1.0],
+                units: OutputUnits::KT,
+                temperature: 300.0,
+                overlap: None,
+                provenance: OutputProvenance {
+                    estimator: "bar",
+                    decorrelate: false,
+                    remove_burnin: 0,
+                    auto_equilibrate: false,
+                    fast: false,
+                    conservative: true,
+                    nskip: 1,
+                    u_nk_observable: None,
+                    ti_method: None,
+                    ti_method_reason: None,
+                    lambda_components: None,
+                },
+                sample_counts: AnalysisSampleCounts {
+                    windows: 2,
+                    samples_in: 40,
+                    samples_after_burnin: 40,
+                    samples_kept: 20,
+                },
+            },
+            OutputFormat::Csv,
+        )
+        .unwrap();
+
+        assert!(output.contains("delta_f,uncertainty"));
+        assert!(output.contains("1.5,,0,1,kT"));
+        assert!(!output.contains("nan"));
     }
 
     #[test]

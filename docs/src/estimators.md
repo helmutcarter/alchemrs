@@ -92,8 +92,8 @@ Behavior:
 
 Uncertainty behavior:
 
-- adjacent BAR uncertainties come directly from the BAR estimator
-- cumulative non-adjacent uncertainties are propagated in quadrature from adjacent edges
+- adjacent BAR uncertainties come from the BAR implicit-root equation via a delta-method linearization of the Fermi weights
+- cumulative non-adjacent uncertainties include the neighboring-edge covariance induced by the shared intermediate window rather than assuming adjacent BAR edges are independent
 
 ## MBAR
 
@@ -207,7 +207,7 @@ Behavior:
 - computes pairwise adjacent exponential averaging along the lambda schedule
 - `fit(...)` returns `IexpFit`
 - `result()` materializes the full pairwise `DeltaFMatrix`
-- `result_with_uncertainty()` includes uncertainty estimates
+- `result_with_uncertainty()` includes delta-method uncertainty estimates from the exponential weights `exp(-W)` using an unbiased finite-sample variance
 - preserves `lambda_labels()` from the input windows when available
 
 CLI direction conventions:
@@ -238,7 +238,7 @@ Behavior:
 
 Uncertainty behavior:
 
-- analytic uncertainty is the default and is computed from the trajectory-level Jarzynski weights `exp(-W)`
+- analytic uncertainty is the default and is computed from the trajectory-level Jarzynski weights `exp(-W)` with an unbiased finite-sample variance estimate
 - setting `NesOptions { n_bootstrap: N, .. }` with `N > 0` switches to bootstrap uncertainty across trajectories
 
 Parsing / workflow expectations:

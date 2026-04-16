@@ -44,9 +44,7 @@ fn main() {
             .join("uwham-reference")
             .join("acetamide_tiny")
     });
-    let selected = args
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
+    let selected = args.map(PathBuf::from).collect::<Vec<_>>();
 
     let input_paths = if selected.is_empty() {
         amber_fixture_paths()
