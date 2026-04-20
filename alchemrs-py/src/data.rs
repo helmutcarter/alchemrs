@@ -272,7 +272,7 @@ impl PyFreeEnergyEstimate {
     }
 
     #[getter]
-    fn from_state(&self) -> PyStatePoint {
+    fn to_py_state(&self) -> PyStatePoint {
         PyStatePoint {
             inner: self.inner.from_state().clone(),
         }
@@ -422,7 +422,7 @@ impl PyConvergencePoint {
     }
 
     #[getter]
-    fn from_state(&self) -> PyStatePoint {
+    fn to_py_state(&self) -> PyStatePoint {
         PyStatePoint {
             inner: self.inner.from_state().clone(),
         }
@@ -470,7 +470,7 @@ impl PyBlockEstimate {
     }
 
     #[getter]
-    fn from_state(&self) -> PyStatePoint {
+    fn to_py_state(&self) -> PyStatePoint {
         PyStatePoint {
             inner: self.inner.from_state().clone(),
         }

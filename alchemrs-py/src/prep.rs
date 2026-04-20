@@ -29,6 +29,7 @@ impl PyDecorrelationOptions {
         upper=None,
         step=None
     ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         drop_duplicates: bool,
         sort: bool,

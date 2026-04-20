@@ -56,6 +56,15 @@ struct BarEdgeEstimate {
     reverse_weights: Vec<f64>,
 }
 
+#[derive(Debug, Clone)]
+struct BarUncertaintyEstimate {
+    variance: f64,
+    sigma: f64,
+    derivative: f64,
+    forward_weights: Vec<f64>,
+    reverse_weights: Vec<f64>,
+}
+
 impl BarEstimator {
     pub fn new(options: BarOptions) -> Self {
         Self { options }
@@ -443,11 +452,11 @@ fn bar_edge_estimate(
     let uncertainty = bar_uncertainty(w_f, w_r, delta_f)?;
     Ok(BarEdgeEstimate {
         delta_f,
-        variance: uncertainty.0,
-        sigma: uncertainty.1,
-        derivative: uncertainty.2,
-        forward_weights: uncertainty.3,
-        reverse_weights: uncertainty.4,
+        variance: uncertainty.variance,
+        sigma: uncertainty.sigma,
+        derivative: uncertainty.derivative,
+        forward_weights: uncertainty.forward_weights,
+        reverse_weights: uncertainty.reverse_weights,
     })
 }
 
@@ -496,7 +505,7 @@ fn bar_uncertainty(
     w_f: &[f64],
     w_r: &[f64],
     delta_f: f64,
-) -> Result<(f64, f64, f64, Vec<f64>, Vec<f64>)> {
+) -> Result<BarUncertaintyEstimate> {
     let t_f = w_f.len() as f64;
     let t_r = w_r.len() as f64;
     let m = (t_f / t_r).ln();
@@ -530,13 +539,13 @@ fn bar_uncertainty(
     } else {
         f64::NAN
     };
-    Ok((
+    Ok(BarUncertaintyEstimate {
         variance,
         sigma,
         derivative,
         forward_weights,
         reverse_weights,
-    ))
+    })
 }
 
 fn adjacent_bar_covariance(left: &BarEdgeEstimate, right: &BarEdgeEstimate) -> Result<f64> {

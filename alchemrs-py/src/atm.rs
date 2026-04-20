@@ -18,13 +18,27 @@ pub struct PyAtmState {
     pub(crate) inner: AtmState,
 }
 
+struct PyAtmStateInit {
+    state_id: usize,
+    direction: String,
+    lambda1: f64,
+    lambda2: f64,
+    alpha: f64,
+    u0: f64,
+    w0: f64,
+    temperature_k: f64,
+    lambda3: Option<f64>,
+    u1: Option<f64>,
+}
+
 #[pymethods]
 impl PyAtmState {
     #[new]
     #[pyo3(signature = (state_id, direction, lambda1, lambda2, alpha, u0, w0, temperature_k, lambda3=None, u1=None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         state_id: usize,
-        direction: &str,
+        direction: String,
         lambda1: f64,
         lambda2: f64,
         alpha: f64,
@@ -34,17 +48,29 @@ impl PyAtmState {
         lambda3: Option<f64>,
         u1: Option<f64>,
     ) -> PyResult<Self> {
-        AtmState::new(
+        let init = PyAtmStateInit {
             state_id,
-            parse_direction(direction)?,
+            direction,
             lambda1,
             lambda2,
-            lambda3,
             alpha,
             u0,
-            u1,
             w0,
             temperature_k,
+            lambda3,
+            u1,
+        };
+        AtmState::new(
+            init.state_id,
+            parse_direction(&init.direction)?,
+            init.lambda1,
+            init.lambda2,
+            init.lambda3,
+            init.alpha,
+            init.u0,
+            init.u1,
+            init.w0,
+            init.temperature_k,
         )
         .map(|inner| Self { inner })
         .map_err(to_py_err)
@@ -504,9 +530,10 @@ impl PyAtmBindingEstimate {
 
 #[pyfunction]
 #[pyo3(signature = (state_ids, direction, lambda1, lambda2, alpha, u0, w0, temperature_k, lambda3=None, u1=None))]
+#[allow(clippy::too_many_arguments)]
 fn schedule_from_arrays(
     state_ids: Vec<usize>,
-    direction: &str,
+    direction: String,
     lambda1: Vec<f64>,
     lambda2: Vec<f64>,
     alpha: Vec<f64>,
@@ -548,7 +575,7 @@ fn schedule_from_arrays(
         }
     }
 
-    let direction = parse_direction(direction)?;
+    let direction = parse_direction(&direction)?;
     let states = (0..n_states)
         .map(|idx| {
             AtmState::new(
