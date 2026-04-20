@@ -18,7 +18,7 @@ particular engine output format.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import sqrt
 import random
 
@@ -33,18 +33,18 @@ K_B_KCAL_PER_MOL_K = 0.00198720425864083
 
 @dataclass
 class AtmConfig:
-    temperature: unit.Quantity = 300 * unit.kelvin
-    friction: unit.Quantity = 10.0 / unit.picoseconds
-    timestep: unit.Quantity = 2.0 * unit.femtoseconds
+    temperature: unit.Quantity = field(default_factory=lambda: 300 * unit.kelvin)
+    friction: unit.Quantity = field(default_factory=lambda: 10.0 / unit.picoseconds)
+    timestep: unit.Quantity = field(default_factory=lambda: 2.0 * unit.femtoseconds)
     equilibration_steps: int = 200
     steps_per_sample: int = 10
     n_samples_per_state: int = 100
-    spring_constant: unit.Quantity = (
-        10.0 * unit.kilocalories_per_mole / unit.angstroms**2
+    spring_constant: unit.Quantity = field(
+        default_factory=lambda: 10.0 * unit.kilocalories_per_mole / unit.angstroms**2
     )
-    mass: unit.Quantity = 39.9 * unit.amu
-    x_start: unit.Quantity = 0.0 * unit.angstroms
-    x_end: unit.Quantity = 5.0 * unit.angstroms
+    mass: unit.Quantity = field(default_factory=lambda: 39.9 * unit.amu)
+    x_start: unit.Quantity = field(default_factory=lambda: 0.0 * unit.angstroms)
+    x_end: unit.Quantity = field(default_factory=lambda: 5.0 * unit.angstroms)
     lambdas: tuple[float, ...] = (0.0, 0.5, 1.0)
     platform_name: str | None = None
 
