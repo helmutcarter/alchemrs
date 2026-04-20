@@ -271,8 +271,8 @@ impl PyFreeEnergyEstimate {
         self.inner.uncertainty()
     }
 
-    #[getter]
-    fn to_py_state(&self) -> PyStatePoint {
+    #[getter(from_state)]
+    fn source_state(&self) -> PyStatePoint {
         PyStatePoint {
             inner: self.inner.from_state().clone(),
         }
@@ -421,8 +421,8 @@ impl PyConvergencePoint {
         self.inner.uncertainty()
     }
 
-    #[getter]
-    fn to_py_state(&self) -> PyStatePoint {
+    #[getter(from_state)]
+    fn source_state(&self) -> PyStatePoint {
         PyStatePoint {
             inner: self.inner.from_state().clone(),
         }
@@ -469,8 +469,8 @@ impl PyBlockEstimate {
         self.inner.uncertainty()
     }
 
-    #[getter]
-    fn to_py_state(&self) -> PyStatePoint {
+    #[getter(from_state)]
+    fn source_state(&self) -> PyStatePoint {
         PyStatePoint {
             inner: self.inner.from_state().clone(),
         }
