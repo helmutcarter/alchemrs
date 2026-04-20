@@ -501,11 +501,7 @@ fn bracket_bar_root(
     Err(CoreError::ConvergenceFailure)
 }
 
-fn bar_uncertainty(
-    w_f: &[f64],
-    w_r: &[f64],
-    delta_f: f64,
-) -> Result<BarUncertaintyEstimate> {
+fn bar_uncertainty(w_f: &[f64], w_r: &[f64], delta_f: f64) -> Result<BarUncertaintyEstimate> {
     let t_f = w_f.len() as f64;
     let t_r = w_r.len() as f64;
     let m = (t_f / t_r).ln();
