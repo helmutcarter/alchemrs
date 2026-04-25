@@ -114,6 +114,35 @@ mod tests {
         ]
     }
 
+    fn make_sparse_count_mbar_windows() -> Vec<UNkMatrix> {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
+        let s2 = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let states = vec![s0.clone(), s1, s2.clone()];
+        let time = vec![0.0, 1.0, 2.0];
+
+        vec![
+            UNkMatrix::new(
+                3,
+                3,
+                vec![0.0, 0.2, 0.5, 0.1, 0.3, 0.6, 0.2, 0.4, 0.7],
+                time.clone(),
+                Some(s0),
+                states.clone(),
+            )
+            .unwrap(),
+            UNkMatrix::new(
+                3,
+                3,
+                vec![0.6, 0.3, 0.0, 0.7, 0.4, 0.1, 0.8, 0.5, 0.2],
+                time,
+                Some(s2),
+                states,
+            )
+            .unwrap(),
+        ]
+    }
+
     fn make_multidimensional_dhdl_series() -> Vec<DhdlSeries> {
         vec![
             DhdlSeries::new(
@@ -129,6 +158,48 @@ mod tests {
             )
             .unwrap(),
         ]
+    }
+
+    fn make_synthetic_mbar_windows(n_states: usize, n_samples: usize) -> Vec<UNkMatrix> {
+        let states = (0..n_states)
+            .map(|index| {
+                let lambda = index as f64 / (n_states - 1) as f64;
+                StatePoint::new(vec![lambda], 300.0).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        (0..n_states)
+            .map(|sampled_index| {
+                let sampled_lambda = states[sampled_index].lambdas()[0];
+                let mut data = Vec::with_capacity(n_samples * n_states);
+                let mut time = Vec::with_capacity(n_samples);
+
+                for sample_index in 0..n_samples {
+                    time.push(sample_index as f64);
+                    let phase = sample_index as f64 * 0.017 + sampled_index as f64 * 0.31;
+                    let coordinate =
+                        sampled_lambda + 0.08 * phase.sin() + 0.03 * (phase * 0.37).cos();
+                    let common = 0.02 * (sample_index as f64 * 0.011).sin();
+
+                    for state in &states {
+                        let lambda = state.lambdas()[0];
+                        let displacement = lambda - coordinate;
+                        let state_bias = 0.25 * lambda + 0.05 * lambda * lambda;
+                        data.push(18.0 * displacement * displacement + state_bias + common);
+                    }
+                }
+
+                UNkMatrix::new(
+                    n_samples,
+                    n_states,
+                    data,
+                    time,
+                    Some(states[sampled_index].clone()),
+                    states.clone(),
+                )
+                .unwrap()
+            })
+            .collect()
     }
 
     fn make_three_state_local_bar_windows() -> Vec<UNkMatrix> {
@@ -176,22 +247,6 @@ mod tests {
             SwitchingTrajectory::new(from.clone(), to.clone(), 1.0).unwrap(),
             SwitchingTrajectory::new(from, to, 2.0).unwrap(),
         ]
-    }
-
-    fn assert_vec_eq_with_nan(left: Option<&[f64]>, right: Option<&[f64]>) {
-        match (left, right) {
-            (None, None) => {}
-            (Some(a), Some(b)) => {
-                assert_eq!(a.len(), b.len());
-                for (idx, (x, y)) in a.iter().zip(b.iter()).enumerate() {
-                    if x.is_nan() && y.is_nan() {
-                        continue;
-                    }
-                    assert!((*x - *y).abs() < 1e-12, "mismatch at {idx}: {x} vs {y}");
-                }
-            }
-            _ => panic!("option mismatch"),
-        }
     }
 
     fn assert_slice_close(left: &[f64], right: &[f64], tolerance: f64) {
@@ -653,8 +708,8 @@ mod tests {
         .estimate(&windows)
         .unwrap();
 
-        assert_eq!(serial.values(), parallel.values());
-        assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
+        assert_slice_close(serial.values(), parallel.values(), 1e-12);
+        assert_option_slice_close(serial.uncertainties(), parallel.uncertainties(), 1e-12);
     }
 
     #[test]
@@ -667,8 +722,8 @@ mod tests {
             .estimate_with_uncertainty(&windows)
             .unwrap();
 
-        assert_eq!(serial.values(), parallel.values());
-        assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
+        assert_slice_close(serial.values(), parallel.values(), 1e-12);
+        assert_option_slice_close(serial.uncertainties(), parallel.uncertainties(), 1e-12);
     }
 
     #[test]
@@ -687,8 +742,8 @@ mod tests {
         .estimate_with_uncertainty(&windows)
         .unwrap();
 
-        assert_eq!(serial.values(), parallel.values());
-        assert_vec_eq_with_nan(serial.uncertainties(), parallel.uncertainties());
+        assert_slice_close(serial.values(), parallel.values(), 1e-12);
+        assert_option_slice_close(serial.uncertainties(), parallel.uncertainties(), 1e-12);
     }
 
     #[test]
@@ -707,12 +762,12 @@ mod tests {
         .fit(&windows)
         .unwrap();
 
-        assert_eq!(serial.free_energies(), parallel.free_energies());
-        assert_eq!(serial.log_weights(), parallel.log_weights());
+        assert_slice_close(serial.free_energies(), parallel.free_energies(), 1e-12);
+        assert_slice_close(serial.log_weights(), parallel.log_weights(), 1e-12);
 
         let serial_overlap = serial.overlap_matrix().unwrap();
         let parallel_overlap = parallel.overlap_matrix().unwrap();
-        assert_eq!(serial_overlap.values(), parallel_overlap.values());
+        assert_slice_close(serial_overlap.values(), parallel_overlap.values(), 1e-12);
     }
 
     #[test]
@@ -745,6 +800,35 @@ mod tests {
     }
 
     #[test]
+    fn mbar_lbfgs_matches_fixed_point_on_synthetic_grid() {
+        let windows = make_synthetic_mbar_windows(6, 80);
+        let fixed_point = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::FixedPoint,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let lbfgs = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::Lbfgs,
+            ..MbarOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_slice_close(fixed_point.free_energies(), lbfgs.free_energies(), 1e-6);
+        assert_slice_close(fixed_point.log_weights(), lbfgs.log_weights(), 1e-6);
+
+        let fixed_point_result = fixed_point.result_with_uncertainty().unwrap();
+        let lbfgs_result = lbfgs.result_with_uncertainty().unwrap();
+        assert_slice_close(fixed_point_result.values(), lbfgs_result.values(), 1e-6);
+        assert_option_slice_close(
+            fixed_point_result.uncertainties(),
+            lbfgs_result.uncertainties(),
+            1e-6,
+        );
+    }
+
+    #[test]
     fn mbar_lbfgs_parallel_matches_serial() {
         let windows = make_two_state_windows();
         let serial = MbarEstimator::new(MbarOptions {
@@ -773,6 +857,20 @@ mod tests {
             parallel_result.uncertainties(),
             1e-12,
         );
+    }
+
+    #[test]
+    fn mbar_default_falls_back_for_sparse_sampled_counts() {
+        let windows = make_sparse_count_mbar_windows();
+        let default_result = MbarEstimator::default().estimate(&windows).unwrap();
+        let fixed_point_result = MbarEstimator::new(MbarOptions {
+            solver: MbarSolver::FixedPoint,
+            ..MbarOptions::default()
+        })
+        .estimate(&windows)
+        .unwrap();
+
+        assert_slice_close(default_result.values(), fixed_point_result.values(), 1e-12);
     }
 
     #[test]

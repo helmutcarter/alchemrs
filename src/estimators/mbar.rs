@@ -32,7 +32,7 @@ impl Default for MbarOptions {
             tolerance: 1.0e-7,
             initial_f_k: None,
             parallel: false,
-            solver: MbarSolver::FixedPoint,
+            solver: MbarSolver::Lbfgs,
         }
     }
 }
@@ -76,7 +76,15 @@ impl MbarEstimator {
         let prepared = PreparedMbar::from_windows(windows)?;
         let mut f_k = initial_f_k(&self.options, prepared.states.len())?;
 
-        match self.options.solver {
+        let solver = if matches!(self.options.solver, MbarSolver::Lbfgs)
+            && !has_strictly_positive_counts(&prepared.n_k)
+        {
+            MbarSolver::FixedPoint
+        } else {
+            self.options.solver
+        };
+
+        match solver {
             MbarSolver::FixedPoint => mbar_solve_fixed_point(
                 &prepared.u_kn,
                 &prepared.u_nk,
@@ -555,6 +563,10 @@ fn positive_log_counts(n_k: &[f64]) -> Result<Vec<f64>> {
         values.push(count.ln());
     }
     Ok(values)
+}
+
+fn has_strictly_positive_counts(n_k: &[f64]) -> bool {
+    n_k.iter().all(|count| *count > 0.0 && count.is_finite())
 }
 
 fn reduced_b_from_free_energies(ln_n_k: &[f64], f_k: &[f64]) -> Vec<f64> {

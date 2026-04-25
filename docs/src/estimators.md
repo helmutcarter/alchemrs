@@ -108,6 +108,13 @@ Important options:
 - `tolerance`
 - `initial_f_k`
 - `parallel`
+- `solver`
+
+Default solver:
+
+- `MbarSolver::Lbfgs`
+- falls back to fixed-point automatically when the evaluated grid contains states with zero sampled counts, because the LBFGS objective requires positive sampled counts
+- use `MbarSolver::FixedPoint` when reproducing older fixed-point results or comparing solver behavior
 
 Input:
 

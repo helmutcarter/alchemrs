@@ -1,7 +1,10 @@
 use std::fs;
 use std::path::PathBuf;
 
-use alchemrs::{extract_u_nk, overlap_eigenvalues, overlap_matrix, overlap_scalar};
+use alchemrs::{
+    extract_u_nk, overlap_eigenvalues, overlap_matrix, overlap_scalar, MbarOptions, MbarSolver,
+    UNkMatrix,
+};
 
 fn read_expected(path: &str) -> Vec<f64> {
     let content = fs::read_to_string(path).expect("read expected overlap matrix");
@@ -26,6 +29,24 @@ fn read_scalar(path: &str) -> f64 {
 
 #[test]
 fn overlap_matches_alchemlyb() {
+    let windows = load_acetamide_windows();
+    assert_overlap_matches_reference(&windows, None, 2e-6);
+}
+
+#[test]
+fn overlap_with_fixed_point_matches_alchemlyb() {
+    let windows = load_acetamide_windows();
+    assert_overlap_matches_reference(
+        &windows,
+        Some(MbarOptions {
+            solver: MbarSolver::FixedPoint,
+            ..MbarOptions::default()
+        }),
+        1e-6,
+    );
+}
+
+fn load_acetamide_windows() -> Vec<UNkMatrix> {
     let base = env!("CARGO_MANIFEST_DIR");
     let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/fixtures/amber/acetamide_tiny"))
         .expect("read fixture directory")
@@ -60,8 +81,12 @@ fn overlap_matches_alchemlyb() {
     for path in paths {
         windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
     }
+    windows
+}
 
-    let overlap = overlap_matrix(&windows, None).expect("overlap matrix");
+fn assert_overlap_matches_reference(windows: &[UNkMatrix], options: Option<MbarOptions>, tol: f64) {
+    let overlap = overlap_matrix(windows, options).expect("overlap matrix");
+    let base = env!("CARGO_MANIFEST_DIR");
     let expected_path = format!("{base}/fixtures/amber/acetamide_tiny/overlap_matrix.txt");
     let expected = read_expected(&expected_path);
 
@@ -69,7 +94,7 @@ fn overlap_matches_alchemlyb() {
     assert_eq!(values.len(), expected.len());
     for (idx, (value, exp)) in values.iter().zip(expected.iter()).enumerate() {
         assert!(
-            (value - exp).abs() < 1e-6,
+            (value - exp).abs() < tol,
             "overlap mismatch at {idx}: {value} vs {exp}"
         );
     }
@@ -83,14 +108,14 @@ fn overlap_matches_alchemlyb() {
     assert_eq!(eigen.len(), expected_eigen.len());
     for (idx, (value, exp)) in eigen.iter().zip(expected_eigen.iter()).enumerate() {
         assert!(
-            (value - exp).abs() < 1e-6,
+            (value - exp).abs() < tol,
             "eigenvalue mismatch at {idx}: {value} vs {exp}"
         );
     }
 
     let scalar = overlap_scalar(&overlap).expect("scalar");
     assert!(
-        (scalar - expected_scalar).abs() < 1e-6,
+        (scalar - expected_scalar).abs() < tol,
         "scalar mismatch: {scalar} vs {expected_scalar}"
     );
 }

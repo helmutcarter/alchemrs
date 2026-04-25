@@ -11,7 +11,7 @@ use crate::CliResult;
 pub struct MbarRunOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
-    pub fast_mbar: bool,
+    pub fixed_point_mbar: bool,
     pub no_uncertainty: bool,
     pub output_units: OutputUnits,
     pub output_format: OutputFormat,
@@ -31,10 +31,10 @@ pub fn run(
         max_iterations: run_options.max_iterations,
         tolerance: run_options.tolerance,
         parallel: run_options.parallel,
-        solver: if run_options.fast_mbar {
-            MbarSolver::Lbfgs
-        } else {
+        solver: if run_options.fixed_point_mbar {
             MbarSolver::FixedPoint
+        } else {
+            MbarSolver::Lbfgs
         },
         ..MbarOptions::default()
     });

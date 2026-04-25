@@ -370,9 +370,9 @@ pub enum Command {
         /// MBAR relative tolerance
         #[arg(long, default_value_t = 1.0e-7)]
         tolerance: f64,
-        /// Use the fast L-BFGS MBAR solver backend
-        #[arg(long = "fast-mbar")]
-        fast_mbar: bool,
+        /// Use the fixed-point MBAR solver backend
+        #[arg(long = "fixed-point-mbar")]
+        fixed_point_mbar: bool,
         /// Disable uncertainty estimation
         #[arg(long)]
         no_uncertainty: bool,
@@ -585,10 +585,12 @@ mod tests {
     }
 
     #[test]
-    fn mbar_command_accepts_fast_mbar_flag() {
-        let cli = Cli::parse_from(["alchemrs", "mbar", "--fast-mbar", "window.out"]);
+    fn mbar_command_accepts_fixed_point_mbar_flag() {
+        let cli = Cli::parse_from(["alchemrs", "mbar", "--fixed-point-mbar", "window.out"]);
         match cli.command {
-            Command::Mbar { fast_mbar, .. } => assert!(fast_mbar),
+            Command::Mbar {
+                fixed_point_mbar, ..
+            } => assert!(fixed_point_mbar),
             _ => panic!("expected mbar command"),
         }
     }

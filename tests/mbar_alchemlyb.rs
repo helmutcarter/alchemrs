@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use alchemrs::{extract_u_nk, MbarEstimator};
+use alchemrs::{extract_u_nk, MbarEstimator, MbarOptions, MbarSolver, UNkMatrix};
 
 fn read_expected(path: &str) -> (f64, f64) {
     let content = fs::read_to_string(path).expect("read expected mbar output");
@@ -22,7 +22,23 @@ fn read_expected(path: &str) -> (f64, f64) {
 }
 
 #[test]
-fn mbar_matches_alchemlyb_all_windows() {
+fn mbar_default_lbfgs_matches_alchemlyb_all_windows() {
+    let windows = load_acetamide_windows();
+    let estimator = MbarEstimator::default();
+    assert_mbar_matches_reference(&windows, estimator);
+}
+
+#[test]
+fn mbar_fixed_point_matches_alchemlyb_all_windows() {
+    let windows = load_acetamide_windows();
+    let estimator = MbarEstimator::new(MbarOptions {
+        solver: MbarSolver::FixedPoint,
+        ..MbarOptions::default()
+    });
+    assert_mbar_matches_reference(&windows, estimator);
+}
+
+fn load_acetamide_windows() -> Vec<UNkMatrix> {
     let base = env!("CARGO_MANIFEST_DIR");
     let mut paths: Vec<PathBuf> = fs::read_dir(format!("{base}/fixtures/amber/acetamide_tiny"))
         .expect("read fixture directory")
@@ -57,12 +73,15 @@ fn mbar_matches_alchemlyb_all_windows() {
     for path in paths {
         windows.push(extract_u_nk(path, 300.0).expect("parse AMBER output"));
     }
+    windows
+}
 
-    let estimator = MbarEstimator::default();
+fn assert_mbar_matches_reference(windows: &[UNkMatrix], estimator: MbarEstimator) {
     let result = estimator
-        .estimate_with_uncertainty(&windows)
+        .estimate_with_uncertainty(windows)
         .expect("MBAR fit");
 
+    let base = env!("CARGO_MANIFEST_DIR");
     let expected_path =
         format!("{base}/fixtures/amber/acetamide_tiny/mbar_0.0_1.0.delta_f_sigma.txt");
     let (expected_delta, expected_sigma) = read_expected(&expected_path);

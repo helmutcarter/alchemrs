@@ -568,8 +568,14 @@ Options:
   - Relative convergence tolerance for MBAR.
   - Default: `1.0e-7`
 
-- `--fast-mbar`
-  - Use the fast L-BFGS MBAR backend.
+- `--fixed-point-mbar`
+  - Use the fixed-point MBAR solver backend.
+  - Useful for reproducing older fixed-point results or comparing solver behavior.
+
+Default MBAR behavior:
+
+- uses the L-BFGS backend
+- falls back to fixed-point automatically when the evaluated grid contains states with zero sampled counts
 
 - `--no-uncertainty`
   - Disable uncertainty estimation.
