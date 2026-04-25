@@ -93,17 +93,18 @@ pub fn extract_dhdl(path: impl AsRef<Path>, temperature_k: f64) -> Result<DhdlSe
     }
 
     let column = header.dhdl_columns[0];
+    let beta = 1.0 / (K_B_KJ_PER_MOL_K * temperature_k);
     let mut time_ps = Vec::new();
     let mut values = Vec::new();
     for row in read_data_rows(path.as_ref())? {
         time_ps.push(row.time_ps);
-        values.push(
-            *row.values
-                .get(column)
-                .ok_or_else(|| GromacsParseError::InvalidDataLine {
-                    line: row.raw_line.clone(),
-                })?,
-        );
+        let raw = *row
+            .values
+            .get(column)
+            .ok_or_else(|| GromacsParseError::InvalidDataLine {
+                line: row.raw_line.clone(),
+            })?;
+        values.push(raw * beta);
     }
 
     if values.is_empty() {
@@ -577,8 +578,9 @@ mod tests {
         file.write_all(content.as_bytes()).unwrap();
 
         let series = extract_dhdl(file.path(), 300.0).unwrap();
+        let beta = 1.0 / (0.00831446261815324 * 300.0);
         assert_eq!(series.time_ps(), &[0.0, 2.0]);
-        assert_eq!(series.values(), &[1.0, 2.0]);
+        assert_eq!(series.values(), &[1.0 * beta, 2.0 * beta]);
         assert_eq!(series.state().lambdas(), &[0.1]);
     }
 
