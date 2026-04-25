@@ -97,6 +97,7 @@ impl TiEstimator {
         let lambdas: Vec<f64> = points.iter().map(|(l, _, _, _)| *l).collect();
         let values: Vec<f64> = points.iter().map(|(_, v, _, _)| *v).collect();
         let sem2_values: Vec<f64> = points.iter().map(|(_, _, s, _)| *s).collect();
+        validate_strictly_increasing_lambdas(&lambdas)?;
 
         let delta_f = match self.options.method {
             IntegrationMethod::Trapezoidal => integrate_trapezoidal(&lambdas, &values)?,
@@ -282,6 +283,17 @@ fn sem2_values(values: &[f64]) -> Result<f64> {
     }
     let variance = sum / ((values.len() - 1) as f64);
     Ok(variance / (values.len() as f64))
+}
+
+fn validate_strictly_increasing_lambdas(lambdas: &[f64]) -> Result<()> {
+    for pair in lambdas.windows(2) {
+        if pair[1] <= pair[0] {
+            return Err(CoreError::Unsupported(
+                "TI integration requires strictly increasing lambda spacing".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn integrate_trapezoidal(lambdas: &[f64], values: &[f64]) -> Result<f64> {

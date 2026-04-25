@@ -332,6 +332,16 @@ mod tests {
     }
 
     #[test]
+    fn ti_trapezoidal_rejects_duplicate_lambda_points() {
+        let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let s1 = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let d0 = DhdlSeries::new(s0, vec![0.0, 1.0], vec![1.0, 1.0]).unwrap();
+        let d1 = DhdlSeries::new(s1, vec![0.0, 1.0], vec![2.0, 2.0]).unwrap();
+        let err = TiEstimator::default().fit(&[d0, d1]).unwrap_err();
+        assert!(matches!(err, CoreError::Unsupported(_)));
+    }
+
+    #[test]
     fn ti_pchip_integrates_piecewise_cubic_hermite_schedule() {
         let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
         let s1 = StatePoint::new(vec![0.5], 300.0).unwrap();
