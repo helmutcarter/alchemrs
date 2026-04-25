@@ -1194,6 +1194,17 @@ pub fn advise_lambda_schedule(
     Ok(advice)
 }
 
+/// Builds schedule-advisor diagnostics and returns the overlap matrix used for reporting.
+///
+/// This is the preferred API when a caller needs both schedule advice and an
+/// overlap matrix, because MBAR-based schedule advice already computes a full
+/// overlap matrix internally. Calling [`advise_lambda_schedule`] and
+/// [`overlap_matrix`] separately repeats that MBAR work.
+///
+/// With [`AdvisorEstimator::Mbar`], the returned overlap matrix is reused from
+/// the MBAR schedule-advisor path. With [`AdvisorEstimator::Bar`], edge
+/// diagnostics remain BAR-based, and a separate MBAR overlap matrix is computed
+/// for report/plot compatibility.
 pub fn advise_lambda_schedule_with_overlap(
     windows: &[UNkMatrix],
     options: Option<ScheduleAdvisorOptions>,
@@ -3430,10 +3441,11 @@ fn block_estimate_from_matrix(
 #[cfg(test)]
 mod tests {
     use super::{
-        advise_lambda_schedule, advise_nes, advise_ti_schedule, bar_pair_overlap, fit_pair,
-        overlap_matrix, recommend_ti_method, schedule_suggestion, select_windows_for_states,
-        AdjacentEdgeDiagnostic, AdvisorEstimator, EdgeSeverity, NesAdvisorOptions,
-        ProposalStrategy, ScheduleAdvisorOptions, TiEdgeSeverity, TiScheduleAdvisorOptions,
+        advise_lambda_schedule, advise_lambda_schedule_with_overlap, advise_nes,
+        advise_ti_schedule, bar_pair_overlap, fit_pair, overlap_matrix, recommend_ti_method,
+        schedule_suggestion, select_windows_for_states, AdjacentEdgeDiagnostic, AdvisorEstimator,
+        EdgeSeverity, NesAdvisorOptions, ProposalStrategy, ScheduleAdvisorOptions, TiEdgeSeverity,
+        TiScheduleAdvisorOptions,
     };
     use crate::data::{StatePoint, SwitchingTrajectory, UNkMatrix};
     use crate::{DhdlSeries, IntegrationMethod, MbarOptions};
@@ -3575,6 +3587,75 @@ mod tests {
             advice.suggestions()[0].proposed_state().unwrap().lambdas(),
             &[0.25]
         );
+    }
+
+    #[test]
+    fn advise_lambda_schedule_with_overlap_reuses_matching_mbar_overlap() {
+        let states = vec![
+            StatePoint::new(vec![0.0], 298.0).unwrap(),
+            StatePoint::new(vec![0.5], 298.0).unwrap(),
+            StatePoint::new(vec![1.0], 298.0).unwrap(),
+        ];
+        let windows = vec![
+            build_window(
+                0.0,
+                &[
+                    [0.0, 0.1, 0.4],
+                    [0.0, 0.2, 0.5],
+                    [0.0, 0.1, 0.6],
+                    [0.0, 0.2, 0.4],
+                ],
+                &states,
+            ),
+            build_window(
+                0.5,
+                &[
+                    [0.1, 0.0, 0.1],
+                    [0.2, 0.0, 0.2],
+                    [0.1, 0.0, 0.1],
+                    [0.2, 0.0, 0.2],
+                ],
+                &states,
+            ),
+            build_window(
+                1.0,
+                &[
+                    [0.4, 0.1, 0.0],
+                    [0.5, 0.2, 0.0],
+                    [0.6, 0.1, 0.0],
+                    [0.4, 0.2, 0.0],
+                ],
+                &states,
+            ),
+        ];
+
+        let (advice, reused_overlap) = advise_lambda_schedule_with_overlap(
+            &windows,
+            Some(ScheduleAdvisorOptions {
+                estimator: AdvisorEstimator::Mbar,
+                overlap_min: 0.03,
+                block_cv_min: 1.0e30,
+                n_blocks: 4,
+                suggest_midpoints: true,
+            }),
+        )
+        .unwrap();
+        let standalone_overlap = overlap_matrix(&windows, Some(MbarOptions::default())).unwrap();
+
+        assert_eq!(advice.edges().len(), 2);
+        assert_eq!(reused_overlap.n_states(), standalone_overlap.n_states());
+        assert_eq!(reused_overlap.states(), standalone_overlap.states());
+        assert_eq!(
+            reused_overlap.lambda_labels(),
+            standalone_overlap.lambda_labels()
+        );
+        for (left, right) in reused_overlap
+            .values()
+            .iter()
+            .zip(standalone_overlap.values().iter())
+        {
+            assert!((left - right).abs() < 1.0e-12);
+        }
     }
 
     #[test]
