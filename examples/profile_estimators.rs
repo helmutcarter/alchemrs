@@ -7,7 +7,8 @@ use std::time::Instant;
 use alchemrs::{
     decorrelate_u_nk_with_observable, extract_dhdl, extract_u_nk_with_potential, BarEstimator,
     BarOptions, DecorrelationOptions, DhdlSeries, IexpEstimator, IexpOptions, MbarEstimator,
-    MbarOptions, TiEstimator, TiOptions, UNkMatrix, UwhamEstimator, UwhamOptions,
+    MbarOptions, MbarSolver, StatePoint, TiEstimator, TiOptions, UNkMatrix, UwhamEstimator,
+    UwhamOptions,
 };
 
 type DynError = Box<dyn std::error::Error>;
@@ -15,11 +16,7 @@ type DynError = Box<dyn std::error::Error>;
 fn main() -> Result<(), DynError> {
     let mut args = env::args().skip(1);
     let workload = args.next().ok_or_else(usage)?;
-    let iterations = args
-        .next()
-        .map(|value| value.parse::<usize>())
-        .transpose()?
-        .unwrap_or(1);
+    let (iterations, scale) = parse_iterations_and_scale(args)?;
     if iterations == 0 {
         return Err("iterations must be positive".into());
     }
@@ -136,6 +133,67 @@ fn main() -> Result<(), DynError> {
             let estimator = IexpEstimator::new(IexpOptions { parallel: true });
             measure(&workload, iterations, || bench_exp(&estimator, &windows))?;
         }
+        "synthetic-mbar-fixed" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = MbarEstimator::new(MbarOptions {
+                solver: MbarSolver::FixedPoint,
+                ..MbarOptions::default()
+            });
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_mbar(&estimator, &windows)
+            })?;
+        }
+        "synthetic-mbar-lbfgs" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = MbarEstimator::new(MbarOptions {
+                solver: MbarSolver::Lbfgs,
+                ..MbarOptions::default()
+            });
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_mbar_fit_only(&estimator, &windows)
+            })?;
+        }
+        "synthetic-mbar-uncertainty" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = MbarEstimator::new(MbarOptions::default());
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_mbar(&estimator, &windows)
+            })?;
+        }
+        "synthetic-uwham" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = UwhamEstimator::new(UwhamOptions::default());
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_uwham(&estimator, &windows)
+            })?;
+        }
+        "synthetic-bar" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = BarEstimator::new(BarOptions::default());
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_bar(&estimator, &windows)
+            })?;
+        }
+        "synthetic-exp" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = IexpEstimator::new(IexpOptions::default());
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_exp(&estimator, &windows)
+            })?;
+        }
+        "synthetic-prep-u-nk" => {
+            let parsed = synthetic_u_nk_with_observable(scale)?;
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_decorrelate_u_nk(&parsed)
+            })?;
+        }
+        "synthetic-ti" => {
+            let series = synthetic_dhdl_series(scale)?;
+            let estimator = TiEstimator::new(TiOptions::default());
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_ti(&estimator, &series)
+            })?;
+        }
         _ => return Err(usage().into()),
     }
 
@@ -143,7 +201,30 @@ fn main() -> Result<(), DynError> {
 }
 
 fn usage() -> String {
-    "usage: profile_estimators <workload> [iterations]".to_string()
+    "usage: profile_estimators <workload> [iterations] [scale]\n\
+     scales: smoke, medium, large, stress\n\
+     synthetic workloads: synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-uwham, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
+        .to_string()
+}
+
+fn parse_iterations_and_scale(
+    mut args: impl Iterator<Item = String>,
+) -> Result<(usize, SyntheticScale), DynError> {
+    let Some(first) = args.next() else {
+        return Ok((1, SyntheticScale::Smoke));
+    };
+
+    match first.parse::<usize>() {
+        Ok(iterations) => {
+            let scale = args
+                .next()
+                .map(|value| SyntheticScale::parse(&value))
+                .transpose()?
+                .unwrap_or(SyntheticScale::Smoke);
+            Ok((iterations, scale))
+        }
+        Err(_) => Ok((1, SyntheticScale::parse(&first)?)),
+    }
 }
 
 fn measure(
@@ -164,6 +245,21 @@ fn measure(
         elapsed.as_secs_f64() * 1000.0 / iterations as f64
     );
     Ok(())
+}
+
+fn measure_with_scale(
+    workload: &str,
+    scale: SyntheticScale,
+    iterations: usize,
+    f: impl FnMut() -> Result<usize, DynError>,
+) -> Result<(), DynError> {
+    println!(
+        "synthetic_scale={} states={} samples_per_window={}",
+        scale.name(),
+        scale.n_states(),
+        scale.samples_per_window()
+    );
+    measure(workload, iterations, f)
 }
 
 fn bench_amber_parse_u_nk() -> Result<usize, DynError> {
@@ -199,6 +295,15 @@ fn bench_mbar(estimator: &MbarEstimator, windows: &[UNkMatrix]) -> Result<usize,
     Ok(result.values().len().wrapping_add(delta.to_bits() as usize))
 }
 
+fn bench_mbar_fit_only(
+    estimator: &MbarEstimator,
+    windows: &[UNkMatrix],
+) -> Result<usize, DynError> {
+    let fit = estimator.fit(windows)?;
+    let delta = fit.free_energies()[fit.n_states() - 1];
+    Ok(fit.n_states().wrapping_add(delta.to_bits() as usize))
+}
+
 fn bench_uwham(estimator: &UwhamEstimator, windows: &[UNkMatrix]) -> Result<usize, DynError> {
     let fit = estimator.fit(windows)?;
     let result = fit.result_with_uncertainty()?;
@@ -221,6 +326,152 @@ fn bench_exp(estimator: &IexpEstimator, windows: &[UNkMatrix]) -> Result<usize, 
 fn bench_ti(estimator: &TiEstimator, series: &[DhdlSeries]) -> Result<usize, DynError> {
     let result = estimator.fit(series)?.result()?;
     Ok(result.delta_f().to_bits() as usize)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SyntheticScale {
+    Smoke,
+    Medium,
+    Large,
+    Stress,
+}
+
+impl SyntheticScale {
+    fn parse(value: &str) -> Result<Self, DynError> {
+        match value {
+            "smoke" => Ok(Self::Smoke),
+            "medium" => Ok(Self::Medium),
+            "large" => Ok(Self::Large),
+            "stress" => Ok(Self::Stress),
+            _ => Err(format!("unknown synthetic scale '{value}'").into()),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Smoke => "smoke",
+            Self::Medium => "medium",
+            Self::Large => "large",
+            Self::Stress => "stress",
+        }
+    }
+
+    fn n_states(self) -> usize {
+        match self {
+            Self::Smoke => 8,
+            Self::Medium => 16,
+            Self::Large => 32,
+            Self::Stress => 64,
+        }
+    }
+
+    fn samples_per_window(self) -> usize {
+        match self {
+            Self::Smoke => 500,
+            Self::Medium => 2_000,
+            Self::Large => 5_000,
+            Self::Stress => 10_000,
+        }
+    }
+}
+
+fn synthetic_u_nk_with_observable(
+    scale: SyntheticScale,
+) -> Result<Vec<(UNkMatrix, Vec<f64>)>, DynError> {
+    let states = synthetic_states(scale.n_states())?;
+    let mut windows = Vec::with_capacity(states.len());
+    for sampled_index in 0..states.len() {
+        let window = synthetic_u_nk_window(&states, sampled_index, scale.samples_per_window())?;
+        let observable = synthetic_observable(sampled_index, scale.samples_per_window());
+        windows.push((window, observable));
+    }
+    Ok(windows)
+}
+
+fn synthetic_u_nk_windows(scale: SyntheticScale) -> Result<Vec<UNkMatrix>, DynError> {
+    Ok(synthetic_u_nk_with_observable(scale)?
+        .into_iter()
+        .map(|(window, _)| window)
+        .collect())
+}
+
+fn synthetic_u_nk_window(
+    states: &[StatePoint],
+    sampled_index: usize,
+    n_samples: usize,
+) -> Result<UNkMatrix, DynError> {
+    let n_states = states.len();
+    let sampled_lambda = states[sampled_index].lambdas()[0];
+    let mut data = Vec::with_capacity(n_samples * n_states);
+    let mut time_ps = Vec::with_capacity(n_samples);
+
+    for sample_index in 0..n_samples {
+        time_ps.push(sample_index as f64);
+        let phase = sample_index as f64 * 0.017 + sampled_index as f64 * 0.31;
+        let coordinate = sampled_lambda + 0.08 * phase.sin() + 0.03 * (phase * 0.37).cos();
+        let common = 0.02 * (sample_index as f64 * 0.011).sin();
+
+        for state in states {
+            let lambda = state.lambdas()[0];
+            let displacement = lambda - coordinate;
+            let state_bias = 0.25 * lambda + 0.05 * lambda * lambda;
+            data.push(18.0 * displacement * displacement + state_bias + common);
+        }
+    }
+
+    UNkMatrix::new_with_labels(
+        n_samples,
+        n_states,
+        data,
+        time_ps,
+        Some(states[sampled_index].clone()),
+        states.to_vec(),
+        Some(vec!["lambda".to_string()]),
+    )
+    .map_err(Into::into)
+}
+
+fn synthetic_dhdl_series(scale: SyntheticScale) -> Result<Vec<DhdlSeries>, DynError> {
+    let states = synthetic_states(scale.n_states())?;
+    let n_samples = scale.samples_per_window();
+    let mut series = Vec::with_capacity(states.len());
+
+    for (state_index, state) in states.into_iter().enumerate() {
+        let lambda = state.lambdas()[0];
+        let mut time_ps = Vec::with_capacity(n_samples);
+        let mut values = Vec::with_capacity(n_samples);
+        for sample_index in 0..n_samples {
+            time_ps.push(sample_index as f64);
+            let phase = sample_index as f64 * 0.013 + state_index as f64 * 0.19;
+            values.push(0.4 + 1.2 * lambda + 0.08 * phase.sin() + 0.03 * (phase * 0.41).cos());
+        }
+        series.push(DhdlSeries::new(state, time_ps, values)?);
+    }
+
+    Ok(series)
+}
+
+fn synthetic_states(n_states: usize) -> Result<Vec<StatePoint>, DynError> {
+    let denom = n_states.saturating_sub(1) as f64;
+    (0..n_states)
+        .map(|index| {
+            let lambda = if denom == 0.0 {
+                0.0
+            } else {
+                index as f64 / denom
+            };
+            StatePoint::new(vec![lambda], 300.0).map_err(Into::into)
+        })
+        .collect()
+}
+
+fn synthetic_observable(sampled_index: usize, n_samples: usize) -> Vec<f64> {
+    (0..n_samples)
+        .map(|sample_index| {
+            let phase = sample_index as f64 * 0.021 + sampled_index as f64 * 0.17;
+            0.5 + 0.1 * sampled_index as f64 + phase.sin() + 0.2 * (phase * 0.23).cos()
+        })
+        .collect()
 }
 
 fn load_amber_u_nk_with_potential() -> Result<Vec<(UNkMatrix, Vec<f64>)>, DynError> {
