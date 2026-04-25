@@ -2315,11 +2315,9 @@ fn contiguous_state_range(indices: &[usize]) -> Option<(usize, usize)> {
 }
 
 fn split_dhdl_series(series: &DhdlSeries, n_blocks: usize) -> Result<Vec<DhdlSeries>> {
-    let block_len = block_length(series.values().len(), n_blocks)?;
+    let ranges = block_ranges(series.values().len(), n_blocks)?;
     let mut out = Vec::with_capacity(n_blocks);
-    for block_index in 0..n_blocks {
-        let start = block_index * block_len;
-        let end = start + block_len;
+    for (start, end) in ranges {
         out.push(DhdlSeries::new(
             series.state().clone(),
             series.time_ps()[start..end].to_vec(),
@@ -2330,12 +2328,11 @@ fn split_dhdl_series(series: &DhdlSeries, n_blocks: usize) -> Result<Vec<DhdlSer
 }
 
 fn split_u_nk_window(window: &UNkMatrix, n_blocks: usize) -> Result<Vec<UNkMatrix>> {
-    let block_len = block_length(window.n_samples(), n_blocks)?;
+    let ranges = block_ranges(window.n_samples(), n_blocks)?;
     let row_width = window.n_states();
     let mut out = Vec::with_capacity(n_blocks);
-    for block_index in 0..n_blocks {
-        let start = block_index * block_len;
-        let end = start + block_len;
+    for (start, end) in ranges {
+        let block_len = end - start;
         let mut data = Vec::with_capacity(block_len * row_width);
         for sample_idx in start..end {
             let row_start = sample_idx * row_width;
@@ -2354,21 +2351,31 @@ fn split_u_nk_window(window: &UNkMatrix, n_blocks: usize) -> Result<Vec<UNkMatri
     Ok(out)
 }
 
-fn block_length(n_samples: usize, n_blocks: usize) -> Result<usize> {
+fn block_ranges(n_samples: usize, n_blocks: usize) -> Result<Vec<(usize, usize)>> {
     if n_blocks == 0 {
         return Err(CoreError::InvalidShape {
             expected: 1,
             found: 0,
         });
     }
-    let block_len = n_samples / n_blocks;
-    if block_len == 0 {
+    if n_samples < n_blocks {
         return Err(CoreError::InvalidShape {
             expected: n_blocks,
             found: n_samples,
         });
     }
-    Ok(block_len)
+
+    let base = n_samples / n_blocks;
+    let remainder = n_samples % n_blocks;
+    let mut start = 0;
+    let mut ranges = Vec::with_capacity(n_blocks);
+    for block_index in 0..n_blocks {
+        let block_len = base + usize::from(block_index < remainder);
+        let end = start + block_len;
+        ranges.push((start, end));
+        start = end;
+    }
+    Ok(ranges)
 }
 
 fn validate_schedule_advisor_options(

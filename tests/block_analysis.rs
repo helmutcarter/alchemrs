@@ -129,6 +129,34 @@ fn ti_block_average_requires_enough_samples_per_block() {
 }
 
 #[test]
+fn ti_block_average_uses_remainder_samples() {
+    let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+    let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+    let series = vec![
+        DhdlSeries::new(
+            s0,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0],
+            vec![0.0, 0.0, 0.0, 0.0, 0.0],
+        )
+        .unwrap(),
+        DhdlSeries::new(
+            s1,
+            vec![0.0, 1.0, 2.0, 3.0, 4.0],
+            vec![0.0, 0.0, 0.0, 10.0, 10.0],
+        )
+        .unwrap(),
+    ];
+
+    let blocks = TiEstimator::default()
+        .block_average(&series, 2)
+        .expect("ti blocks");
+
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].delta_f(), 0.0);
+    assert_eq!(blocks[1].delta_f(), 5.0);
+}
+
+#[test]
 fn mbar_block_average_preserves_labels() {
     let s0 = StatePoint::new(vec![0.0, 0.0], 300.0).unwrap();
     let s1 = StatePoint::new(vec![1.0, 0.0], 300.0).unwrap();
@@ -164,6 +192,40 @@ fn mbar_block_average_preserves_labels() {
     );
     assert_eq!(blocks[0].from_state().lambdas(), s0.lambdas());
     assert_eq!(blocks[0].to_state().lambdas(), s1.lambdas());
+}
+
+#[test]
+fn exp_block_average_uses_remainder_samples() {
+    let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
+    let s1 = StatePoint::new(vec![1.0], 300.0).unwrap();
+    let evaluated = vec![s0.clone(), s1.clone()];
+    let time = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+    let w0 = UNkMatrix::new(
+        5,
+        2,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 10.0],
+        time.clone(),
+        Some(s0),
+        evaluated.clone(),
+    )
+    .unwrap();
+    let w1 = UNkMatrix::new(
+        5,
+        2,
+        vec![0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        time,
+        Some(s1),
+        evaluated,
+    )
+    .unwrap();
+
+    let blocks = IexpEstimator::default()
+        .block_average(&[w0, w1], 2)
+        .expect("exp blocks");
+
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks[0].delta_f(), 0.0);
+    assert!((blocks[1].delta_f() - 10.0).abs() < 1.0e-12);
 }
 
 #[test]
