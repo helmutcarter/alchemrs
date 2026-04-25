@@ -5,11 +5,10 @@ use std::path::PathBuf;
 
 use alchemrs::estimators::sample_ti_curve;
 use alchemrs::{
-    advise_lambda_schedule, advise_nes, advise_ti_schedule, overlap_matrix, AdvisorEstimator,
-    EdgeSeverity, IntegrationMethod, MbarOptions, NesAdvice, NesSuggestionKind, OverlapMatrix,
-    ScheduleAdvice, ScheduleAdvisorOptions, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic,
-    TiScheduleAdvice, TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind,
-    TiWindowDiagnostic,
+    advise_lambda_schedule_with_overlap, advise_nes, advise_ti_schedule, AdvisorEstimator,
+    EdgeSeverity, IntegrationMethod, NesAdvice, NesSuggestionKind, OverlapMatrix, ScheduleAdvice,
+    ScheduleAdvisorOptions, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiScheduleAdvice,
+    TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
 };
 use serde_json::{json, Map, Value};
 
@@ -57,7 +56,7 @@ pub fn run(
     let (sample_counts, advice_kind) = match run_options.input_kind {
         AdviseInputKind::UNk => {
             let loaded = load_windows(inputs, input_options)?;
-            let advice = advise_lambda_schedule(
+            let (advice, overlap_matrix) = advise_lambda_schedule_with_overlap(
                 &loaded.windows,
                 Some(ScheduleAdvisorOptions {
                     estimator: run_options.estimator.into(),
@@ -74,7 +73,6 @@ pub fn run(
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
             let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
-            let overlap_matrix = overlap_matrix(&loaded.windows, Some(MbarOptions::default()))?;
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
@@ -114,7 +112,7 @@ pub fn run(
         }
         AdviseInputKind::Auto => {
             let loaded = load_windows(inputs, input_options)?;
-            let advice = advise_lambda_schedule(
+            let (advice, overlap_matrix) = advise_lambda_schedule_with_overlap(
                 &loaded.windows,
                 Some(ScheduleAdvisorOptions {
                     estimator: run_options.estimator.into(),
@@ -131,7 +129,6 @@ pub fn run(
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
             let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
-            let overlap_matrix = overlap_matrix(&loaded.windows, Some(MbarOptions::default()))?;
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {

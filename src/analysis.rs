@@ -1067,13 +1067,13 @@ pub fn mbar_convergence(
     let mut initial_f_k = base_options.initial_f_k.clone();
 
     for count in 1..=total_windows {
-        let subset = select_trimmed_windows_range(&trimmed[..count], 0, count)?;
         let mut fit_options = base_options.clone();
         // Each prefix adds one neighboring state, so the previous solution is a good
         // initial guess for the next MBAR solve and usually reduces iteration count.
         fit_options.initial_f_k = adapt_mbar_initial_f_k(initial_f_k.as_deref(), count);
 
-        let fit = MbarEstimator::new(fit_options).fit(&subset)?;
+        let fit =
+            MbarEstimator::new(fit_options).fit_window_state_range(&trimmed[..count], 0, count)?;
         let result = fit.result_with_uncertainty()?;
         points.push(convergence_point_from_matrix(count, &result, false)?);
         initial_f_k = Some(fit.free_energies().to_vec());
@@ -1190,6 +1190,26 @@ pub fn advise_lambda_schedule(
     windows: &[UNkMatrix],
     options: Option<ScheduleAdvisorOptions>,
 ) -> Result<ScheduleAdvice> {
+    let (advice, _) = advise_lambda_schedule_inner(windows, options, false)?;
+    Ok(advice)
+}
+
+pub fn advise_lambda_schedule_with_overlap(
+    windows: &[UNkMatrix],
+    options: Option<ScheduleAdvisorOptions>,
+) -> Result<(ScheduleAdvice, OverlapMatrix)> {
+    let (advice, overlap) = advise_lambda_schedule_inner(windows, options, true)?;
+    let overlap = overlap.ok_or_else(|| {
+        CoreError::InvalidState("schedule advisor did not produce overlap matrix".to_string())
+    })?;
+    Ok((advice, overlap))
+}
+
+fn advise_lambda_schedule_inner(
+    windows: &[UNkMatrix],
+    options: Option<ScheduleAdvisorOptions>,
+    include_overlap: bool,
+) -> Result<(ScheduleAdvice, Option<OverlapMatrix>)> {
     if windows.len() < 2 {
         return Err(CoreError::InvalidShape {
             expected: 2,
@@ -1199,11 +1219,29 @@ pub fn advise_lambda_schedule(
 
     let options = validate_schedule_advisor_options(options.unwrap_or_default())?;
     let ordered = sort_windows_by_sampled_state(windows)?;
-    let metrics = match options.estimator {
-        AdvisorEstimator::Mbar => schedule_edge_metrics_mbar(&ordered, options)?,
-        AdvisorEstimator::Bar => schedule_edge_metrics_bar(&ordered, options)?,
+    let (metrics, overlap) = match options.estimator {
+        AdvisorEstimator::Mbar => {
+            let (metrics, overlap) = schedule_edge_metrics_mbar(&ordered, options)?;
+            (metrics, include_overlap.then_some(overlap))
+        }
+        AdvisorEstimator::Bar => {
+            let metrics = schedule_edge_metrics_bar(&ordered, options)?;
+            let overlap = if include_overlap {
+                Some(overlap_matrix(&ordered, Some(MbarOptions::default()))?)
+            } else {
+                None
+            };
+            (metrics, overlap)
+        }
     };
+    let advice = schedule_advice_from_metrics(metrics, options)?;
+    Ok((advice, overlap))
+}
 
+fn schedule_advice_from_metrics(
+    metrics: Vec<EdgeMetrics>,
+    options: ScheduleAdvisorOptions,
+) -> Result<ScheduleAdvice> {
     let overlap_mins = metrics
         .iter()
         .map(|edge| edge.overlap_forward.min(edge.overlap_reverse))
@@ -1275,7 +1313,7 @@ pub fn advise_lambda_schedule(
 fn schedule_edge_metrics_mbar(
     windows: &[UNkMatrix],
     options: ScheduleAdvisorOptions,
-) -> Result<Vec<EdgeMetrics>> {
+) -> Result<(Vec<EdgeMetrics>, OverlapMatrix)> {
     let trimmed = trim_windows_to_sampled_states(windows)?;
     let overlap = overlap_matrix(&trimmed, Some(MbarOptions::default()))?;
     let n_states = overlap.n_states();
@@ -1283,9 +1321,11 @@ fn schedule_edge_metrics_mbar(
 
     let mut metrics = Vec::with_capacity(n_states - 1);
     for edge_index in 0..(n_states - 1) {
+        let pair_result = MbarEstimator::default()
+            .fit_window_state_range(&trimmed[edge_index..edge_index + 2], edge_index, 2)?
+            .result_with_uncertainty()?;
         let pair_windows =
             select_trimmed_windows_range(&trimmed[edge_index..edge_index + 2], edge_index, 2)?;
-        let pair_result = fit_pair(&pair_windows, options.estimator)?;
         let block_stats = pair_block_stats(&pair_windows, options)?;
         let overlap_forward = overlap.values()[edge_index * n_states + edge_index + 1];
         let overlap_reverse = overlap.values()[(edge_index + 1) * n_states + edge_index];
@@ -1304,7 +1344,7 @@ fn schedule_edge_metrics_mbar(
         });
     }
 
-    Ok(metrics)
+    Ok((metrics, overlap))
 }
 
 fn schedule_edge_metrics_bar(

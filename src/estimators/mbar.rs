@@ -1,5 +1,8 @@
 use crate::analysis::{self, BlockEstimate};
-use crate::data::{find_state_index_exact, DeltaFMatrix, OverlapMatrix, StatePoint, UNkMatrix};
+use crate::data::{
+    find_state_index_exact, state_points_match_exact, DeltaFMatrix, OverlapMatrix, StatePoint,
+    UNkMatrix,
+};
 use crate::error::{CoreError, Result};
 use rayon::prelude::*;
 use std::sync::OnceLock;
@@ -53,6 +56,14 @@ struct PreparedMbar {
     lambda_labels: Option<Vec<String>>,
 }
 
+type PreparedRangeParts = (
+    Vec<Vec<f64>>,
+    Vec<f64>,
+    Vec<f64>,
+    Vec<StatePoint>,
+    Option<Vec<String>>,
+);
+
 #[derive(Debug)]
 pub struct MbarFit {
     prepared: PreparedMbar,
@@ -74,6 +85,26 @@ impl MbarEstimator {
             });
         }
         let prepared = PreparedMbar::from_windows(windows)?;
+        self.fit_prepared(prepared)
+    }
+
+    pub(crate) fn fit_window_state_range(
+        &self,
+        windows: &[UNkMatrix],
+        state_start: usize,
+        state_count: usize,
+    ) -> Result<MbarFit> {
+        if windows.is_empty() {
+            return Err(CoreError::InvalidShape {
+                expected: 1,
+                found: 0,
+            });
+        }
+        let prepared = PreparedMbar::from_window_state_range(windows, state_start, state_count)?;
+        self.fit_prepared(prepared)
+    }
+
+    fn fit_prepared(&self, prepared: PreparedMbar) -> Result<MbarFit> {
         let mut f_k = initial_f_k(&self.options, prepared.states.len())?;
 
         let solver = if matches!(self.options.solver, MbarSolver::Lbfgs)
@@ -268,6 +299,22 @@ impl PreparedMbar {
             lambda_labels,
         })
     }
+
+    fn from_window_state_range(
+        windows: &[UNkMatrix],
+        state_start: usize,
+        state_count: usize,
+    ) -> Result<Self> {
+        let (u_kn, u_nk, n_k, states, lambda_labels) =
+            combine_window_state_range(windows, state_start, state_count)?;
+        Ok(Self {
+            u_kn,
+            u_nk,
+            n_k,
+            states,
+            lambda_labels,
+        })
+    }
 }
 
 fn initial_f_k(options: &MbarOptions, n_states: usize) -> Result<Vec<f64>> {
@@ -318,6 +365,84 @@ fn combine_windows(windows: &[UNkMatrix]) -> Result<CombinedWindows> {
     validate_mbar_input(&u_kn)?;
 
     Ok((u_kn, n_k, states, lambda_labels))
+}
+
+fn combine_window_state_range(
+    windows: &[UNkMatrix],
+    state_start: usize,
+    state_count: usize,
+) -> Result<PreparedRangeParts> {
+    if state_count == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let first = windows[0].evaluated_states();
+    let state_end = state_start
+        .checked_add(state_count)
+        .ok_or(CoreError::InvalidShape {
+            expected: state_start,
+            found: state_count,
+        })?;
+    let states = first
+        .get(state_start..state_end)
+        .ok_or(CoreError::InvalidShape {
+            expected: state_end,
+            found: first.len(),
+        })?
+        .to_vec();
+    let lambda_labels = ensure_consistent_lambda_labels(windows)?;
+    let mut n_k = vec![0.0; state_count];
+    let mut offsets = Vec::with_capacity(windows.len());
+    let mut total_samples = 0usize;
+
+    for window in windows {
+        let evaluated = window.evaluated_states();
+        let found_end = state_end.min(evaluated.len());
+        if found_end != state_end {
+            return Err(CoreError::InvalidShape {
+                expected: state_end,
+                found: evaluated.len(),
+            });
+        }
+        for (expected, found) in states.iter().zip(evaluated[state_start..state_end].iter()) {
+            if !state_points_match_exact(expected, found) {
+                return Err(CoreError::InvalidState(
+                    "evaluated_states differ between windows".to_string(),
+                ));
+            }
+        }
+        let sampled = window.sampled_state().ok_or_else(|| {
+            CoreError::InvalidState("sampled_state required for MBAR".to_string())
+        })?;
+        let idx = find_state_index_exact(&states, sampled)?;
+        n_k[idx] += window.n_samples() as f64;
+        offsets.push(total_samples);
+        total_samples += window.n_samples();
+    }
+
+    let mut u_kn = vec![vec![0.0; total_samples]; state_count];
+    let mut u_nk = vec![0.0; total_samples * state_count];
+    for (win_idx, window) in windows.iter().enumerate() {
+        let offset = offsets[win_idx];
+        let data = window.data();
+        let window_states = window.n_states();
+        for sample_idx in 0..window.n_samples() {
+            let in_start = sample_idx * window_states + state_start;
+            let out_sample = offset + sample_idx;
+            let out_row = &mut u_nk[out_sample * state_count..(out_sample + 1) * state_count];
+            for state_idx in 0..state_count {
+                let value = data[in_start + state_idx];
+                u_kn[state_idx][out_sample] = value;
+                out_row[state_idx] = value;
+            }
+        }
+    }
+
+    validate_mbar_input(&u_kn)?;
+
+    Ok((u_kn, u_nk, n_k, states, lambda_labels))
 }
 
 fn mbar_solve_fixed_point(

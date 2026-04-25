@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use alchemrs::{
-    decorrelate_u_nk_with_observable, extract_dhdl, extract_u_nk_with_potential, BarEstimator,
+    advise_lambda_schedule, advise_lambda_schedule_with_overlap, decorrelate_u_nk_with_observable,
+    extract_dhdl, extract_u_nk_with_potential, mbar_convergence, overlap_matrix, BarEstimator,
     BarOptions, DecorrelationOptions, DhdlSeries, IexpEstimator, IexpOptions, MbarEstimator,
-    MbarOptions, MbarSolver, StatePoint, TiEstimator, TiOptions, UNkMatrix, UwhamEstimator,
-    UwhamOptions, UwhamSolver,
+    MbarOptions, MbarSolver, ScheduleAdvisorOptions, StatePoint, TiEstimator, TiOptions, UNkMatrix,
+    UwhamEstimator, UwhamOptions, UwhamSolver,
 };
 
 type DynError = Box<dyn std::error::Error>;
@@ -170,6 +171,34 @@ fn main() -> Result<(), DynError> {
                 bench_mbar(&estimator, &windows)
             })?;
         }
+        "synthetic-mbar-overlap" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_mbar_overlap(&windows)
+            })?;
+        }
+        "synthetic-mbar-convergence" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_mbar_convergence(&windows)
+            })?;
+        }
+        "synthetic-advise-mbar" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            measure_with_scale(&workload, scale, iterations, || bench_advise_mbar(&windows))?;
+        }
+        "synthetic-advise-mbar-with-overlap" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_advise_mbar_with_overlap(&windows)
+            })?;
+        }
+        "synthetic-advise-mbar-separate-overlap" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_advise_mbar_separate_overlap(&windows)
+            })?;
+        }
         "synthetic-mbar-lbfgs-uncertainty" => {
             let windows = synthetic_u_nk_windows(scale)?;
             let estimator = MbarEstimator::new(MbarOptions {
@@ -262,7 +291,7 @@ fn main() -> Result<(), DynError> {
 fn usage() -> String {
     "usage: profile_estimators <workload> [iterations] [scale]\n\
      scales: smoke, medium, large, stress\n\
-     synthetic workloads: synthetic-mbar-default, synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-mbar-lbfgs-uncertainty, synthetic-uwham, synthetic-uwham-newton, synthetic-uwham-lbfgs, synthetic-uwham-newton-stats, synthetic-uwham-lbfgs-stats, synthetic-uwham-wide-scan, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
+     synthetic workloads: synthetic-mbar-default, synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-mbar-lbfgs-uncertainty, synthetic-mbar-overlap, synthetic-mbar-convergence, synthetic-advise-mbar, synthetic-advise-mbar-with-overlap, synthetic-advise-mbar-separate-overlap, synthetic-uwham, synthetic-uwham-newton, synthetic-uwham-lbfgs, synthetic-uwham-newton-stats, synthetic-uwham-lbfgs-stats, synthetic-uwham-wide-scan, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
         .to_string()
 }
 
@@ -361,6 +390,49 @@ fn bench_mbar_fit_only(
     let fit = estimator.fit(windows)?;
     let delta = fit.free_energies()[fit.n_states() - 1];
     Ok(fit.n_states().wrapping_add(delta.to_bits() as usize))
+}
+
+fn bench_mbar_overlap(windows: &[UNkMatrix]) -> Result<usize, DynError> {
+    let overlap = overlap_matrix(windows, Some(MbarOptions::default()))?;
+    let value = overlap.values()[overlap.n_states() - 1];
+    Ok(overlap
+        .values()
+        .len()
+        .wrapping_add(value.to_bits() as usize))
+}
+
+fn bench_mbar_convergence(windows: &[UNkMatrix]) -> Result<usize, DynError> {
+    let points = mbar_convergence(windows, Some(MbarOptions::default()))?;
+    let value = points.last().map(|point| point.delta_f()).unwrap_or(0.0);
+    Ok(points.len().wrapping_add(value.to_bits() as usize))
+}
+
+fn bench_advise_mbar(windows: &[UNkMatrix]) -> Result<usize, DynError> {
+    let advice = advise_lambda_schedule(windows, Some(ScheduleAdvisorOptions::default()))?;
+    Ok(advice
+        .edges()
+        .len()
+        .wrapping_add(advice.suggestions().len()))
+}
+
+fn bench_advise_mbar_with_overlap(windows: &[UNkMatrix]) -> Result<usize, DynError> {
+    let (advice, overlap) =
+        advise_lambda_schedule_with_overlap(windows, Some(ScheduleAdvisorOptions::default()))?;
+    Ok(advice
+        .edges()
+        .len()
+        .wrapping_add(advice.suggestions().len())
+        .wrapping_add(overlap.values().len()))
+}
+
+fn bench_advise_mbar_separate_overlap(windows: &[UNkMatrix]) -> Result<usize, DynError> {
+    let advice = advise_lambda_schedule(windows, Some(ScheduleAdvisorOptions::default()))?;
+    let overlap = overlap_matrix(windows, Some(MbarOptions::default()))?;
+    Ok(advice
+        .edges()
+        .len()
+        .wrapping_add(advice.suggestions().len())
+        .wrapping_add(overlap.values().len()))
 }
 
 fn bench_uwham(estimator: &UwhamEstimator, windows: &[UNkMatrix]) -> Result<usize, DynError> {
