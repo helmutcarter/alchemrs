@@ -45,6 +45,7 @@ cargo build --release
 - `--output-format <text|json|csv>`: output format for estimator results (default `text`).
 - `--output <PATH>`: write the formatted result to a file instead of stdout.
 - `--overlap-summary`: include overlap scalar and overlap eigenvalues for BAR/IEXP/DEXP/MBAR runs.
+- `mbar` uses the L-BFGS MBAR solver by default and automatically falls back to fixed-point for sparse sampled-count grids; pass `--fixed-point-mbar` to force the fixed-point solver.
 
 
 ### Schedule advisor
@@ -80,6 +81,9 @@ if let Some(labels) = fit.lambda_labels() {
     println!("lambda components = {:?}", labels);
 }
 ```
+
+`MbarOptions::default()` uses `MbarSolver::Lbfgs`. Set `solver: MbarSolver::FixedPoint`
+when you need to reproduce older fixed-point results or compare solver behavior.
 
 Use the Rust API when you need embedding, custom orchestration, or tighter control than the CLI exposes. The repo also includes runnable top-level examples:
 
@@ -227,6 +231,15 @@ BAR reports adjacent-edge uncertainties from the implicit BAR root equation and 
 
 ```bash
 alchemrs mbar \
+  --decorrelate \
+  /path/to/*/prod.out
+```
+
+MBAR uses the L-BFGS solver by default. To force the fixed-point solver:
+
+```bash
+alchemrs mbar \
+  --fixed-point-mbar \
   --decorrelate \
   /path/to/*/prod.out
 ```

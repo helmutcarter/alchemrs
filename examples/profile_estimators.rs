@@ -153,6 +153,13 @@ fn main() -> Result<(), DynError> {
                 bench_mbar_fit_only(&estimator, &windows)
             })?;
         }
+        "synthetic-mbar-default" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = MbarEstimator::new(MbarOptions::default());
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_mbar_fit_only(&estimator, &windows)
+            })?;
+        }
         "synthetic-mbar-uncertainty" => {
             let windows = synthetic_u_nk_windows(scale)?;
             let estimator = MbarEstimator::new(MbarOptions {
@@ -216,7 +223,7 @@ fn main() -> Result<(), DynError> {
 fn usage() -> String {
     "usage: profile_estimators <workload> [iterations] [scale]\n\
      scales: smoke, medium, large, stress\n\
-     synthetic workloads: synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-mbar-lbfgs-uncertainty, synthetic-uwham, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
+     synthetic workloads: synthetic-mbar-default, synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-mbar-lbfgs-uncertainty, synthetic-uwham, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
         .to_string()
 }
 

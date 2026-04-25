@@ -116,6 +116,14 @@ Default solver:
 - falls back to fixed-point automatically when the evaluated grid contains states with zero sampled counts, because the LBFGS objective requires positive sampled counts
 - use `MbarSolver::FixedPoint` when reproducing older fixed-point results or comparing solver behavior
 
+The MBAR L-BFGS solver path is inspired by the large-scale MBAR/UWHAM convex
+optimization approach described by Ding, Vilseck, and Brooks in "Fast Solver for
+Large Scale Multistate Bennett Acceptance Ratio Equations", *Journal of Chemical
+Theory and Computation* 15, 799-802 (2019),
+doi:[10.1021/acs.jctc.8b01010](https://doi.org/10.1021/acs.jctc.8b01010).
+The current `UwhamEstimator` uses its own Newton-style solver rather than this
+MBAR L-BFGS implementation.
+
 Input:
 
 - slice of `UNkMatrix`

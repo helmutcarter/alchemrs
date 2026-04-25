@@ -65,7 +65,7 @@ against external UWHAM implementations.
 
 ```rust
 use alchemrs::{
-    DecorrelationOptions, MbarEstimator, MbarOptions, UNkMatrix,
+    DecorrelationOptions, MbarEstimator, MbarOptions, MbarSolver, UNkMatrix,
     decorrelate_u_nk_with_observable, extract_u_nk_with_potential,
 };
 
@@ -100,6 +100,17 @@ fn run_mbar(windows: &[UNkMatrix]) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+```
+
+`MbarOptions::default()` uses `MbarSolver::Lbfgs`. It automatically falls back to
+fixed-point when the evaluated state grid contains zero sampled-count states. To
+force fixed-point explicitly:
+
+```rust
+let estimator = MbarEstimator::new(MbarOptions {
+    solver: MbarSolver::FixedPoint,
+    ..MbarOptions::default()
+});
 ```
 
 ## ATM leg example
