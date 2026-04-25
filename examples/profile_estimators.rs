@@ -8,7 +8,7 @@ use alchemrs::{
     decorrelate_u_nk_with_observable, extract_dhdl, extract_u_nk_with_potential, BarEstimator,
     BarOptions, DecorrelationOptions, DhdlSeries, IexpEstimator, IexpOptions, MbarEstimator,
     MbarOptions, MbarSolver, StatePoint, TiEstimator, TiOptions, UNkMatrix, UwhamEstimator,
-    UwhamOptions,
+    UwhamOptions, UwhamSolver,
 };
 
 type DynError = Box<dyn std::error::Error>;
@@ -187,6 +187,45 @@ fn main() -> Result<(), DynError> {
                 bench_uwham(&estimator, &windows)
             })?;
         }
+        "synthetic-uwham-newton" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = UwhamEstimator::new(UwhamOptions {
+                solver: UwhamSolver::Newton,
+                ..UwhamOptions::default()
+            });
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_uwham(&estimator, &windows)
+            })?;
+        }
+        "synthetic-uwham-lbfgs" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = UwhamEstimator::new(UwhamOptions {
+                solver: UwhamSolver::Lbfgs,
+                ..UwhamOptions::default()
+            });
+            measure_with_scale(&workload, scale, iterations, || {
+                bench_uwham(&estimator, &windows)
+            })?;
+        }
+        "synthetic-uwham-newton-stats" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = UwhamEstimator::new(UwhamOptions {
+                solver: UwhamSolver::Newton,
+                ..UwhamOptions::default()
+            });
+            print_uwham_stats(&workload, scale, &estimator, &windows)?;
+        }
+        "synthetic-uwham-lbfgs-stats" => {
+            let windows = synthetic_u_nk_windows(scale)?;
+            let estimator = UwhamEstimator::new(UwhamOptions {
+                solver: UwhamSolver::Lbfgs,
+                ..UwhamOptions::default()
+            });
+            print_uwham_stats(&workload, scale, &estimator, &windows)?;
+        }
+        "synthetic-uwham-wide-scan" => {
+            bench_uwham_wide_scan()?;
+        }
         "synthetic-bar" => {
             let windows = synthetic_u_nk_windows(scale)?;
             let estimator = BarEstimator::new(BarOptions::default());
@@ -223,7 +262,7 @@ fn main() -> Result<(), DynError> {
 fn usage() -> String {
     "usage: profile_estimators <workload> [iterations] [scale]\n\
      scales: smoke, medium, large, stress\n\
-     synthetic workloads: synthetic-mbar-default, synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-mbar-lbfgs-uncertainty, synthetic-uwham, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
+     synthetic workloads: synthetic-mbar-default, synthetic-mbar-fixed, synthetic-mbar-lbfgs, synthetic-mbar-uncertainty, synthetic-mbar-lbfgs-uncertainty, synthetic-uwham, synthetic-uwham-newton, synthetic-uwham-lbfgs, synthetic-uwham-newton-stats, synthetic-uwham-lbfgs-stats, synthetic-uwham-wide-scan, synthetic-bar, synthetic-exp, synthetic-prep-u-nk, synthetic-ti"
         .to_string()
 }
 
@@ -331,6 +370,74 @@ fn bench_uwham(estimator: &UwhamEstimator, windows: &[UNkMatrix]) -> Result<usiz
     Ok(result.values().len().wrapping_add(delta.to_bits() as usize))
 }
 
+fn print_uwham_stats(
+    workload: &str,
+    scale: SyntheticScale,
+    estimator: &UwhamEstimator,
+    windows: &[UNkMatrix],
+) -> Result<(), DynError> {
+    println!(
+        "synthetic_scale={} states={} samples_per_window={}",
+        scale.name(),
+        scale.n_states(),
+        scale.samples_per_window()
+    );
+    let start = Instant::now();
+    let fit = estimator.fit(windows)?;
+    let result = fit.result_with_uncertainty()?;
+    let elapsed = start.elapsed();
+    let stats = fit.solver_stats();
+    let delta = result.values()[result.n_states() - 1];
+    let checksum = result.values().len().wrapping_add(delta.to_bits() as usize);
+    black_box(checksum);
+    println!(
+        "workload={workload} solver={:?} total_s={:.6} checksum={checksum} iterations={} objective_evaluations={} gradient_evaluations={} hessian_evaluations={} line_search_evaluations={} accepted_newton_steps={} accepted_gradient_steps={} accepted_lbfgs_steps={} fallback_direction_resets={}",
+        stats.solver,
+        elapsed.as_secs_f64(),
+        stats.iterations,
+        stats.objective_evaluations,
+        stats.gradient_evaluations,
+        stats.hessian_evaluations,
+        stats.line_search_evaluations,
+        stats.accepted_newton_steps,
+        stats.accepted_gradient_steps,
+        stats.accepted_lbfgs_steps,
+        stats.fallback_direction_resets
+    );
+    Ok(())
+}
+
+fn bench_uwham_wide_scan() -> Result<(), DynError> {
+    for &(n_states, n_samples) in &[(16, 20), (32, 20), (64, 20), (96, 10), (128, 10), (160, 8)] {
+        let windows = synthetic_u_nk_windows_custom(n_states, n_samples)?;
+        for solver in [UwhamSolver::Newton, UwhamSolver::Lbfgs] {
+            let estimator = UwhamEstimator::new(UwhamOptions {
+                solver,
+                ..UwhamOptions::default()
+            });
+            let start = Instant::now();
+            let fit = estimator.fit(&windows)?;
+            let result = fit.result()?;
+            let elapsed = start.elapsed();
+            let stats = fit.solver_stats();
+            let delta = result.values()[result.n_states() - 1];
+            let checksum = result.values().len().wrapping_add(delta.to_bits() as usize);
+            black_box(checksum);
+            println!(
+                "workload=synthetic-uwham-wide-scan solver={solver:?} states={n_states} samples_per_window={n_samples} observations={} total_ms={:.3} checksum={checksum} iterations={} objective_evaluations={} gradient_evaluations={} hessian_evaluations={} line_search_evaluations={}",
+                n_states * n_samples,
+                elapsed.as_secs_f64() * 1000.0,
+                stats.iterations,
+                stats.objective_evaluations,
+                stats.gradient_evaluations,
+                stats.hessian_evaluations,
+                stats.line_search_evaluations
+            );
+        }
+    }
+    Ok(())
+}
+
 fn bench_bar(estimator: &BarEstimator, windows: &[UNkMatrix]) -> Result<usize, DynError> {
     let result = estimator.estimate(windows)?;
     let delta = result.values()[result.n_states() - 1];
@@ -409,10 +516,17 @@ fn synthetic_u_nk_with_observable(
 }
 
 fn synthetic_u_nk_windows(scale: SyntheticScale) -> Result<Vec<UNkMatrix>, DynError> {
-    Ok(synthetic_u_nk_with_observable(scale)?
-        .into_iter()
-        .map(|(window, _)| window)
-        .collect())
+    synthetic_u_nk_windows_custom(scale.n_states(), scale.samples_per_window())
+}
+
+fn synthetic_u_nk_windows_custom(
+    n_states: usize,
+    samples_per_window: usize,
+) -> Result<Vec<UNkMatrix>, DynError> {
+    let states = synthetic_states(n_states)?;
+    (0..states.len())
+        .map(|sampled_index| synthetic_u_nk_window(&states, sampled_index, samples_per_window))
+        .collect()
 }
 
 fn synthetic_u_nk_window(

@@ -151,12 +151,20 @@ Types:
 - `UwhamEstimator`
 - `UwhamFit`
 - `UwhamOptions`
+- `UwhamSolver`
 
 Important options:
 
 - `max_iterations`
 - `tolerance`
 - `parallel`
+- `solver`
+
+Solver behavior:
+
+- `UwhamSolver::Newton` is the default.
+- `UwhamSolver::Lbfgs` is available as an experimental comparison backend.
+- Current synthetic benchmarks show the Newton backend remains faster for the tested UWHAM workloads, so L-BFGS is not the default.
 
 Input:
 

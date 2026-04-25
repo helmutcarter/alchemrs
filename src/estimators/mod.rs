@@ -13,7 +13,7 @@ pub use exp::{IexpEstimator, IexpFit, IexpOptions};
 pub use mbar::{MbarEstimator, MbarFit, MbarOptions, MbarSolver};
 pub use nes::{NesEstimator, NesFit, NesOptions};
 pub use ti::{sample_ti_curve, IntegrationMethod, TiEstimator, TiFit, TiOptions};
-pub use uwham::{UwhamEstimator, UwhamFit, UwhamOptions};
+pub use uwham::{UwhamEstimator, UwhamFit, UwhamOptions, UwhamSolver, UwhamSolverStats};
 
 #[cfg(test)]
 mod tests {
@@ -26,7 +26,7 @@ mod tests {
     use super::mbar::{MbarEstimator, MbarOptions, MbarSolver};
     use super::nes::{analytic_uncertainty, jarzynski_delta_f, NesEstimator, NesOptions};
     use super::ti::{IntegrationMethod, TiEstimator, TiOptions};
-    use super::uwham::{UwhamEstimator, UwhamOptions};
+    use super::uwham::{UwhamEstimator, UwhamOptions, UwhamSolver};
 
     fn make_two_state_windows() -> Vec<UNkMatrix> {
         let s0 = StatePoint::new(vec![0.0], 300.0).unwrap();
@@ -1098,6 +1098,33 @@ mod tests {
     }
 
     #[test]
+    fn uwham_lbfgs_matches_newton() {
+        let windows = make_synthetic_mbar_windows(6, 80);
+        let newton = UwhamEstimator::new(UwhamOptions {
+            solver: UwhamSolver::Newton,
+            tolerance: 1e-9,
+            ..UwhamOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+        let lbfgs = UwhamEstimator::new(UwhamOptions {
+            solver: UwhamSolver::Lbfgs,
+            tolerance: 1e-9,
+            ..UwhamOptions::default()
+        })
+        .fit(&windows)
+        .unwrap();
+
+        assert_slice_close(newton.free_energies(), lbfgs.free_energies(), 1e-6);
+        assert_slice_close(newton.weights(), lbfgs.weights(), 2e-6);
+        assert_slice_close(
+            newton.result().unwrap().values(),
+            lbfgs.result().unwrap().values(),
+            1e-6,
+        );
+    }
+
+    #[test]
     fn uwham_result_with_uncertainty_is_finite() {
         let windows = make_two_state_windows();
         let fit = UwhamEstimator::default().fit(&windows).unwrap();
@@ -1120,6 +1147,7 @@ mod tests {
             max_iterations: 0,
             tolerance: 1.0e-7,
             parallel: false,
+            solver: UwhamSolver::Newton,
         })
         .fit(&windows)
         .unwrap_err();

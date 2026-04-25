@@ -64,7 +64,7 @@ pub use error::{CoreError, Result};
 pub use estimators::{
     AtmBindingEstimate, AtmEstimator, AtmFit, AtmOptions, AtmUncertaintyMethod, IexpEstimator,
     IexpFit, IexpOptions, MbarEstimator, MbarFit, MbarOptions, MbarSolver, NesEstimator, NesFit,
-    NesOptions, UwhamEstimator, UwhamFit, UwhamOptions,
+    NesOptions, UwhamEstimator, UwhamFit, UwhamOptions, UwhamSolver, UwhamSolverStats,
 };
 pub use estimators::{BarEstimator, BarFit, BarMethod, BarOptions};
 pub use estimators::{IntegrationMethod, TiEstimator, TiFit, TiOptions};

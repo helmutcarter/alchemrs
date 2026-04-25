@@ -10,11 +10,33 @@ use super::common::{
     checked_nonnegative_sqrt, ensure_consistent_lambda_labels, ensure_consistent_states,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UwhamSolver {
+    #[default]
+    Newton,
+    Lbfgs,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UwhamSolverStats {
+    pub solver: UwhamSolver,
+    pub iterations: usize,
+    pub objective_evaluations: usize,
+    pub gradient_evaluations: usize,
+    pub hessian_evaluations: usize,
+    pub line_search_evaluations: usize,
+    pub accepted_newton_steps: usize,
+    pub accepted_gradient_steps: usize,
+    pub accepted_lbfgs_steps: usize,
+    pub fallback_direction_resets: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct UwhamOptions {
     pub max_iterations: usize,
     pub tolerance: f64,
     pub parallel: bool,
+    pub solver: UwhamSolver,
 }
 
 impl Default for UwhamOptions {
@@ -23,6 +45,7 @@ impl Default for UwhamOptions {
             max_iterations: 10_000,
             tolerance: 1.0e-7,
             parallel: false,
+            solver: UwhamSolver::Newton,
         }
     }
 }
@@ -56,6 +79,7 @@ struct ReducedUwhamInput {
 pub struct UwhamFit {
     input: UwhamLogQInput,
     free_energies: Vec<f64>,
+    solver_stats: UwhamSolverStats,
     weights: OnceLock<Vec<f64>>,
     parallel: bool,
 }
@@ -65,6 +89,25 @@ struct UwhamObjective {
     value: f64,
     gradient: DVector<f64>,
     hessian: DMatrix<f64>,
+}
+
+#[derive(Debug)]
+struct UwhamValueGradient {
+    value: f64,
+    gradient: DVector<f64>,
+}
+
+#[derive(Debug)]
+struct UwhamLbfgsHistoryEntry {
+    s: DVector<f64>,
+    y: DVector<f64>,
+    rho: f64,
+}
+
+#[derive(Debug)]
+pub(crate) struct UwhamSolveResult {
+    free_energies: Vec<f64>,
+    stats: UwhamSolverStats,
 }
 
 #[derive(Debug)]
@@ -103,10 +146,11 @@ impl UwhamEstimator {
 }
 
 pub(crate) fn fit_log_q_input(input: UwhamLogQInput, options: &UwhamOptions) -> Result<UwhamFit> {
-    let free_energies = solve_uwham(&input, options)?;
+    let solved = solve_uwham(&input, options)?;
     Ok(UwhamFit {
         input,
-        free_energies,
+        free_energies: solved.free_energies,
+        solver_stats: solved.stats,
         weights: OnceLock::new(),
         parallel: options.parallel,
     })
@@ -131,6 +175,10 @@ impl UwhamFit {
 
     pub fn free_energies(&self) -> &[f64] {
         &self.free_energies
+    }
+
+    pub fn solver_stats(&self) -> &UwhamSolverStats {
+        &self.solver_stats
     }
 
     pub fn weights(&self) -> &[f64] {
@@ -336,24 +384,42 @@ impl ReducedUwhamInput {
     }
 }
 
-pub(crate) fn solve_uwham(input: &UwhamLogQInput, options: &UwhamOptions) -> Result<Vec<f64>> {
+pub(crate) fn solve_uwham(
+    input: &UwhamLogQInput,
+    options: &UwhamOptions,
+) -> Result<UwhamSolveResult> {
+    match options.solver {
+        UwhamSolver::Newton => solve_uwham_newton(input, options),
+        UwhamSolver::Lbfgs => solve_uwham_lbfgs(input, options),
+    }
+}
+
+fn solve_uwham_newton(input: &UwhamLogQInput, options: &UwhamOptions) -> Result<UwhamSolveResult> {
     let reduced = ReducedUwhamInput::from_pooled(input)?;
     let sampled_count = reduced.sampled_indices.len();
     let variable_count = sampled_count.saturating_sub(1);
     let mut ze_nonbase = DVector::zeros(variable_count);
+    let mut stats = UwhamSolverStats {
+        solver: UwhamSolver::Newton,
+        ..UwhamSolverStats::default()
+    };
 
     if options.max_iterations == 0 {
         return Err(CoreError::ConvergenceFailure);
     }
 
     for _ in 0..options.max_iterations {
+        stats.iterations += 1;
+        stats.objective_evaluations += 1;
+        stats.gradient_evaluations += 1;
+        stats.hessian_evaluations += 1;
         let objective = evaluate_objective(input, &reduced, &ze_nonbase, options.parallel)?;
         let grad_norm = objective
             .gradient
             .iter()
             .fold(0.0_f64, |acc, value| acc.max(value.abs()));
         if grad_norm < options.tolerance {
-            return finalize_free_energies(input, &reduced, &ze_nonbase, options.parallel);
+            return finish_uwham_solve(input, &reduced, &ze_nonbase, options.parallel, stats);
         }
 
         let fallback_direction = -&objective.gradient;
@@ -363,14 +429,14 @@ pub(crate) fn solve_uwham(input: &UwhamLogQInput, options: &UwhamOptions) -> Res
                 .iter()
                 .fold(0.0_f64, |acc, value| acc.max(value.abs()));
             if step_norm < options.tolerance {
-                return finalize_free_energies(input, &reduced, &ze_nonbase, options.parallel);
+                return finish_uwham_solve(input, &reduced, &ze_nonbase, options.parallel, stats);
             }
-            directions.push(direction);
+            directions.push((direction, true));
         }
-        directions.push(fallback_direction);
+        directions.push((fallback_direction, false));
 
         let mut accepted = false;
-        for candidate_direction in directions {
+        for (candidate_direction, is_newton_direction) in directions {
             let directional_derivative = objective.gradient.dot(&candidate_direction);
             if !directional_derivative.is_finite() || directional_derivative >= 0.0 {
                 continue;
@@ -379,12 +445,21 @@ pub(crate) fn solve_uwham(input: &UwhamLogQInput, options: &UwhamOptions) -> Res
             let mut step_scale = 1.0;
             while step_scale >= 1.0e-8 {
                 let candidate = &ze_nonbase + step_scale * &candidate_direction;
+                stats.objective_evaluations += 1;
+                stats.gradient_evaluations += 1;
+                stats.hessian_evaluations += 1;
+                stats.line_search_evaluations += 1;
                 let candidate_objective =
                     evaluate_objective(input, &reduced, &candidate, options.parallel)?;
                 if candidate_objective.value
                     <= objective.value + 1.0e-4 * step_scale * directional_derivative
                 {
                     ze_nonbase = candidate;
+                    if is_newton_direction {
+                        stats.accepted_newton_steps += 1;
+                    } else {
+                        stats.accepted_gradient_steps += 1;
+                    }
                     accepted = true;
                     break;
                 }
@@ -402,6 +477,118 @@ pub(crate) fn solve_uwham(input: &UwhamLogQInput, options: &UwhamOptions) -> Res
     }
 
     Err(CoreError::ConvergenceFailure)
+}
+
+fn solve_uwham_lbfgs(input: &UwhamLogQInput, options: &UwhamOptions) -> Result<UwhamSolveResult> {
+    const LBFGS_HISTORY_LIMIT: usize = 10;
+    const LBFGS_C1: f64 = 1.0e-4;
+    const LBFGS_MIN_STEP: f64 = 1.0e-20;
+    const LBFGS_MAX_LINE_SEARCH_STEPS: usize = 40;
+    const LBFGS_CURVATURE_EPS: f64 = 1.0e-12;
+
+    let reduced = ReducedUwhamInput::from_pooled(input)?;
+    let sampled_count = reduced.sampled_indices.len();
+    let variable_count = sampled_count.saturating_sub(1);
+    let mut ze_nonbase = DVector::zeros(variable_count);
+    let mut stats = UwhamSolverStats {
+        solver: UwhamSolver::Lbfgs,
+        ..UwhamSolverStats::default()
+    };
+
+    if options.max_iterations == 0 {
+        return Err(CoreError::ConvergenceFailure);
+    }
+    if variable_count == 0 {
+        return finish_uwham_solve(input, &reduced, &ze_nonbase, options.parallel, stats);
+    }
+
+    stats.objective_evaluations += 1;
+    stats.gradient_evaluations += 1;
+    let mut current = evaluate_value_gradient(input, &reduced, &ze_nonbase, options.parallel)?;
+    let mut history: Vec<UwhamLbfgsHistoryEntry> = Vec::new();
+
+    for _ in 0..options.max_iterations {
+        stats.iterations += 1;
+        if max_abs_dvector(&current.gradient) < options.tolerance {
+            return finish_uwham_solve(input, &reduced, &ze_nonbase, options.parallel, stats);
+        }
+
+        let mut direction = uwham_lbfgs_direction(&current.gradient, &history);
+        let mut directional_derivative = current.gradient.dot(&direction);
+        if !directional_derivative.is_finite() || directional_derivative >= 0.0 {
+            direction = -&current.gradient;
+            directional_derivative = -current.gradient.dot(&current.gradient);
+            stats.fallback_direction_resets += 1;
+        }
+        if directional_derivative >= 0.0 || !directional_derivative.is_finite() {
+            return Err(CoreError::ConvergenceFailure);
+        }
+
+        let mut accepted = None;
+        let mut step = 1.0;
+        for _ in 0..LBFGS_MAX_LINE_SEARCH_STEPS {
+            let trial_ze = &ze_nonbase + step * &direction;
+            stats.objective_evaluations += 1;
+            stats.gradient_evaluations += 1;
+            stats.line_search_evaluations += 1;
+            let trial = evaluate_value_gradient(input, &reduced, &trial_ze, options.parallel)?;
+            if trial.value <= current.value + LBFGS_C1 * step * directional_derivative {
+                accepted = Some((trial_ze, trial));
+                break;
+            }
+            step *= 0.5;
+            if step < LBFGS_MIN_STEP {
+                break;
+            }
+        }
+
+        let Some((trial_ze, trial)) = accepted else {
+            return Err(CoreError::ConvergenceFailure);
+        };
+
+        let s = &trial_ze - &ze_nonbase;
+        let y = &trial.gradient - &current.gradient;
+        let ys = y.dot(&s);
+        if ys.is_finite() && ys > LBFGS_CURVATURE_EPS {
+            if history.len() == LBFGS_HISTORY_LIMIT {
+                history.remove(0);
+            }
+            history.push(UwhamLbfgsHistoryEntry {
+                s: s.clone(),
+                y,
+                rho: 1.0 / ys,
+            });
+        }
+
+        ze_nonbase = trial_ze;
+        current = trial;
+        stats.accepted_lbfgs_steps += 1;
+
+        if max_abs_dvector(&s) < options.tolerance
+            && max_abs_dvector(&current.gradient) < options.tolerance
+        {
+            return finish_uwham_solve(input, &reduced, &ze_nonbase, options.parallel, stats);
+        }
+    }
+
+    if max_abs_dvector(&current.gradient) < options.tolerance {
+        return finish_uwham_solve(input, &reduced, &ze_nonbase, options.parallel, stats);
+    }
+
+    Err(CoreError::ConvergenceFailure)
+}
+
+fn finish_uwham_solve(
+    input: &UwhamLogQInput,
+    reduced: &ReducedUwhamInput,
+    ze_nonbase: &DVector<f64>,
+    parallel: bool,
+    stats: UwhamSolverStats,
+) -> Result<UwhamSolveResult> {
+    Ok(UwhamSolveResult {
+        free_energies: finalize_free_energies(input, reduced, ze_nonbase, parallel)?,
+        stats,
+    })
 }
 
 fn finalize_free_energies(
@@ -538,6 +725,78 @@ fn evaluate_objective(
         gradient,
         hessian,
     })
+}
+
+fn evaluate_value_gradient(
+    input: &UwhamLogQInput,
+    reduced: &ReducedUwhamInput,
+    ze_nonbase: &DVector<f64>,
+    parallel: bool,
+) -> Result<UwhamValueGradient> {
+    let sampled_ze = insert_base_state(ze_nonbase, reduced.base_sampled_index);
+    let sampled_count = reduced.sampled_indices.len();
+    let variable_count = sampled_count.saturating_sub(1);
+    let (objective_sum, col_sums) = if parallel {
+        (0..input.n_observations)
+            .into_par_iter()
+            .try_fold(
+                || (0.0, vec![0.0; variable_count]),
+                |(mut objective_sum, mut col_sums), observation_idx| -> Result<_> {
+                    objective_sum += accumulate_value_gradient_observation(
+                        reduced,
+                        &sampled_ze,
+                        observation_idx,
+                        &mut col_sums,
+                    )?;
+                    Ok((objective_sum, col_sums))
+                },
+            )
+            .try_reduce(
+                || (0.0, vec![0.0; variable_count]),
+                |(left_value, mut left_cols), (right_value, right_cols)| -> Result<_> {
+                    for (left, right) in left_cols.iter_mut().zip(right_cols) {
+                        *left += right;
+                    }
+                    Ok((left_value + right_value, left_cols))
+                },
+            )?
+    } else {
+        let mut objective_sum = 0.0;
+        let mut col_sums = vec![0.0; variable_count];
+        for observation_idx in 0..input.n_observations {
+            objective_sum += accumulate_value_gradient_observation(
+                reduced,
+                &sampled_ze,
+                observation_idx,
+                &mut col_sums,
+            )?;
+        }
+        (objective_sum, col_sums)
+    };
+
+    let mut value = objective_sum / input.n_observations as f64;
+    for (sampled_idx, &sampled_ze_value) in sampled_ze.iter().enumerate().take(sampled_count) {
+        value += sampled_ze_value * reduced.rho[sampled_idx];
+    }
+
+    let mut gradient = DVector::zeros(variable_count);
+    let mut variable_idx = 0;
+    for sampled_idx in 0..sampled_count {
+        if sampled_idx == reduced.base_sampled_index {
+            continue;
+        }
+        gradient[variable_idx] =
+            -col_sums[variable_idx] / input.n_observations as f64 + reduced.rho[sampled_idx];
+        variable_idx += 1;
+    }
+
+    if !value.is_finite() || gradient.iter().any(|value| !value.is_finite()) {
+        return Err(CoreError::NonFiniteValue(
+            "UWHAM objective became non-finite".to_string(),
+        ));
+    }
+
+    Ok(UwhamValueGradient { value, gradient })
 }
 
 fn newton_direction(objective: &UwhamObjective) -> Option<DVector<f64>> {
@@ -705,6 +964,92 @@ fn accumulate_objective_observation(
     }
 
     Ok(log_denom)
+}
+
+fn accumulate_value_gradient_observation(
+    reduced: &ReducedUwhamInput,
+    sampled_ze: &[f64],
+    observation_idx: usize,
+    col_sums: &mut [f64],
+) -> Result<f64> {
+    let sampled_count = reduced.sampled_indices.len();
+    let row = observation_row(
+        &reduced.sampled_log_q_relative,
+        sampled_count,
+        observation_idx,
+    );
+    let mut max_term = f64::NEG_INFINITY;
+    let mut sum = 0.0;
+    for (sampled_idx, &sampled_ze_value) in sampled_ze.iter().enumerate().take(sampled_count) {
+        if row[sampled_idx] == f64::NEG_INFINITY {
+            continue;
+        }
+        accumulate_logsumexp(
+            &mut max_term,
+            &mut sum,
+            reduced.log_rho[sampled_idx] + row[sampled_idx] - sampled_ze_value,
+        );
+    }
+    if max_term == f64::NEG_INFINITY || !sum.is_finite() {
+        return Err(CoreError::NonFiniteValue(format!(
+            "UWHAM denominator became non-finite at observation {observation_idx}"
+        )));
+    }
+
+    let log_denom = max_term + sum.ln();
+    let mut variable_idx = 0;
+    for sampled_idx in 0..sampled_count {
+        if sampled_idx == reduced.base_sampled_index {
+            continue;
+        }
+        if row[sampled_idx] != f64::NEG_INFINITY {
+            col_sums[variable_idx] += (reduced.log_rho[sampled_idx] + row[sampled_idx]
+                - sampled_ze[sampled_idx]
+                - log_denom)
+                .exp();
+        }
+        variable_idx += 1;
+    }
+
+    Ok(log_denom)
+}
+
+fn uwham_lbfgs_direction(
+    gradient: &DVector<f64>,
+    history: &[UwhamLbfgsHistoryEntry],
+) -> DVector<f64> {
+    if history.is_empty() {
+        return -gradient;
+    }
+
+    let mut q = gradient.clone();
+    let mut alpha = vec![0.0; history.len()];
+    for (idx, entry) in history.iter().enumerate().rev() {
+        alpha[idx] = entry.rho * entry.s.dot(&q);
+        q -= alpha[idx] * &entry.y;
+    }
+
+    let last = history.last().expect("history should not be empty");
+    let yy = last.y.dot(&last.y);
+    let gamma = if yy > 0.0 {
+        last.s.dot(&last.y) / yy
+    } else {
+        1.0
+    };
+    let mut r = gamma * q;
+
+    for (idx, entry) in history.iter().enumerate() {
+        let beta = entry.rho * entry.y.dot(&r);
+        r += (alpha[idx] - beta) * &entry.s;
+    }
+
+    -r
+}
+
+fn max_abs_dvector(values: &DVector<f64>) -> f64 {
+    values
+        .iter()
+        .fold(0.0_f64, |acc, value| acc.max(value.abs()))
 }
 
 fn upper_triangle_len(variable_count: usize) -> usize {
