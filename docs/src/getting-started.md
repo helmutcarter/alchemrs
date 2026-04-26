@@ -45,9 +45,9 @@ cargo test
 ## Run the Rust examples
 
 ```bash
-cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out
+cargo run --example amber_ti -- 300 ./fixtures/amber/acetamide_tiny/*/acetamide.prod.out
 
-cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/\*/acetamide.prod.out
+cargo run --example amber_mbar -- 300 ./fixtures/amber/acetamide_tiny/*/acetamide.prod.out
 
 cargo run --example openmm_u_kln_mbar
 ```

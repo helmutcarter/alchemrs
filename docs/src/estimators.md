@@ -121,8 +121,8 @@ optimization approach described by Ding, Vilseck, and Brooks in "Fast Solver for
 Large Scale Multistate Bennett Acceptance Ratio Equations", *Journal of Chemical
 Theory and Computation* 15, 799-802 (2019),
 doi:[10.1021/acs.jctc.8b01010](https://doi.org/10.1021/acs.jctc.8b01010).
-The current `UwhamEstimator` uses its own Newton-style solver rather than this
-MBAR L-BFGS implementation.
+`UwhamEstimator` has a separate solver implementation; its Newton and L-BFGS
+backends are documented in the UWHAM section below.
 
 Input:
 

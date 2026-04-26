@@ -12,6 +12,7 @@ Available functions:
 - `mbar_convergence`
 - `exp_convergence`
 - `dexp_convergence`
+- `nes_convergence`
 
 ## `overlap_matrix`
 
@@ -70,6 +71,7 @@ Each function returns a `Vec<ConvergencePoint>`:
 - `mbar_convergence`
 - `exp_convergence`
 - `dexp_convergence`
+- `nes_convergence`
 
 Each point includes:
 

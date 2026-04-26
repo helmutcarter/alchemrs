@@ -28,7 +28,10 @@ The implemented parser surface supports AMBER outputs, including AMBER nonequili
 
 AMBER still has the broader and more battle-tested workflow coverage, but the documented and tested parsing workflow now includes both engines. Multidimensional GROMACS schedules are supported for `u_nk`-based analysis; multidimensional TI is still unsupported.
 
-ATM and OpenMM workflows currently enter through the typed data model and Python helper APIs rather than through a dedicated file parser.
+ATM, UWHAM, and OpenMM workflows currently enter through the typed data model
+and Python helper APIs rather than through a dedicated file parser. The project
+does not currently expose UWHAM or ATM as CLI commands because MD engines do not
+yet emit a common, analysis-ready file format for those workflows.
 
 ## One-dimensional lambda assumption
 
@@ -61,7 +64,8 @@ This repository does not currently provide:
 
 - a large general-purpose plotting/reporting surface beyond the current SVG helpers and advisor HTML reports
 - production-grade parser coverage for every major MD engine
-- a dedicated CLI surface for ATM or direct UWHAM analysis
+- a dedicated CLI surface for ATM or direct UWHAM analysis until native engine
+  outputs or a common interchange format make that command-line workflow useful
 - a polished published Python distribution workflow beyond the current repo-local `maturin` setup
 - versioned public API guarantees
 

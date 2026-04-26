@@ -171,7 +171,7 @@ For CLI commands, preprocessing order is:
 
 TI uses `dH/dlambda` as the scalar series.
 
-`BAR`, `MBAR`, `EXP`, and `DEXP` use the observable chosen by `--u-nk-observable <de|all|epot>`.
+`BAR`, `MBAR`, `IEXP`, and `DEXP` use the observable chosen by `--u-nk-observable <de|all|epot>`.
 
 `NES` does not expose CLI preprocessing flags because each input file is treated as one complete switching trajectory rather than a windowed equilibrium timeseries.
 

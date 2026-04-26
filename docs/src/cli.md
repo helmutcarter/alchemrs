@@ -374,6 +374,10 @@ Options:
 - `--decorrelate`
   - Apply decorrelation to each window using the `dH/dλ` series.
 
+- `--input-stride <INPUT_STRIDE>`
+  - For AMBER TI inputs, retain every `input-stride`th value from the final `DV/DL` summary block.
+  - If omitted, AMBER parsing uses the file's `ntpr` value.
+
 - `--remove-burnin <REMOVE_BURNIN>`
   - Skip this many initial samples before analysis.
   - Default: `0`

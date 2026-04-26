@@ -43,9 +43,11 @@ python .\python\examples\amber_fixture_analysis.py
 python .\python\examples\atm_analysis.py
 ```
 
-For pytest-only edit/test loops, `cargo build -p alchemrs-py` also works:
-`python/tests/conftest.py` will stage the newest debug-built extension into
-`python/alchemrs` before the test session starts.
+The `maturin develop` workflow is preferred because it handles the
+platform-specific native extension name and import path for you. If you run
+tests directly from a checkout without installing the extension, make sure the
+rebuilt native module is staged in `python/alchemrs` and set `PYTHONPATH=python`
+for that shell.
 
 ## Bundled AMBER fixture workflow
 
