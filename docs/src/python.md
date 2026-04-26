@@ -87,6 +87,11 @@ Top-level estimator aliases are also available:
 - `alchemrs.IEXP`
 - `alchemrs.NES`
 
+`alchemrs.MBAR()` uses the same default MBAR solver policy as the Rust API and
+CLI: L-BFGS by default, with the Rust core automatically falling back to
+fixed-point when the evaluated state grid has zero sampled-count states. Pass
+`solver="fixed-point"` when you need explicit fixed-point behavior.
+
 ## OpenMM support model
 
 `alchemrs` does not currently ship a dedicated OpenMM parser. Instead, the

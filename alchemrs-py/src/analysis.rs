@@ -11,7 +11,7 @@ use crate::error::to_py_err;
 use crate::estimators::parse_integration_method;
 
 #[pyfunction]
-#[pyo3(signature = (windows, max_iterations=10_000, tolerance=1e-7, initial_f_k=None, solver="fixed-point", parallel=false))]
+#[pyo3(signature = (windows, max_iterations=10_000, tolerance=1e-7, initial_f_k=None, solver="lbfgs", parallel=false))]
 fn overlap_matrix(
     py: Python<'_>,
     windows: Vec<Py<PyUNkMatrix>>,
@@ -96,7 +96,7 @@ fn bar_convergence(
 }
 
 #[pyfunction]
-#[pyo3(signature = (windows, max_iterations=10_000, tolerance=1e-7, initial_f_k=None, solver="fixed-point", parallel=false))]
+#[pyo3(signature = (windows, max_iterations=10_000, tolerance=1e-7, initial_f_k=None, solver="lbfgs", parallel=false))]
 fn mbar_convergence(
     py: Python<'_>,
     windows: Vec<Py<PyUNkMatrix>>,

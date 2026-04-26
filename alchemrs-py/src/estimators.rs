@@ -191,7 +191,7 @@ pub struct PyMbarEstimator {
 #[pymethods]
 impl PyMbarEstimator {
     #[new]
-    #[pyo3(signature = (max_iterations=10_000, tolerance=1e-7, initial_f_k=None, solver="fixed-point", parallel=false))]
+    #[pyo3(signature = (max_iterations=10_000, tolerance=1e-7, initial_f_k=None, solver="lbfgs", parallel=false))]
     fn new(
         max_iterations: usize,
         tolerance: f64,

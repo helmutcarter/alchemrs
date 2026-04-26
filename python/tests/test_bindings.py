@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import importlib.util
 from pathlib import Path
 import random
@@ -52,9 +53,21 @@ def test_mbar_and_overlap_match_fixture_references() -> None:
     fit = ar.MBAR().fit(windows)
     result = fit.result_with_uncertainty()
 
-    assert result.values[0, -1] == pytest.approx(-113.58992316, abs=1e-5)
-    assert result.uncertainties[0, -1] == pytest.approx(1.16998889, abs=1e-6)
-    assert fit.overlap_scalar() == pytest.approx(0.01834742779436016, abs=1e-7)
+    assert result.values[0, -1] == pytest.approx(-113.58992572, abs=1e-5)
+    assert result.uncertainties[0, -1] == pytest.approx(1.16998386, abs=1e-6)
+    assert fit.overlap_scalar() == pytest.approx(0.018347603104180488, abs=1e-7)
+
+
+def test_python_mbar_default_solver_matches_rust_and_cli() -> None:
+    assert inspect.signature(ar.MBAR).parameters["solver"].default == "lbfgs"
+    assert (
+        inspect.signature(ar.analysis.overlap_matrix).parameters["solver"].default
+        == "lbfgs"
+    )
+    assert (
+        inspect.signature(ar.analysis.mbar_convergence).parameters["solver"].default
+        == "lbfgs"
+    )
 
 
 def test_analysis_convergence_and_overlap_module_exports() -> None:
@@ -215,8 +228,8 @@ def test_amber_fixture_python_example_matches_expected_ranges() -> None:
     mbar_kcal = mbar_result.values[0, -1] * module.kt_in_kcal_per_mol(module.TEMPERATURE_K)
 
     assert ti_kcal == pytest.approx(8.048447, abs=1e-6)
-    assert mbar_kcal == pytest.approx(-75.004329, abs=1e-6)
-    assert mbar_fit.overlap_scalar() == pytest.approx(0.005514, abs=1e-6)
+    assert mbar_kcal == pytest.approx(-75.004358, abs=1e-6)
+    assert mbar_fit.overlap_scalar() == pytest.approx(0.005513596330500858, abs=1e-6)
 
 
 @pytest.mark.skipif(

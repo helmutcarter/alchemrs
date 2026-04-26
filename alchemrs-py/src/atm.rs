@@ -362,6 +362,7 @@ impl PyAtmEstimator {
                     max_iterations,
                     tolerance,
                     parallel,
+                    ..UwhamOptions::default()
                 },
                 uncertainty,
             }),
