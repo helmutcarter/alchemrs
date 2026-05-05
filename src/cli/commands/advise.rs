@@ -5,10 +5,11 @@ use std::path::PathBuf;
 
 use alchemrs::estimators::sample_ti_curve;
 use alchemrs::{
-    advise_lambda_schedule_with_overlap, advise_nes, advise_ti_schedule, AdvisorEstimator,
-    EdgeSeverity, IntegrationMethod, NesAdvice, NesSuggestionKind, OverlapMatrix, ScheduleAdvice,
-    ScheduleAdvisorOptions, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiScheduleAdvice,
-    TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
+    advise_lambda_schedule_with_overlap, advise_nes, advise_ti_schedule, mbar_time_convergence,
+    ti_time_convergence, AdvisorEstimator, EdgeSeverity, IntegrationMethod, MbarOptions, NesAdvice,
+    NesSuggestionKind, OverlapMatrix, ScheduleAdvice, ScheduleAdvisorOptions, SuggestionKind,
+    TiEdgeSeverity, TiIntervalDiagnostic, TiScheduleAdvice, TiScheduleAdvisorOptions,
+    TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic, TimeConvergencePoint,
 };
 use serde_json::{json, Map, Value};
 
@@ -39,9 +40,11 @@ enum AdviceKind {
         lambda_components: Option<Vec<String>>,
         kept_samples_by_window: Vec<usize>,
         overlap_matrix: OverlapMatrix,
+        time_convergence: Option<Vec<TimeConvergencePoint>>,
     },
     Ti {
         advice: TiScheduleAdvice,
+        time_convergence: Option<Vec<TimeConvergencePoint>>,
     },
     Nes {
         advice: NesAdvice,
@@ -73,6 +76,7 @@ pub fn run(
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
             let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
+            let time_convergence = u_nk_advisor_time_convergence(&loaded.windows, &run_options);
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
@@ -80,6 +84,7 @@ pub fn run(
                     lambda_components,
                     kept_samples_by_window,
                     overlap_matrix,
+                    time_convergence,
                 },
             )
         }
@@ -94,7 +99,14 @@ pub fn run(
                     ..TiScheduleAdvisorOptions::default()
                 }),
             )?;
-            (loaded.sample_counts, AdviceKind::Ti { advice })
+            let time_convergence = ti_time_convergence(&loaded.series, None, None).ok();
+            (
+                loaded.sample_counts,
+                AdviceKind::Ti {
+                    advice,
+                    time_convergence,
+                },
+            )
         }
         AdviseInputKind::Nes => {
             if input_options.decorrelate
@@ -129,6 +141,7 @@ pub fn run(
                     .and_then(|window| window.lambda_labels().map(|labels| labels.to_vec())),
             );
             let kept_samples_by_window = sorted_u_nk_kept_samples(&loaded.windows)?;
+            let time_convergence = u_nk_advisor_time_convergence(&loaded.windows, &run_options);
             (
                 loaded.sample_counts,
                 AdviceKind::UNk {
@@ -136,6 +149,7 @@ pub fn run(
                     lambda_components,
                     kept_samples_by_window,
                     overlap_matrix,
+                    time_convergence,
                 },
             )
         }
@@ -168,6 +182,16 @@ impl From<AdvisorEstimatorArg> for AdvisorEstimator {
     }
 }
 
+fn u_nk_advisor_time_convergence(
+    windows: &[alchemrs::UNkMatrix],
+    run_options: &AdviseRunOptions,
+) -> Option<Vec<TimeConvergencePoint>> {
+    if !matches!(run_options.estimator, AdvisorEstimatorArg::Mbar) {
+        return None;
+    }
+    mbar_time_convergence(windows, Some(MbarOptions::default()), None).ok()
+}
+
 fn render_schedule_advice(
     advice: &AdviceKind,
     sample_counts: AnalysisSampleCounts,
@@ -180,6 +204,7 @@ fn render_schedule_advice(
             lambda_components,
             kept_samples_by_window: _,
             overlap_matrix: _,
+            time_convergence: _,
         } => render_advice(
             advice,
             sample_counts,
@@ -187,9 +212,10 @@ fn render_schedule_advice(
             run_options,
             lambda_components.clone(),
         ),
-        AdviceKind::Ti { advice } => {
-            render_ti_advice(advice, sample_counts, input_options, run_options)
-        }
+        AdviceKind::Ti {
+            advice,
+            time_convergence: _,
+        } => render_ti_advice(advice, sample_counts, input_options, run_options),
         AdviceKind::Nes { advice } => {
             render_nes_advice(advice, sample_counts, input_options, run_options)
         }
@@ -208,6 +234,7 @@ fn render_schedule_html_report(
             lambda_components,
             kept_samples_by_window,
             overlap_matrix,
+            time_convergence,
         } => render_html_report(
             advice,
             sample_counts,
@@ -216,10 +243,18 @@ fn render_schedule_html_report(
             lambda_components.clone(),
             Some(kept_samples_by_window),
             Some(overlap_matrix),
+            time_convergence.as_deref(),
         ),
-        AdviceKind::Ti { advice } => {
-            render_ti_html_report(advice, sample_counts, input_options, run_options)
-        }
+        AdviceKind::Ti {
+            advice,
+            time_convergence,
+        } => render_ti_html_report(
+            advice,
+            sample_counts,
+            input_options,
+            run_options,
+            time_convergence.as_deref(),
+        ),
         AdviceKind::Nes { advice } => {
             render_nes_html_report(advice, sample_counts, input_options, run_options)
         }
@@ -1017,6 +1052,10 @@ fn render_csv(
     String::from_utf8(bytes).map_err(|err| err.to_string())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The advisor report renderer takes the current report context explicitly until reporting is unified"
+)]
 fn render_html_report(
     advice: &ScheduleAdvice,
     sample_counts: AnalysisSampleCounts,
@@ -1025,6 +1064,7 @@ fn render_html_report(
     lambda_components: Option<Vec<String>>,
     kept_samples_by_window: Option<&[usize]>,
     overlap_matrix: Option<&OverlapMatrix>,
+    time_convergence: Option<&[TimeConvergencePoint]>,
 ) -> Result<String, String> {
     let lambda_components = normalize_lambda_components(lambda_components);
     let max_priority = advice
@@ -1139,6 +1179,22 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
             "<section class=\"section\"><h2>Overlap Matrix</h2><div class=\"grid plot-grid\">",
         );
         html.push_str(&render_overlap_matrix_card_html(overlap_matrix));
+        html.push_str("</div></section>");
+    }
+
+    if let Some(points) = time_convergence.filter(|points| !points.is_empty()) {
+        html.push_str(
+            "<section class=\"section\"><h2>Convergence</h2><div class=\"grid plot-grid\">",
+        );
+        html.push_str(&plot_card_html(
+            "Free Energy vs Simulation Time",
+            "Full-estimator MBAR result after truncating every window to the same elapsed simulation time.",
+            &render_time_convergence_plot_svg(
+                points,
+                run_options.output_units,
+                input_options.temperature,
+            ),
+        ));
         html.push_str("</div></section>");
     }
 
@@ -1476,6 +1532,7 @@ fn render_ti_html_report(
     sample_counts: AnalysisSampleCounts,
     input_options: &AnalysisInputOptions,
     run_options: &AdviseRunOptions,
+    time_convergence: Option<&[TimeConvergencePoint]>,
 ) -> Result<String, String> {
     let max_priority = advice
         .intervals()
@@ -1552,6 +1609,17 @@ h1{margin:0;font-size:40px;line-height:1}.lede{max-width:72ch;color:var(--muted)
     ));
     html.push_str("</div></div></section>");
     html.push_str("<section class=\"section\"><h2>Plots</h2><div class=\"grid plot-grid\">");
+    if let Some(points) = time_convergence.filter(|points| !points.is_empty()) {
+        html.push_str(&plot_card_html(
+            "Free Energy vs Simulation Time",
+            "Full TI estimate after truncating every window to the same elapsed simulation time.",
+            &render_time_convergence_plot_svg(
+                points,
+                run_options.output_units,
+                input_options.temperature,
+            ),
+        ));
+    }
     html.push_str(&plot_card_html(
         "Mean dH/dλ",
         "Window means after preprocessing. Use this to spot steep regions and sign changes.",
@@ -2406,6 +2474,143 @@ fn render_nes_convergence_plot_svg(advice: &NesAdvice, units: OutputUnits) -> St
             map_y(*value)
         ));
     }
+    svg.push_str("</svg>");
+    svg
+}
+
+fn render_time_convergence_plot_svg(
+    convergence: &[TimeConvergencePoint],
+    units: OutputUnits,
+    temperature: f64,
+) -> String {
+    let points = convergence
+        .iter()
+        .map(|point| {
+            (
+                point.elapsed_time_ps(),
+                convert_value(point.delta_f(), units, temperature),
+            )
+        })
+        .filter(|(time, value)| time.is_finite() && value.is_finite())
+        .collect::<Vec<_>>();
+    if points.len() < 2 {
+        return "<div class=\"plot-empty\">Not enough time-convergence points to render.</div>"
+            .to_string();
+    }
+
+    let width = 860.0;
+    let height = 360.0;
+    let left = 86.0;
+    let right = 24.0;
+    let top = 18.0;
+    let bottom = 48.0;
+    let plot_width = width - left - right;
+    let plot_height = height - top - bottom;
+
+    let mut x_min = points
+        .iter()
+        .map(|(time, _)| *time)
+        .fold(f64::INFINITY, f64::min);
+    let mut x_max = points
+        .iter()
+        .map(|(time, _)| *time)
+        .fold(f64::NEG_INFINITY, f64::max);
+    if (x_max - x_min).abs() <= 1.0e-12 {
+        x_min -= 1.0;
+        x_max += 1.0;
+    }
+
+    let mut y_min = f64::INFINITY;
+    let mut y_max = f64::NEG_INFINITY;
+    for (_, value) in &points {
+        y_min = y_min.min(*value);
+        y_max = y_max.max(*value);
+    }
+    if (y_max - y_min).abs() <= 1.0e-12 {
+        let pad = y_max.abs().max(1.0) * 0.25;
+        y_min -= pad;
+        y_max += pad;
+    } else {
+        let pad = (y_max - y_min) * 0.12;
+        y_min -= pad;
+        y_max += pad;
+    }
+
+    let map_x = |x: f64| left + (x - x_min) / (x_max - x_min) * plot_width;
+    let map_y = |y: f64| top + (1.0 - (y - y_min) / (y_max - y_min)) * plot_height;
+
+    let polyline = points
+        .iter()
+        .map(|(time, value)| format!("{:.2},{:.2}", map_x(*time), map_y(*value)))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let mut svg = format!(
+        "<svg class=\"ti-series-plot\" viewBox=\"0 0 {:.0} {:.0}\" xmlns=\"http://www.w3.org/2000/svg\" role=\"img\" aria-label=\"{} versus elapsed simulation time\">",
+        width,
+        height,
+        escape_html(&format!("ΔF ({})", format_units(units)))
+    );
+
+    for x_value in axis_tick_values(x_min, x_max, false) {
+        let x = map_x(x_value);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" stroke-opacity=\"0.35\" x1=\"{x:.2}\" y1=\"{top:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" />",
+            top + plot_height
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{x:.2}\" y=\"{:.2}\" text-anchor=\"middle\">{}</text>",
+            top + plot_height + 18.0,
+            format_plot_number(x_value)
+        ));
+    }
+
+    for y_value in axis_tick_values(y_min, y_max, false) {
+        let y = map_y(y_value);
+        svg.push_str(&format!(
+            "<line class=\"grid-line\" stroke-opacity=\"0.35\" x1=\"{left:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" />",
+            left + plot_width
+        ));
+        svg.push_str(&format!(
+            "<text class=\"tick-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"end\">{}</text>",
+            left - 8.0,
+            y + 3.0,
+            format_plot_number(y_value)
+        ));
+    }
+
+    svg.push_str(&format!(
+        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" />",
+        top + plot_height,
+        left + plot_width,
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<line class=\"axis\" x1=\"{left:.2}\" y1=\"{top:.2}\" x2=\"{left:.2}\" y2=\"{:.2}\" />",
+        top + plot_height
+    ));
+    svg.push_str(&format!(
+        "<polyline class=\"series-line\" points=\"{}\" />",
+        polyline
+    ));
+    for (time, value) in &points {
+        svg.push_str(&format!(
+            "<circle class=\"series-point\" cx=\"{:.2}\" cy=\"{:.2}\" r=\"3.5\" />",
+            map_x(*time),
+            map_y(*value)
+        ));
+    }
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\">elapsed simulation time (ps)</text>",
+        left + plot_width * 0.5,
+        height - 8.0
+    ));
+    svg.push_str(&format!(
+        "<text class=\"axis-label\" x=\"22\" y=\"{:.2}\" transform=\"rotate(-90 22 {:.2})\" text-anchor=\"middle\">{}</text>",
+        top + plot_height * 0.5,
+        top + plot_height * 0.5,
+        escape_html(&format!("ΔF ({})", format_units(units)))
+    ));
     svg.push_str("</svg>");
     svg
 }
@@ -4219,6 +4424,7 @@ mod tests {
             None,
             Some(&[12, 8]),
             Some(&sample_overlap_matrix()),
+            None,
         )
         .unwrap();
 
@@ -4278,6 +4484,7 @@ mod tests {
             Some(vec!["".to_string(), "   ".to_string()]),
             None,
             Some(&sample_overlap_matrix()),
+            None,
         )
         .unwrap();
 
@@ -4318,6 +4525,7 @@ mod tests {
                 report_path: None,
             },
             Some(vec!["coul-lambda".to_string(), "vdw-lambda".to_string()]),
+            None,
             None,
             None,
         )
@@ -4366,6 +4574,7 @@ mod tests {
                 output_path: None,
                 report_path: None,
             },
+            None,
         )
         .unwrap();
 
@@ -4586,6 +4795,7 @@ mod tests {
                 output_path: None,
                 report_path: None,
             },
+            None,
         )
         .unwrap();
 

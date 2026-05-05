@@ -92,6 +92,8 @@ If `--report` is provided, the CLI also writes a standalone HTML report with:
 
 - a configuration summary
 - for `u_nk` workflows, an MBAR-derived overlap-matrix heatmap with interactive size controls
+- for default MBAR-backed `u_nk` workflows, a cumulative free energy plot versus shared elapsed simulation time
+- for TI mode, a cumulative free energy plot versus shared elapsed simulation time
 - a top priority queue of the highest-risk edges, including their weakest components
 - ranked schedule suggestions
 - edge-level diagnostics with severity badges

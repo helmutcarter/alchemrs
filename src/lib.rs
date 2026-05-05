@@ -48,14 +48,15 @@ pub mod prep;
 
 pub use analysis::{
     advise_lambda_schedule, advise_lambda_schedule_with_overlap, advise_nes, advise_ti_schedule,
-    bar_convergence, dexp_convergence, exp_convergence, mbar_convergence, nes_convergence,
-    overlap_eigenvalues, overlap_matrix, overlap_scalar, recommend_ti_method, ti_convergence,
-    AdjacentEdgeDiagnostic, AdvisorEstimator, BlockEstimate, ConvergencePoint, EdgeSeverity,
-    NesAdvice, NesAdvisorOptions, NesCurvaturePoint, NesProfilePoint, NesSuggestionKind,
-    ProposalStrategy, ScheduleAdvice, ScheduleAdvisorOptions, ScheduleSuggestion, SuggestionKind,
-    TiEdgeSeverity, TiIntervalDiagnostic, TiMethodAssessment, TiMethodRecommendation,
-    TiMethodRecommendationOptions, TiScheduleAdvice, TiScheduleAdvisorOptions,
-    TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
+    bar_convergence, dexp_convergence, exp_convergence, mbar_convergence, mbar_time_convergence,
+    nes_convergence, overlap_eigenvalues, overlap_matrix, overlap_scalar, recommend_ti_method,
+    ti_convergence, ti_time_convergence, AdjacentEdgeDiagnostic, AdvisorEstimator, BlockEstimate,
+    ConvergencePoint, EdgeSeverity, NesAdvice, NesAdvisorOptions, NesCurvaturePoint,
+    NesProfilePoint, NesSuggestionKind, ProposalStrategy, ScheduleAdvice, ScheduleAdvisorOptions,
+    ScheduleSuggestion, SuggestionKind, TiEdgeSeverity, TiIntervalDiagnostic, TiMethodAssessment,
+    TiMethodRecommendation, TiMethodRecommendationOptions, TiScheduleAdvice,
+    TiScheduleAdvisorOptions, TiScheduleSuggestion, TiSuggestionKind, TiWindowDiagnostic,
+    TimeConvergenceOptions, TimeConvergencePoint,
 };
 pub use data::{
     AtmDirection, AtmLogQMatrix, AtmSample, AtmSampleSet, AtmSchedule, AtmState, DeltaFMatrix,
@@ -73,8 +74,9 @@ pub use parse::{extract_dhdl, extract_nes_trajectory, extract_u_nk, extract_u_nk
 #[cfg(feature = "plotting")]
 pub use plot::{
     render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,
-    render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions, ConvergencePlotOptions,
-    DeltaFStatePlotOptions, OverlapPlotOptions, TiDhdlPlotOptions,
+    render_overlap_matrix_svg, render_ti_dhdl_svg, render_time_convergence_svg,
+    BlockAveragePlotOptions, ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions,
+    TiDhdlPlotOptions, TimeConvergencePlotOptions,
 };
 pub use prep::{
     decorrelate_dhdl, decorrelate_u_nk, decorrelate_u_nk_with_observable,

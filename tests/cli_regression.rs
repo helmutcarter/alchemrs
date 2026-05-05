@@ -385,6 +385,8 @@ fn advise_schedule_cli_writes_html_report() {
     assert!(written.contains("Lambda Schedule Report"));
     assert!(written.contains("Overlap Matrix"));
     assert!(written.contains("Adjacent-State Overlap Matrix"));
+    assert!(written.contains("Free Energy vs Simulation Time"));
+    assert!(written.contains("elapsed simulation time"));
     assert!(written.contains("Suggestions"));
     assert!(written.contains("Edges"));
     assert!(written.contains("priority"));

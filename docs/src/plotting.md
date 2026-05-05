@@ -19,6 +19,7 @@ cargo test --features plotting
 The first plotting surface is intentionally small:
 
 - `render_convergence_svg`
+- `render_time_convergence_svg`
 - `render_overlap_matrix_svg`
 - `render_delta_f_state_svg`
 - `render_ti_dhdl_svg`
@@ -27,6 +28,7 @@ The first plotting surface is intentionally small:
 These consume plot-ready analysis values and return SVG strings:
 
 - `render_convergence_svg` for `ConvergencePoint`
+- `render_time_convergence_svg` for `TimeConvergencePoint`
 - `render_overlap_matrix_svg` for `OverlapMatrix`
 - `render_delta_f_state_svg` for `DeltaFMatrix`
 - `render_ti_dhdl_svg` for `DhdlSeries`
@@ -78,6 +80,32 @@ let svg = render_convergence_svg(
     Some(ConvergencePlotOptions {
         title: "MBAR Convergence".to_string(),
         ..ConvergencePlotOptions::default()
+    }),
+)?;
+assert!(svg.contains("<svg"));
+# Ok(())
+# }
+```
+
+Time-convergence plots use shared per-window elapsed simulation time rather than the number of lambda windows included:
+
+```rust
+use alchemrs::{
+    MbarOptions, TimeConvergencePlotOptions, extract_u_nk, mbar_time_convergence,
+    render_time_convergence_svg,
+};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let windows = vec![
+    extract_u_nk("lambda0.out", 300.0)?,
+    extract_u_nk("lambda1.out", 300.0)?,
+];
+let points = mbar_time_convergence(&windows, Some(MbarOptions::default()), None)?;
+let svg = render_time_convergence_svg(
+    &points,
+    Some(TimeConvergencePlotOptions {
+        title: "MBAR Time Convergence".to_string(),
+        ..TimeConvergencePlotOptions::default()
     }),
 )?;
 assert!(svg.contains("<svg"));

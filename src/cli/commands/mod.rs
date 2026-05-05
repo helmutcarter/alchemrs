@@ -97,11 +97,13 @@ pub fn run(command: Command) -> CliResult<()> {
                     u_nk_observable: None,
                     input_stride,
                 },
-                method,
-                output_units,
-                output_format,
-                output,
-                parallel,
+                ti::TiRunOptions {
+                    method,
+                    output_units,
+                    output_format,
+                    output_path: output,
+                    parallel,
+                },
             )
         }
         Command::Bar {

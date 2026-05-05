@@ -21,6 +21,16 @@ pub struct ConvergencePoint {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TimeConvergencePoint {
+    elapsed_time_ps: f64,
+    delta_f: f64,
+    uncertainty: Option<f64>,
+    from_state: StatePoint,
+    to_state: StatePoint,
+    lambda_labels: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct BlockEstimate {
     block_index: usize,
     n_blocks: usize,
@@ -35,6 +45,21 @@ pub struct BlockEstimate {
 pub enum AdvisorEstimator {
     Mbar,
     Bar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TimeConvergenceOptions {
+    pub n_points: usize,
+    pub min_samples_per_window: usize,
+}
+
+impl Default for TimeConvergenceOptions {
+    fn default() -> Self {
+        Self {
+            n_points: 20,
+            min_samples_per_window: 2,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -885,6 +910,67 @@ impl ConvergencePoint {
     }
 }
 
+impl TimeConvergencePoint {
+    pub fn new(
+        elapsed_time_ps: f64,
+        delta_f: f64,
+        uncertainty: Option<f64>,
+        from_state: StatePoint,
+        to_state: StatePoint,
+        lambda_labels: Option<Vec<String>>,
+    ) -> Result<Self> {
+        if !elapsed_time_ps.is_finite() || elapsed_time_ps < 0.0 {
+            return Err(CoreError::NonFiniteValue(
+                "elapsed_time_ps must be finite and non-negative".to_string(),
+            ));
+        }
+        if !delta_f.is_finite() {
+            return Err(CoreError::NonFiniteValue(
+                "delta_f must be finite".to_string(),
+            ));
+        }
+        if let Some(value) = uncertainty {
+            if !value.is_finite() {
+                return Err(CoreError::NonFiniteValue(
+                    "uncertainty must be finite".to_string(),
+                ));
+            }
+        }
+        Ok(Self {
+            elapsed_time_ps,
+            delta_f,
+            uncertainty,
+            from_state,
+            to_state,
+            lambda_labels,
+        })
+    }
+
+    pub fn elapsed_time_ps(&self) -> f64 {
+        self.elapsed_time_ps
+    }
+
+    pub fn delta_f(&self) -> f64 {
+        self.delta_f
+    }
+
+    pub fn uncertainty(&self) -> Option<f64> {
+        self.uncertainty
+    }
+
+    pub fn from_state(&self) -> &StatePoint {
+        &self.from_state
+    }
+
+    pub fn to_state(&self) -> &StatePoint {
+        &self.to_state
+    }
+
+    pub fn lambda_labels(&self) -> Option<&[String]> {
+        self.lambda_labels.as_deref()
+    }
+}
+
 impl NesAdvice {
     pub fn convergence(&self) -> &[ConvergencePoint] {
         &self.convergence
@@ -1079,6 +1165,70 @@ pub fn mbar_convergence(
         initial_f_k = Some(fit.free_energies().to_vec());
     }
 
+    Ok(points)
+}
+
+pub fn ti_time_convergence(
+    series: &[DhdlSeries],
+    ti_options: Option<TiOptions>,
+    convergence_options: Option<TimeConvergenceOptions>,
+) -> Result<Vec<TimeConvergencePoint>> {
+    let ti_options = ti_options.unwrap_or_default();
+    if matches!(
+        ti_options.method,
+        crate::estimators::IntegrationMethod::GaussianQuadrature
+    ) {
+        return Err(CoreError::Unsupported(
+            "TI time convergence is unsupported for Gaussian quadrature because truncated time series do not define a quadrature schedule".to_string(),
+        ));
+    }
+    if series.len() < 2 {
+        return Err(CoreError::InvalidShape {
+            expected: 2,
+            found: series.len(),
+        });
+    }
+
+    let convergence_options = validate_time_convergence_options(convergence_options)?;
+    let cutoffs = dhdl_time_cutoffs(series, convergence_options)?;
+    let estimator = TiEstimator::new(ti_options);
+    let mut points = Vec::with_capacity(cutoffs.len());
+    for cutoff in cutoffs {
+        let truncated = series
+            .iter()
+            .map(|item| truncate_dhdl_series_to_elapsed_time(item, cutoff))
+            .collect::<Result<Vec<_>>>()?;
+        let result = estimator.estimate(&truncated)?;
+        points.push(time_convergence_point_from_scalar(cutoff, &result)?);
+    }
+    Ok(points)
+}
+
+pub fn mbar_time_convergence(
+    windows: &[UNkMatrix],
+    mbar_options: Option<MbarOptions>,
+    convergence_options: Option<TimeConvergenceOptions>,
+) -> Result<Vec<TimeConvergencePoint>> {
+    if windows.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let convergence_options = validate_time_convergence_options(convergence_options)?;
+    let trimmed = trim_windows_to_sampled_states(windows)?;
+    let cutoffs = u_nk_time_cutoffs(&trimmed, convergence_options)?;
+    let estimator = MbarEstimator::new(mbar_options.unwrap_or_default());
+    let mut points = Vec::with_capacity(cutoffs.len());
+    for cutoff in cutoffs {
+        let truncated = trimmed
+            .iter()
+            .map(|window| truncate_u_nk_window_to_elapsed_time(window, cutoff))
+            .collect::<Result<Vec<_>>>()?;
+        let result = estimator.fit(&truncated)?.result_with_uncertainty()?;
+        points.push(time_convergence_point_from_matrix(cutoff, &result, false)?);
+    }
     Ok(points)
 }
 
@@ -2402,6 +2552,146 @@ fn split_u_nk_window(window: &UNkMatrix, n_blocks: usize) -> Result<Vec<UNkMatri
     Ok(out)
 }
 
+fn validate_time_convergence_options(
+    options: Option<TimeConvergenceOptions>,
+) -> Result<TimeConvergenceOptions> {
+    let options = options.unwrap_or_default();
+    if options.n_points == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    if options.min_samples_per_window == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    Ok(options)
+}
+
+fn dhdl_time_cutoffs(series: &[DhdlSeries], options: TimeConvergenceOptions) -> Result<Vec<f64>> {
+    if series.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let start = series
+        .iter()
+        .map(|item| elapsed_time_at_sample(item.time_ps(), options.min_samples_per_window))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .fold(0.0, f64::max);
+    let end = series
+        .iter()
+        .map(|item| final_elapsed_time(item.time_ps()))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .fold(f64::INFINITY, f64::min);
+    time_cutoffs(start, end, options.n_points)
+}
+
+fn u_nk_time_cutoffs(windows: &[UNkMatrix], options: TimeConvergenceOptions) -> Result<Vec<f64>> {
+    if windows.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let start = windows
+        .iter()
+        .map(|window| elapsed_time_at_sample(window.time_ps(), options.min_samples_per_window))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .fold(0.0, f64::max);
+    let end = windows
+        .iter()
+        .map(|window| final_elapsed_time(window.time_ps()))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .fold(f64::INFINITY, f64::min);
+    time_cutoffs(start, end, options.n_points)
+}
+
+fn elapsed_time_at_sample(time_ps: &[f64], min_samples: usize) -> Result<f64> {
+    if time_ps.len() < min_samples {
+        return Err(CoreError::InvalidShape {
+            expected: min_samples,
+            found: time_ps.len(),
+        });
+    }
+    Ok(time_ps[min_samples - 1] - time_ps[0])
+}
+
+fn final_elapsed_time(time_ps: &[f64]) -> Result<f64> {
+    match (time_ps.first(), time_ps.last()) {
+        (Some(first), Some(last)) => Ok(last - first),
+        _ => Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        }),
+    }
+}
+
+fn time_cutoffs(start: f64, end: f64, n_points: usize) -> Result<Vec<f64>> {
+    if !start.is_finite() || !end.is_finite() || end < start {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    if n_points == 1 || (end - start).abs() <= f64::EPSILON {
+        return Ok(vec![end]);
+    }
+
+    let step = (end - start) / (n_points - 1) as f64;
+    Ok((0..n_points)
+        .map(|index| {
+            if index + 1 == n_points {
+                end
+            } else {
+                start + step * index as f64
+            }
+        })
+        .collect())
+}
+
+fn truncate_dhdl_series_to_elapsed_time(
+    series: &DhdlSeries,
+    elapsed_ps: f64,
+) -> Result<DhdlSeries> {
+    let end = elapsed_sample_count(series.time_ps(), elapsed_ps);
+    DhdlSeries::new(
+        series.state().clone(),
+        series.time_ps()[..end].to_vec(),
+        series.values()[..end].to_vec(),
+    )
+}
+
+fn truncate_u_nk_window_to_elapsed_time(window: &UNkMatrix, elapsed_ps: f64) -> Result<UNkMatrix> {
+    let end = elapsed_sample_count(window.time_ps(), elapsed_ps);
+    let row_width = window.n_states();
+    UNkMatrix::new_with_labels(
+        end,
+        row_width,
+        window.data()[..end * row_width].to_vec(),
+        window.time_ps()[..end].to_vec(),
+        window.sampled_state().cloned(),
+        window.evaluated_states().to_vec(),
+        window.lambda_labels().map(|labels| labels.to_vec()),
+    )
+}
+
+fn elapsed_sample_count(time_ps: &[f64], elapsed_ps: f64) -> usize {
+    let start = time_ps[0];
+    time_ps
+        .iter()
+        .take_while(|time| **time - start <= elapsed_ps + f64::EPSILON)
+        .count()
+}
+
 fn block_ranges(n_samples: usize, n_blocks: usize) -> Result<Vec<(usize, usize)>> {
     if n_blocks == 0 {
         return Err(CoreError::InvalidShape {
@@ -3347,6 +3637,20 @@ fn convergence_point_from_scalar(
     )
 }
 
+fn time_convergence_point_from_scalar(
+    elapsed_time_ps: f64,
+    result: &FreeEnergyEstimate,
+) -> Result<TimeConvergencePoint> {
+    TimeConvergencePoint::new(
+        elapsed_time_ps,
+        result.delta_f(),
+        result.uncertainty(),
+        result.from_state().clone(),
+        result.to_state().clone(),
+        None,
+    )
+}
+
 fn block_estimate_from_scalar(
     block_index: usize,
     n_blocks: usize,
@@ -3360,6 +3664,44 @@ fn block_estimate_from_scalar(
         result.from_state().clone(),
         result.to_state().clone(),
         None,
+    )
+}
+
+fn time_convergence_point_from_matrix(
+    elapsed_time_ps: f64,
+    result: &DeltaFMatrix,
+    reverse: bool,
+) -> Result<TimeConvergencePoint> {
+    let n_states = result.n_states();
+    if n_states == 0 {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+    let index = if reverse {
+        (n_states - 1) * n_states
+    } else {
+        n_states - 1
+    };
+    let (from_state, to_state) = if reverse {
+        (
+            result.states().last().unwrap().clone(),
+            result.states().first().unwrap().clone(),
+        )
+    } else {
+        (
+            result.states().first().unwrap().clone(),
+            result.states().last().unwrap().clone(),
+        )
+    };
+    TimeConvergencePoint::new(
+        elapsed_time_ps,
+        result.values()[index],
+        finite_matrix_uncertainty(result, index),
+        from_state,
+        to_state,
+        result.lambda_labels().map(|labels| labels.to_vec()),
     )
 }
 

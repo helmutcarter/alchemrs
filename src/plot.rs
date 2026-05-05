@@ -1,4 +1,4 @@
-use crate::analysis::{BlockEstimate, ConvergencePoint};
+use crate::analysis::{BlockEstimate, ConvergencePoint, TimeConvergencePoint};
 use crate::data::{DeltaFMatrix, DhdlSeries, OverlapMatrix, StatePoint};
 use crate::error::{CoreError, Result};
 use plotters::prelude::*;
@@ -10,6 +10,27 @@ pub struct ConvergencePlotOptions {
     pub title: String,
     pub x_label: String,
     pub y_label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeConvergencePlotOptions {
+    pub width: u32,
+    pub height: u32,
+    pub title: String,
+    pub x_label: String,
+    pub y_label: String,
+}
+
+impl Default for TimeConvergencePlotOptions {
+    fn default() -> Self {
+        Self {
+            width: 800,
+            height: 500,
+            title: "Free Energy Time Convergence".to_string(),
+            x_label: "Simulation Time (ps)".to_string(),
+            y_label: "Delta F (kT)".to_string(),
+        }
+    }
 }
 
 impl Default for ConvergencePlotOptions {
@@ -162,6 +183,80 @@ pub fn render_convergence_svg(
         for point in points {
             if let Some(uncertainty) = point.uncertainty() {
                 let x = point.n_windows() as i32;
+                let y0 = point.delta_f() - uncertainty;
+                let y1 = point.delta_f() + uncertainty;
+                chart
+                    .draw_series(std::iter::once(PathElement::new(
+                        vec![(x, y0), (x, y1)],
+                        BLACK,
+                    )))
+                    .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+            }
+        }
+
+        root.present()
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+    }
+
+    Ok(svg)
+}
+
+pub fn render_time_convergence_svg(
+    points: &[TimeConvergencePoint],
+    options: Option<TimeConvergencePlotOptions>,
+) -> Result<String> {
+    if points.is_empty() {
+        return Err(CoreError::InvalidShape {
+            expected: 1,
+            found: 0,
+        });
+    }
+
+    let options = options.unwrap_or_default();
+    let mut svg = String::new();
+
+    {
+        let backend = SVGBackend::with_string(&mut svg, (options.width, options.height));
+        let root = backend.into_drawing_area();
+        root.fill(&WHITE)
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        let (x_min, x_max) = time_x_bounds(points);
+        let (y_min, y_max) = time_y_bounds(points);
+
+        let mut chart = ChartBuilder::on(&root)
+            .caption(options.title, ("sans-serif", 24))
+            .margin(20)
+            .x_label_area_size(40)
+            .y_label_area_size(60)
+            .build_cartesian_2d(x_min..x_max, y_min..y_max)
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        chart
+            .configure_mesh()
+            .x_desc(options.x_label)
+            .y_desc(options.y_label)
+            .draw()
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        chart
+            .draw_series(LineSeries::new(
+                points
+                    .iter()
+                    .map(|point| (point.elapsed_time_ps(), point.delta_f())),
+                &BLUE,
+            ))
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        chart
+            .draw_series(points.iter().map(|point| {
+                Circle::new((point.elapsed_time_ps(), point.delta_f()), 4, BLUE.filled())
+            }))
+            .map_err(|err| CoreError::InvalidState(err.to_string()))?;
+
+        for point in points {
+            if let Some(uncertainty) = point.uncertainty() {
+                let x = point.elapsed_time_ps();
                 let y0 = point.delta_f() - uncertainty;
                 let y1 = point.delta_f() + uncertainty;
                 chart
@@ -544,6 +639,42 @@ fn y_bounds(points: &[ConvergencePoint]) -> (f64, f64) {
     }
 }
 
+fn time_x_bounds(points: &[TimeConvergencePoint]) -> (f64, f64) {
+    let min = points
+        .iter()
+        .map(|point| point.elapsed_time_ps())
+        .fold(f64::INFINITY, f64::min);
+    let max = points
+        .iter()
+        .map(|point| point.elapsed_time_ps())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if min == max {
+        (min - 1.0, max + 1.0)
+    } else {
+        (min, max)
+    }
+}
+
+fn time_y_bounds(points: &[TimeConvergencePoint]) -> (f64, f64) {
+    let mut min = f64::INFINITY;
+    let mut max = f64::NEG_INFINITY;
+    for point in points {
+        let delta_f = point.delta_f();
+        min = min.min(delta_f);
+        max = max.max(delta_f);
+        if let Some(uncertainty) = point.uncertainty() {
+            min = min.min(delta_f - uncertainty);
+            max = max.max(delta_f + uncertainty);
+        }
+    }
+    if min == max {
+        (min - 1.0, max + 1.0)
+    } else {
+        let padding = (max - min) * 0.1;
+        (min - padding, max + padding)
+    }
+}
+
 fn overlap_color(value: f64) -> RGBColor {
     let clamped = value.clamp(0.0, 1.0);
     let start = (255.0, 255.0, 255.0);
@@ -700,10 +831,11 @@ fn format_state_label(state: &StatePoint) -> String {
 mod tests {
     use super::{
         render_block_average_svg, render_convergence_svg, render_delta_f_state_svg,
-        render_overlap_matrix_svg, render_ti_dhdl_svg, BlockAveragePlotOptions,
-        ConvergencePlotOptions, DeltaFStatePlotOptions, OverlapPlotOptions, TiDhdlPlotOptions,
+        render_overlap_matrix_svg, render_ti_dhdl_svg, render_time_convergence_svg,
+        BlockAveragePlotOptions, ConvergencePlotOptions, DeltaFStatePlotOptions,
+        OverlapPlotOptions, TiDhdlPlotOptions, TimeConvergencePlotOptions,
     };
-    use crate::analysis::{BlockEstimate, ConvergencePoint};
+    use crate::analysis::{BlockEstimate, ConvergencePoint, TimeConvergencePoint};
     use crate::data::{DeltaFMatrix, DhdlSeries, OverlapMatrix, StatePoint};
     use crate::error::CoreError;
 
@@ -738,6 +870,27 @@ mod tests {
         .unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("MBAR Convergence"));
+    }
+
+    #[test]
+    fn render_time_convergence_svg_returns_svg_document() {
+        let from = StatePoint::new(vec![0.0], 300.0).unwrap();
+        let to = StatePoint::new(vec![1.0], 300.0).unwrap();
+        let points = vec![
+            TimeConvergencePoint::new(1.0, 0.0, Some(0.1), from.clone(), to.clone(), None).unwrap(),
+            TimeConvergencePoint::new(2.0, 1.0, Some(0.2), from, to, None).unwrap(),
+        ];
+        let svg = render_time_convergence_svg(
+            &points,
+            Some(TimeConvergencePlotOptions {
+                title: "MBAR Time Convergence".to_string(),
+                ..TimeConvergencePlotOptions::default()
+            }),
+        )
+        .unwrap();
+        assert!(svg.contains("<svg"));
+        assert!(svg.contains("MBAR Time Convergence"));
+        assert!(svg.contains("Simulation Time"));
     }
 
     #[test]

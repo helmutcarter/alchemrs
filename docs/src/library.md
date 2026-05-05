@@ -179,6 +179,21 @@ for point in points {
 }
 ```
 
+For equilibrium TI and MBAR workflows, the analysis layer also provides time-convergence series.
+These recompute the full estimator after truncating every window to the same elapsed simulation
+time:
+
+```rust
+let points = mbar_time_convergence(windows, Some(MbarOptions::default()), None)?;
+for point in points {
+    println!(
+        "time_ps={} delta_f={:.6}",
+        point.elapsed_time_ps(),
+        point.delta_f()
+    );
+}
+```
+
 ## NES example
 
 ```rust
